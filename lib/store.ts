@@ -25,7 +25,10 @@ const TTL_MS = 1000 * 60 * 60; // 1h (in-memory cache)
 const BLOB_PREFIX = "jobs/";
 
 function blobEnabled(): boolean {
-  return !!process.env.BLOB_READ_WRITE_TOKEN;
+  // @vercel/blob authenticates via EITHER an explicit BLOB_READ_WRITE_TOKEN OR
+  // OIDC (VERCEL_OIDC_TOKEN + BLOB_STORE_ID) — the newer connected-store model.
+  // Enable Blob if either is present so connected stores work without a token.
+  return !!(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID);
 }
 
 function gcMemory() {
@@ -114,14 +117,20 @@ export async function saveJob(id: string, report: ConvertReport): Promise<Job> {
   gcMemory();
 
   if (blobEnabled()) {
-    const payload = JSON.stringify(serialize(report));
-    await put(`${BLOB_PREFIX}${id}.json`, payload, {
-      access: "public",
-      addRandomSuffix: false,
-      contentType: "application/json",
-      cacheControlMaxAge: TTL_MS / 1000,
-    });
-    void trimBlob();
+    try {
+      const payload = JSON.stringify(serialize(report));
+      await put(`${BLOB_PREFIX}${id}.json`, payload, {
+        access: "public",
+        addRandomSuffix: false,
+        contentType: "application/json",
+        cacheControlMaxAge: TTL_MS / 1000,
+      });
+      void trimBlob();
+    } catch (err) {
+      // Don't fail the conversion if the bundle can't be persisted; the warm
+      // instance still has it in memory. Surfaces in Vercel function logs.
+      console.error("[store] blob persist failed:", err);
+    }
   }
   return job;
 }
