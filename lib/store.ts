@@ -7,7 +7,7 @@
 // Fix: persist each bundle to Vercel Blob (durable + shared across instances)
 // when BLOB_READ_WRITE_TOKEN is configured, with an in-memory fast-path/cache.
 // With no token (local dev), it falls back to memory-only — unchanged behavior.
-import { put, list, del } from "@vercel/blob";
+import { put, list, del, get } from "@vercel/blob";
 import type { ConvertReport, ConvertedFile } from "./types";
 
 export interface Job {
@@ -119,8 +119,10 @@ export async function saveJob(id: string, report: ConvertReport): Promise<Job> {
   if (blobEnabled()) {
     try {
       const payload = JSON.stringify(serialize(report));
+      // Private store: blobs are read back with get({access:'private'}), which
+      // authenticates via OIDC (BLOB_STORE_ID + VERCEL_OIDC_TOKEN).
       await put(`${BLOB_PREFIX}${id}.json`, payload, {
-        access: "public",
+        access: "private",
         addRandomSuffix: false,
         contentType: "application/json",
         cacheControlMaxAge: TTL_MS / 1000,
@@ -141,11 +143,10 @@ export async function getJob(id: string): Promise<Job | undefined> {
   if (!blobEnabled()) return undefined;
 
   try {
-    const { blobs } = await list({ prefix: `${BLOB_PREFIX}${id}.json`, limit: 1 });
-    if (!blobs.length) return undefined;
-    const res = await fetch(blobs[0].url, { cache: "no-store" });
-    if (!res.ok) return undefined;
-    const report = deserialize((await res.json()) as SerializedBundle);
+    const result = await get(`${BLOB_PREFIX}${id}.json`, { access: "private" });
+    if (!result || result.statusCode !== 200 || !result.stream) return undefined;
+    const text = await new Response(result.stream).text();
+    const report = deserialize(JSON.parse(text) as SerializedBundle);
     const job: Job = { id, report, fileIndex: indexFiles(report.files), createdAt: Date.now() };
     jobs.set(id, job); // populate per-instance cache
     return job;
