@@ -28,7 +28,7 @@ export async function POST(request: Request) {
           send({ type: "progress", msg })
         );
         const jobId = makeJobId();
-        saveJob(jobId, report);
+        await saveJob(jobId, report);
 
         // Slim report for the client (file manifest only, no contents).
         const manifest = report.files.map((f) => ({

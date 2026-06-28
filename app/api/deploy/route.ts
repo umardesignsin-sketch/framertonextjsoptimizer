@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  const job = getJob(jobId);
+  const job = await getJob(jobId);
   if (!job) {
     return Response.json(
       { error: "Job expired or not found. Re-run the conversion." },
