@@ -33,7 +33,6 @@ export default function Home() {
 
   // options — the live tool runs Hybrid only (full fidelity + optimized assets).
   const mode = "hybrid" as const;
-  const [maxPages, setMaxPages] = useState(10);
 
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -58,7 +57,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: url.trim(),
-          options: { mode, maxPages },
+          options: { mode },
         }),
       });
       if (!res.body) throw new Error("No response stream");
@@ -102,21 +101,14 @@ export default function Home() {
       setError(e instanceof Error ? e.message : "Network error");
       setStatus("error");
     }
-  }, [url, status, maxPages, pushLine]);
+  }, [url, status, pushLine]);
 
   return (
     <div className="min-h-screen w-full">
       <Header />
       <main className="mx-auto max-w-5xl px-5 pb-24">
         <Hero />
-        <ConvertCard
-          url={url}
-          setUrl={setUrl}
-          status={status}
-          convert={convert}
-          maxPages={maxPages}
-          setMaxPages={setMaxPages}
-        />
+        <ConvertCard url={url} setUrl={setUrl} status={status} convert={convert} />
 
         {(status === "converting" || lines.length > 0) && (
           <LogPane lines={lines} logRef={logRef} active={status === "converting"} />
@@ -194,8 +186,6 @@ function ConvertCard(props: {
   setUrl: (v: string) => void;
   status: Status;
   convert: () => void;
-  maxPages: number;
-  setMaxPages: (v: number) => void;
 }) {
   const busy = props.status === "converting";
   return (
@@ -220,23 +210,11 @@ function ConvertCard(props: {
         </button>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="mt-4">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-foreground/5 px-2.5 py-1 text-[12px] font-medium">
           <span className="h-1.5 w-1.5 rounded-full bg-foreground" />
           Hybrid mode — full fidelity, optimized
         </span>
-        <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
-          Max pages
-          <input
-            type="number"
-            min={1}
-            max={50}
-            value={props.maxPages}
-            disabled={busy}
-            onChange={(e) => props.setMaxPages(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
-            className="h-8 w-16 rounded-md border border-border-strong bg-background px-2 text-center text-foreground outline-none focus:border-foreground disabled:opacity-60"
-          />
-        </label>
       </div>
     </section>
   );
