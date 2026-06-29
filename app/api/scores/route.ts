@@ -15,8 +15,9 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid url" }, { status: 400 });
   }
+  const strategy = body?.strategy === "desktop" ? "desktop" : "mobile";
   try {
-    const scores = await fetchScores(url);
+    const scores = await fetchScores(url, strategy);
     return NextResponse.json(scores);
   } catch (e) {
     return NextResponse.json(

@@ -1,11 +1,13 @@
 // Fetch real Lighthouse scores from Google PageSpeed Insights.
 // Works without a key (heavily rate-limited); set PAGESPEED_API_KEY for
-// reliable use on a live embed.
+// reliable use.
 const ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 
 export interface Scores {
   performance: number;
   seo: number;
+  accessibility: number;
+  bestPractices: number;
 }
 
 export async function fetchScores(
@@ -14,8 +16,9 @@ export async function fetchScores(
 ): Promise<Scores> {
   const params = new URLSearchParams({ url, strategy });
   if (process.env.PAGESPEED_API_KEY) params.set("key", process.env.PAGESPEED_API_KEY);
-  params.append("category", "performance");
-  params.append("category", "seo");
+  for (const c of ["performance", "seo", "accessibility", "best-practices"]) {
+    params.append("category", c);
+  }
 
   const res = await fetch(`${ENDPOINT}?${params.toString()}`);
   if (!res.ok) throw new Error(`PageSpeed ${res.status}`);
@@ -25,5 +28,7 @@ export async function fetchScores(
   return {
     performance: toScore(cats.performance?.score),
     seo: toScore(cats.seo?.score),
+    accessibility: toScore(cats.accessibility?.score),
+    bestPractices: toScore(cats["best-practices"]?.score),
   };
 }
