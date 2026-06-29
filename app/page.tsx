@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import { SpeedCompare } from "@/components/SpeedCompare";
 
 type Stat = { label: string; before: number; after: number; unit: string };
 type PageRef = { route: string; sourceUrl: string };
@@ -145,14 +146,19 @@ function Header() {
             Framer <span className="text-muted-foreground">→</span> Next.js Optimizer
           </span>
         </div>
-        <a
-          href="https://web.dev/articles/lighthouse-performance"
-          target="_blank"
-          rel="noreferrer"
-          className="text-[13px] text-muted-foreground hover:text-foreground"
-        >
-          About Lighthouse ↗
-        </a>
+        <nav className="flex items-center gap-5 text-[13px]">
+          <a href="/speed" className="text-muted-foreground hover:text-foreground">
+            PageSpeed checker
+          </a>
+          <a
+            href="https://web.dev/articles/lighthouse-performance"
+            target="_blank"
+            rel="noreferrer"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            About Lighthouse ↗
+          </a>
+        </nav>
       </div>
     </header>
   );
@@ -361,194 +367,16 @@ function Results({
         </a>
       </div>
 
-      <ScoreCompare originalUrl={report.sourceUrl} jobId={jobId} deployedUrl={deployedUrl} />
+      <SpeedCompare
+        initialOriginal={report.sourceUrl}
+        initialConverted={
+          typeof window !== "undefined" ? `${window.location.origin}/api/preview/${jobId}/` : ""
+        }
+        deployedUrl={deployedUrl}
+      />
 
       <DeployPanel jobId={jobId} onDeployed={setDeployedUrl} />
     </div>
-  );
-}
-
-type LhScores = {
-  performance: number;
-  seo: number;
-  accessibility: number;
-  bestPractices: number;
-};
-
-const LH_METRICS = [
-  ["performance", "Performance"],
-  ["seo", "SEO"],
-  ["accessibility", "Accessibility"],
-  ["bestPractices", "Best Practices"],
-] as const;
-
-function lhColor(n: number): string {
-  if (n >= 90) return "text-emerald-600";
-  if (n >= 50) return "text-amber-500";
-  return "text-red-500";
-}
-function lhAvg(s: LhScores): number {
-  return Math.round((s.performance + s.seo + s.accessibility + s.bestPractices) / 4);
-}
-
-function ScoreCompare({
-  originalUrl,
-  jobId,
-  deployedUrl,
-}: {
-  originalUrl: string;
-  jobId: string;
-  deployedUrl?: string | null;
-}) {
-  const previewUrl =
-    typeof window !== "undefined" ? `${window.location.origin}/api/preview/${jobId}/` : "";
-  const [convertedUrl, setConvertedUrl] = useState(previewUrl);
-  const canUseDeployed = !!deployedUrl && deployedUrl !== convertedUrl;
-  const [strategy, setStrategy] = useState<"mobile" | "desktop">("desktop");
-  const [before, setBefore] = useState<LhScores | null>(null);
-  const [after, setAfter] = useState<LhScores | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  async function measure(url: string): Promise<LhScores> {
-    const res = await fetch("/api/scores", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, strategy }),
-    });
-    if (!res.ok) {
-      throw new Error((await res.json().catch(() => ({}))).error || "measurement failed");
-    }
-    return res.json();
-  }
-
-  async function run() {
-    if (loading) return;
-    setLoading(true);
-    setError("");
-    setBefore(null);
-    setAfter(null);
-    try {
-      const [b, a] = await Promise.all([measure(originalUrl), measure(convertedUrl)]);
-      setBefore(b);
-      setAfter(a);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Comparison failed");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const overall = before && after ? lhAvg(after) - lhAvg(before) : null;
-
-  return (
-    <section className="rounded-xl border border-border bg-background p-4">
-      <h2 className="text-[15px] font-semibold">Lighthouse: before vs after</h2>
-      <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-        <span className="font-medium text-foreground">Before</span> = your original Framer
-        site. <span className="font-medium text-foreground">After</span> = the converted
-        site — defaults to the preview; for the true number, deploy the bundle and paste
-        that URL (the preview is served through a proxy so it underscores Performance).
-      </p>
-
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <input
-          type="url"
-          value={convertedUrl}
-          onChange={(e) => setConvertedUrl(e.target.value)}
-          placeholder="Converted / deployed URL"
-          spellCheck={false}
-          className="h-10 flex-1 rounded-lg border border-border-strong bg-background px-3 text-[14px] outline-none focus:border-foreground"
-        />
-        <div className="flex gap-1 rounded-md bg-muted p-0.5">
-          {(["mobile", "desktop"] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setStrategy(s)}
-              className={`rounded px-2.5 py-1 text-[12px] capitalize ${
-                strategy === s ? "bg-background shadow-sm" : "text-muted-foreground"
-              }`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-        <button
-          onClick={run}
-          disabled={loading || !originalUrl || !convertedUrl}
-          className="h-10 rounded-lg bg-foreground px-4 text-[14px] font-medium text-background hover:opacity-90 disabled:opacity-40"
-        >
-          {loading ? "Measuring…" : "Compare"}
-        </button>
-      </div>
-
-      {canUseDeployed && (
-        <button
-          onClick={() => setConvertedUrl(deployedUrl!)}
-          className="mt-2 text-[12px] font-medium text-foreground underline"
-        >
-          Use deployed URL for an accurate “after” →
-        </button>
-      )}
-
-      {loading && (
-        <p className="mt-3 animate-pulse text-[13px] text-muted-foreground">
-          Running Lighthouse on both sites… this takes ~20–40s.
-        </p>
-      )}
-      {error && <p className="mt-3 text-[13px] text-red-500">{error}</p>}
-
-      {before && after && (
-        <div className="mt-4">
-          {overall !== null && (
-            <div
-              className={`mb-3 rounded-lg px-3 py-2 text-center text-[14px] font-semibold ${
-                overall >= 0
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-red-50 text-red-600"
-              }`}
-            >
-              {overall >= 0 ? "+" : ""}
-              {overall} points overall
-            </div>
-          )}
-          <div className="overflow-hidden rounded-lg border border-border">
-            <table className="w-full text-[13px]">
-              <thead className="bg-muted text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium">Metric</th>
-                  <th className="px-3 py-2 text-center font-medium">Before</th>
-                  <th className="px-3 py-2 text-center font-medium">After</th>
-                  <th className="px-3 py-2 text-center font-medium">Δ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {LH_METRICS.map(([key, label]) => {
-                  const b = before[key];
-                  const a = after[key];
-                  const d = a - b;
-                  return (
-                    <tr key={key}>
-                      <td className="px-3 py-2">{label}</td>
-                      <td className={`px-3 py-2 text-center font-semibold tabular-nums ${lhColor(b)}`}>{b}</td>
-                      <td className={`px-3 py-2 text-center font-semibold tabular-nums ${lhColor(a)}`}>{a}</td>
-                      <td
-                        className={`px-3 py-2 text-center tabular-nums ${
-                          d > 0 ? "text-emerald-600" : d < 0 ? "text-red-500" : "text-muted-foreground"
-                        }`}
-                      >
-                        {d > 0 ? "+" : ""}
-                        {d}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </section>
   );
 }
 

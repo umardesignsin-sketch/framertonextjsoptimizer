@@ -24,6 +24,8 @@ export function AdminDashboard({ jobs, baseUrl }: { jobs: JobMeta[]; baseUrl: st
 
   const iframeSnippet = `<iframe src="${baseUrl}/embed" width="100%" height="640" style="border:0;border-radius:12px" title="Framer → static converter" loading="lazy"></iframe>`;
   const scriptSnippet = `<div id="framer-converter"></div>\n<script src="${baseUrl}/embed.js" async></script>`;
+  const speedIframeSnippet = `<iframe src="${baseUrl}/embed/speed" width="100%" height="560" style="border:0;border-radius:12px" title="PageSpeed checker" loading="lazy"></iframe>`;
+  const speedScriptSnippet = `<div id="framer-speed-checker"></div>\n<script src="${baseUrl}/speed-embed.js" async></script>`;
 
   async function remove(id: string) {
     if (!confirm("Delete this conversion? This cannot be undone.")) return;
@@ -96,6 +98,45 @@ export function AdminDashboard({ jobs, baseUrl }: { jobs: JobMeta[]; baseUrl: st
           className="mt-2 inline-block text-[13px] underline"
         >
           Open the embeddable widget ↗
+        </a>
+      </section>
+
+      {/* Embed the PageSpeed checker */}
+      <section className="mt-8 rounded-xl border border-border p-5">
+        <h2 className="font-medium">Embed the PageSpeed checker</h2>
+        <p className="mt-1 text-[13px] text-muted-foreground">
+          A before/after Lighthouse comparison (desktop + mobile). Prefill sites with{" "}
+          <code>?original=</code> and <code>?converted=</code> (iframe) or{" "}
+          <code>data-original</code> / <code>data-converted</code> (script).
+        </p>
+        {(
+          [
+            ["speed-iframe", "Embed via iframe", speedIframeSnippet],
+            ["speed-script", "Embed via script", speedScriptSnippet],
+          ] as const
+        ).map(([key, title, snippet]) => (
+          <div key={key} className="mt-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-medium">{title}</span>
+              <button
+                onClick={() => copy(key, snippet)}
+                className="rounded-md border border-border-strong px-2 py-1 text-[12px] hover:border-foreground"
+              >
+                {copied === key ? "Copied ✓" : "Copy"}
+              </button>
+            </div>
+            <pre className="mt-1.5 overflow-x-auto rounded-lg bg-foreground/5 p-3 text-[12px] leading-relaxed">
+              <code>{snippet}</code>
+            </pre>
+          </div>
+        ))}
+        <a
+          href="/embed/speed"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-block text-[13px] underline"
+        >
+          Open the PageSpeed checker ↗
         </a>
       </section>
 
