@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type Scores = {
   performance: number;
@@ -53,23 +53,24 @@ export function SpeedCompare({
   const [after, setAfter] = useState<DevicePair>({ desktop: null, mobile: null });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState("");
 
   const canUseDeployed = !!deployedUrl && deployedUrl !== conv;
   const haveResults = !!(before.desktop && after.desktop && before.mobile && after.mobile);
 
-  async function run() {
-    if (loading || !orig.trim() || !conv.trim()) return;
+  const runWith = useCallback(async (o: string, c: string) => {
+    if (!o.trim() || !c.trim()) return;
+    setConv(c);
     setLoading(true);
     setError("");
     setBefore({ desktop: null, mobile: null });
     setAfter({ desktop: null, mobile: null });
     try {
-      // Measure both sites on both devices in parallel.
       const [od, om, cd, cm] = await Promise.all([
-        measure(orig.trim(), "desktop"),
-        measure(orig.trim(), "mobile"),
-        measure(conv.trim(), "desktop"),
-        measure(conv.trim(), "mobile"),
+        measure(o.trim(), "desktop"),
+        measure(o.trim(), "mobile"),
+        measure(c.trim(), "desktop"),
+        measure(c.trim(), "mobile"),
       ]);
       setBefore({ desktop: od, mobile: om });
       setAfter({ desktop: cd, mobile: cm });
@@ -78,7 +79,47 @@ export function SpeedCompare({
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  function run() {
+    if (loading) return;
+    void runWith(orig, conv);
   }
+
+  // Auto-run once when a deploy finishes (deployedUrl arrives). Deferred via a
+  // timeout so the measurement's state updates don't run synchronously inside
+  // the effect.
+  const autoRef = useRef<string>("");
+  useEffect(() => {
+    const target = deployedUrl && orig.trim() ? deployedUrl : "";
+    if (!target || autoRef.current === target) return;
+    autoRef.current = target;
+    const o = orig.trim();
+    const id = setTimeout(() => void runWith(o, target), 0);
+    return () => clearTimeout(id);
+  }, [deployedUrl, orig, runWith]);
+
+  function copyTo(label: string, text: string) {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(label);
+      setTimeout(() => setCopied(""), 1500);
+    });
+  }
+  function resultsText(): string {
+    const dev = (d: "desktop" | "mobile") => {
+      const b = before[d]!;
+      const a = after[d]!;
+      const rows = METRICS.map(
+        ([k, l]) => `  ${l}: ${b[k]} → ${a[k]} (${a[k] - b[k] >= 0 ? "+" : ""}${a[k] - b[k]})`
+      ).join("\n");
+      return `${d[0].toUpperCase() + d.slice(1)} — overall ${avg(b)} → ${avg(a)}\n${rows}`;
+    };
+    return `PageSpeed: Framer vs converted\nOriginal: ${orig}\nConverted: ${conv}\n\n${dev("desktop")}\n\n${dev("mobile")}`;
+  }
+  const shareLink =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/speed?original=${encodeURIComponent(orig)}&converted=${encodeURIComponent(conv)}`
+      : "";
 
   return (
     <div className={compact ? "" : "rounded-xl border border-border bg-background p-4"}>
@@ -135,10 +176,26 @@ export function SpeedCompare({
       {error && <p className="mt-3 text-[13px] text-red-500">{error}</p>}
 
       {haveResults && (
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <DeviceTable label="Desktop" before={before.desktop!} after={after.desktop!} />
-          <DeviceTable label="Mobile" before={before.mobile!} after={after.mobile!} />
-        </div>
+        <>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <DeviceTable label="Desktop" before={before.desktop!} after={after.desktop!} />
+            <DeviceTable label="Mobile" before={before.mobile!} after={after.mobile!} />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              onClick={() => copyTo("results", resultsText())}
+              className="rounded-md border border-border-strong px-3 py-1.5 text-[12px] hover:border-foreground"
+            >
+              {copied === "results" ? "Copied ✓" : "Copy results"}
+            </button>
+            <button
+              onClick={() => copyTo("link", shareLink)}
+              className="rounded-md border border-border-strong px-3 py-1.5 text-[12px] hover:border-foreground"
+            >
+              {copied === "link" ? "Copied ✓" : "Copy share link"}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

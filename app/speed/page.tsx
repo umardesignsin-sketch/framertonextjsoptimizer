@@ -4,7 +4,12 @@ export const metadata = {
   title: "PageSpeed checker — Framer vs converted",
 };
 
-export default function SpeedPage() {
+export default async function SpeedPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ original?: string; converted?: string }>;
+}) {
+  const sp = await searchParams;
   return (
     <div className="mx-auto max-w-3xl px-5 py-12">
       <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">PageSpeed checker</h1>
@@ -15,7 +20,10 @@ export default function SpeedPage() {
         <span className="font-medium text-foreground">mobile</span>.
       </p>
       <div className="mt-6">
-        <SpeedCompare />
+        <SpeedCompare
+          initialOriginal={sp.original ?? ""}
+          initialConverted={sp.converted ?? ""}
+        />
       </div>
     </div>
   );
