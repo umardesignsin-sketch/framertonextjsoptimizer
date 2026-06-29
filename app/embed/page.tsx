@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SpeedCompare } from "@/components/SpeedCompare";
 
 type Status = "idle" | "converting" | "done" | "error";
 interface DoneReport {
@@ -18,22 +19,6 @@ function nextPercent(prev: number, msg: string): number {
   else if (m.includes("optimiz")) target = 58;
   else if (m.includes("self-host")) target = 80;
   return Math.min(92, Math.max(target, prev + 4));
-}
-
-function CountUp({ value }: { value: number }) {
-  const [n, setN] = useState(0);
-  useEffect(() => {
-    let raf = 0;
-    const start = performance.now();
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - start) / 800);
-      setN(Math.round(value * (1 - Math.pow(1 - p, 3))));
-      if (p < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [value]);
-  return <>{n}</>;
 }
 
 function hostName(url?: string): string {
@@ -55,25 +40,21 @@ export default function EmbedWidget() {
   const [line, setLine] = useState("Converting & optimizing");
   const [jobId, setJobId] = useState<string | null>(null);
   const [report, setReport] = useState<DoneReport | null>(null);
-  const [scores, setScores] = useState<
-    { performance: number; seo: number } | "loading" | "error" | null
-  >(null);
   const [error, setError] = useState("");
 
-  async function measure(id: string) {
-    setScores("loading");
-    try {
-      const res = await fetch("/api/scores", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: `${window.location.origin}/api/preview/${id}/` }),
-      });
-      if (!res.ok) throw new Error();
-      setScores(await res.json());
-    } catch {
-      setScores("error");
-    }
-  }
+  // Tell a parent page (script embed) our height so the iframe can auto-fit.
+  useEffect(() => {
+    if (typeof window === "undefined" || window.parent === window) return;
+    const post = () =>
+      window.parent.postMessage(
+        { type: "fno-embed-height", height: document.documentElement.scrollHeight },
+        "*"
+      );
+    post();
+    const ro = new ResizeObserver(post);
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, []);
 
   async function convert() {
     if (!url.trim() || status === "converting") return;
@@ -82,7 +63,6 @@ export default function EmbedWidget() {
     setError("");
     setJobId(null);
     setReport(null);
-    setScores(null);
     setLine("Starting…");
     try {
       const res = await fetch("/api/convert", {
@@ -116,7 +96,6 @@ export default function EmbedWidget() {
             setJobId(evt.jobId || null);
             setReport(evt.report || null);
             setStatus("done");
-            if (evt.jobId) measure(evt.jobId);
           } else if (evt.type === "error") {
             setError(evt.message || "Conversion failed");
             setStatus("error");
@@ -131,9 +110,13 @@ export default function EmbedWidget() {
 
   const busy = status === "converting";
   const filename = `${hostName(report?.sourceUrl || url)}-optimized.zip`;
+  const previewUrl =
+    jobId && typeof window !== "undefined"
+      ? `${window.location.origin}/api/preview/${jobId}/`
+      : "";
 
   return (
-    <div className="mx-auto max-w-[540px] p-4">
+    <div className="mx-auto max-w-[560px] p-4">
       <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-[0_4px_30px_rgba(0,0,0,0.07)]">
         {/* Browser chrome */}
         <div className="relative flex items-center border-b border-border bg-foreground/[0.025] px-4 py-3">
@@ -199,31 +182,6 @@ export default function EmbedWidget() {
             </div>
           )}
 
-          {/* Score cards */}
-          {status === "done" && (
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              {(
-                [
-                  ["Performance", scores && typeof scores === "object" ? scores.performance : null],
-                  ["SEO", scores && typeof scores === "object" ? scores.seo : null],
-                ] as const
-              ).map(([label, val]) => (
-                <div key={label} className="rounded-xl border border-border p-4">
-                  <div className="text-4xl font-bold tabular-nums leading-none">
-                    {val != null ? (
-                      <CountUp value={val} />
-                    ) : scores === "error" ? (
-                      <span className="text-muted-foreground">—</span>
-                    ) : (
-                      <span className="inline-block h-7 w-10 animate-pulse rounded bg-foreground/10" />
-                    )}
-                  </div>
-                  <div className="mt-1 text-[13px] text-muted-foreground">{label}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
           {/* Download */}
           {status === "done" && jobId && (
             <a
@@ -242,9 +200,29 @@ export default function EmbedWidget() {
             </a>
           )}
 
+          {/* Lighthouse comparison — original vs converted, auto-measured */}
+          {status === "done" && jobId && (
+            <div className="mt-5 border-t border-border pt-4">
+              <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                Lighthouse · original vs converted
+              </div>
+              <div className="mt-2">
+                <SpeedCompare
+                  compact
+                  autoRun
+                  initialOriginal={report?.sourceUrl || url}
+                  initialConverted={previewUrl}
+                />
+              </div>
+            </div>
+          )}
+
           {error && <p className="mt-4 text-[13px] text-red-500">{error}</p>}
         </div>
       </div>
+      <p className="mt-2 text-center text-[11px] text-muted-foreground">
+        Powered by Framer → static converter
+      </p>
     </div>
   );
 }

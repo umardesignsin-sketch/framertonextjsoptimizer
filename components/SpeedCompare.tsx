@@ -41,11 +41,14 @@ export function SpeedCompare({
   initialConverted = "",
   deployedUrl,
   compact = false,
+  autoRun = false,
 }: {
   initialOriginal?: string;
   initialConverted?: string;
   deployedUrl?: string | null;
   compact?: boolean;
+  /** Measure automatically on mount when both URLs are present. */
+  autoRun?: boolean;
 }) {
   const [orig, setOrig] = useState(initialOriginal);
   const [conv, setConv] = useState(initialConverted);
@@ -98,6 +101,20 @@ export function SpeedCompare({
     const id = setTimeout(() => void runWith(o, target), 0);
     return () => clearTimeout(id);
   }, [deployedUrl, orig, runWith]);
+
+  // Auto-run once on mount (e.g. right after a conversion) when both URLs are
+  // supplied and autoRun is set. Deferred so state updates aren't synchronous.
+  const mountRan = useRef(false);
+  useEffect(() => {
+    if (mountRan.current || !autoRun) return;
+    const o = initialOriginal.trim();
+    const c = initialConverted.trim();
+    if (!o || !c) return;
+    mountRan.current = true;
+    autoRef.current = c;
+    const id = setTimeout(() => void runWith(o, c), 0);
+    return () => clearTimeout(id);
+  }, [autoRun, initialOriginal, initialConverted, runWith]);
 
   function copyTo(label: string, text: string) {
     navigator.clipboard?.writeText(text).then(() => {

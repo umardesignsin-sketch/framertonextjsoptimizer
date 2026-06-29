@@ -22,7 +22,7 @@ export function AdminDashboard({ jobs, baseUrl }: { jobs: JobMeta[]; baseUrl: st
   const [busyId, setBusyId] = useState<string | null>(null);
   const [copied, setCopied] = useState<string>("");
 
-  const iframeSnippet = `<iframe src="${baseUrl}/embed" width="100%" height="640" style="border:0;border-radius:12px" title="Framer → static converter" loading="lazy"></iframe>`;
+  const iframeSnippet = `<iframe src="${baseUrl}/embed" width="100%" height="760" style="border:0;border-radius:12px" title="Framer → static converter" loading="lazy"></iframe>`;
   const scriptSnippet = `<div id="framer-converter"></div>\n<script src="${baseUrl}/embed.js" async></script>`;
   const speedIframeSnippet = `<iframe src="${baseUrl}/embed/speed" width="100%" height="560" style="border:0;border-radius:12px" title="PageSpeed checker" loading="lazy"></iframe>`;
   const speedScriptSnippet = `<div id="framer-speed-checker"></div>\n<script src="${baseUrl}/speed-embed.js" async></script>`;

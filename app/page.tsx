@@ -538,6 +538,7 @@ function Results({
           typeof window !== "undefined" ? `${window.location.origin}/api/preview/${jobId}/` : ""
         }
         deployedUrl={deployedUrl}
+        autoRun
       />
 
       <DeployPanel jobId={jobId} onDeployed={setDeployedUrl} />

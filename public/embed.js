@@ -29,4 +29,11 @@
   var mount = document.getElementById("framer-converter");
   if (mount) mount.appendChild(iframe);
   else if (s.parentNode) s.parentNode.insertBefore(iframe, s.nextSibling);
+
+  // Auto-fit the iframe to its content (the widget grows after a conversion).
+  window.addEventListener("message", function (e) {
+    if (e && e.data && e.data.type === "fno-embed-height" && e.source === iframe.contentWindow) {
+      iframe.style.height = Math.max(360, e.data.height + 8) + "px";
+    }
+  });
 })();
