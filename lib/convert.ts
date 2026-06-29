@@ -25,6 +25,7 @@ import {
   rewriteVideoRefs,
 } from "./video";
 import { seoPass } from "./seo";
+import { platformConfigFiles } from "./platform-config";
 import { optimizeImageLoading } from "./loading";
 import {
   ConvertOptions,
@@ -138,7 +139,7 @@ export async function convertSite(
         "pixel-perfect mirror: kept Framer runtime + all assets as-is (no JS stripped, no transforms)",
         "assets load from Framer's CDN — deploy stays identical to the original",
       ],
-      files: mirrorFiles,
+      files: [...mirrorFiles, ...platformConfigFiles()],
     };
   }
 
@@ -339,6 +340,6 @@ export async function convertSite(
     })),
     stats,
     notes: [...notes],
-    files: [...htmlFiles, ...assetFiles],
+    files: [...htmlFiles, ...assetFiles, ...platformConfigFiles()],
   };
 }

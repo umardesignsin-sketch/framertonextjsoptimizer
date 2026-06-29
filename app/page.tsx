@@ -31,11 +31,8 @@ export default function Home() {
   const [error, setError] = useState<string>("");
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
 
-  // options
-  const [mode, setMode] = useState<"optimize" | "mirror" | "hybrid">("optimize");
-  const [stripJs, setStripJs] = useState(true);
-  const [optimizeImages, setOptimizeImages] = useState(true);
-  const [selfHostFonts, setSelfHostFonts] = useState(true);
+  // options — the live tool runs Hybrid only (full fidelity + optimized assets).
+  const mode = "hybrid" as const;
   const [maxPages, setMaxPages] = useState(10);
 
   const logRef = useRef<HTMLDivElement>(null);
@@ -61,7 +58,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: url.trim(),
-          options: { mode, stripJs, optimizeImages, selfHostFonts, maxPages },
+          options: { mode, maxPages },
         }),
       });
       if (!res.body) throw new Error("No response stream");
@@ -105,7 +102,7 @@ export default function Home() {
       setError(e instanceof Error ? e.message : "Network error");
       setStatus("error");
     }
-  }, [url, status, mode, stripJs, optimizeImages, selfHostFonts, maxPages, pushLine]);
+  }, [url, status, maxPages, pushLine]);
 
   return (
     <div className="min-h-screen w-full">
@@ -117,14 +114,6 @@ export default function Home() {
           setUrl={setUrl}
           status={status}
           convert={convert}
-          mode={mode}
-          setMode={setMode}
-          stripJs={stripJs}
-          setStripJs={setStripJs}
-          optimizeImages={optimizeImages}
-          setOptimizeImages={setOptimizeImages}
-          selfHostFonts={selfHostFonts}
-          setSelfHostFonts={setSelfHostFonts}
           maxPages={maxPages}
           setMaxPages={setMaxPages}
         />
@@ -205,14 +194,6 @@ function ConvertCard(props: {
   setUrl: (v: string) => void;
   status: Status;
   convert: () => void;
-  mode: "optimize" | "mirror" | "hybrid";
-  setMode: (v: "optimize" | "mirror" | "hybrid") => void;
-  stripJs: boolean;
-  setStripJs: (v: boolean) => void;
-  optimizeImages: boolean;
-  setOptimizeImages: (v: boolean) => void;
-  selfHostFonts: boolean;
-  setSelfHostFonts: (v: boolean) => void;
   maxPages: number;
   setMaxPages: (v: number) => void;
 }) {
@@ -239,50 +220,11 @@ function ConvertCard(props: {
         </button>
       </div>
 
-      {/* Mode selector: Optimize (fast, lossy) · Hybrid · Pixel-perfect. */}
-      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-        {(
-          [
-            ["optimize", "Optimize", "Strip JS, rebuild for 100/100 (lossy)"],
-            ["hybrid", "Hybrid", "Keep runtime + trim bloat — accurate & faster"],
-            ["mirror", "Pixel-perfect", "Keep everything — identical to original"],
-          ] as const
-        ).map(([val, title, blurb]) => (
-          <button
-            key={val}
-            type="button"
-            disabled={busy}
-            onClick={() => props.setMode(val)}
-            aria-pressed={props.mode === val}
-            className={`rounded-lg border p-3 text-left transition disabled:opacity-60 ${
-              props.mode === val
-                ? "border-foreground bg-foreground/5"
-                : "border-border hover:border-border-strong"
-            }`}
-          >
-            <div className="text-[14px] font-medium">{title}</div>
-            <div className="text-[12px] text-muted-foreground">{blurb}</div>
-          </button>
-        ))}
-      </div>
-
-      <div
-        className={`mt-4 flex flex-wrap items-center gap-x-5 gap-y-3 ${
-          props.mode !== "optimize" ? "pointer-events-none opacity-40" : ""
-        }`}
-      >
-        <Toggle label="Strip JS runtime" checked={props.stripJs} onChange={props.setStripJs} disabled={busy || props.mode !== "optimize"} />
-        <Toggle label="Optimize images (WebP)" checked={props.optimizeImages} onChange={props.setOptimizeImages} disabled={busy || props.mode !== "optimize"} />
-        <Toggle label="Self-host fonts" checked={props.selfHostFonts} onChange={props.setSelfHostFonts} disabled={busy || props.mode !== "optimize"} />
-        {props.mode === "mirror" && (
-          <span className="text-[12px] text-muted-foreground">Optimizations off in pixel-perfect mode</span>
-        )}
-        {props.mode === "hybrid" && (
-          <span className="text-[12px] text-muted-foreground">Hybrid auto-tunes these (runtime kept, images→WebP, trackers off)</span>
-        )}
-      </div>
-
-      <div className="mt-3">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-foreground/5 px-2.5 py-1 text-[12px] font-medium">
+          <span className="h-1.5 w-1.5 rounded-full bg-foreground" />
+          Hybrid mode — full fidelity, optimized
+        </span>
         <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
           Max pages
           <input
@@ -297,37 +239,6 @@ function ConvertCard(props: {
         </label>
       </div>
     </section>
-  );
-}
-
-function Toggle(props: {
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={props.disabled}
-      onClick={() => props.onChange(!props.checked)}
-      className="flex items-center gap-2 text-[13px] disabled:opacity-60"
-    >
-      <span
-        className={`flex h-4 w-7 items-center rounded-full px-0.5 transition-colors ${
-          props.checked ? "bg-foreground" : "bg-border-strong"
-        }`}
-      >
-        <span
-          className={`h-3 w-3 rounded-full bg-background transition-transform ${
-            props.checked ? "translate-x-3" : "translate-x-0"
-          }`}
-        />
-      </span>
-      <span className={props.checked ? "text-foreground" : "text-muted-foreground"}>
-        {props.label}
-      </span>
-    </button>
   );
 }
 
