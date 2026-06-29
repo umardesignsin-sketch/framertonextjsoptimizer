@@ -23,6 +23,16 @@ const jobs: Map<string, Job> = (g.__framerJobs ??= new Map());
 const MAX_JOBS = 25;
 const TTL_MS = 1000 * 60 * 60; // 1h (in-memory cache)
 const BLOB_PREFIX = "jobs/";
+const META_PREFIX = "meta/"; // small per-job metadata for the admin dashboard
+
+/** Lightweight metadata about a conversion (for the admin list). */
+export interface JobMeta {
+  id: string;
+  sourceUrl: string;
+  createdAt: number;
+  fileCount: number;
+  bytes: number;
+}
 
 function blobEnabled(): boolean {
   // @vercel/blob authenticates via EITHER an explicit BLOB_READ_WRITE_TOKEN OR
@@ -127,6 +137,23 @@ export async function saveJob(id: string, report: ConvertReport): Promise<Job> {
         contentType: "application/json",
         cacheControlMaxAge: TTL_MS / 1000,
       });
+      // Small metadata sidecar so the admin dashboard can list conversions
+      // without downloading every full bundle.
+      const meta: JobMeta = {
+        id,
+        sourceUrl: report.sourceUrl,
+        createdAt: job.createdAt,
+        fileCount: report.files.length,
+        bytes: report.files.reduce(
+          (n, f) => n + (f.binary ? f.binary.length : Buffer.byteLength(f.content || "")),
+          0
+        ),
+      };
+      await put(`${META_PREFIX}${id}.json`, JSON.stringify(meta), {
+        access: "private",
+        addRandomSuffix: false,
+        contentType: "application/json",
+      });
       void trimBlob();
     } catch (err) {
       // Don't fail the conversion if the bundle can't be persisted; the warm
@@ -152,6 +179,55 @@ export async function getJob(id: string): Promise<Job | undefined> {
     return job;
   } catch {
     return undefined;
+  }
+}
+
+/** List recent conversions (newest first) for the admin dashboard. */
+export async function listJobs(): Promise<JobMeta[]> {
+  if (!blobEnabled()) {
+    return [...jobs.values()]
+      .map((j) => ({
+        id: j.id,
+        sourceUrl: j.report.sourceUrl,
+        createdAt: j.createdAt,
+        fileCount: j.report.files.length,
+        bytes: 0,
+      }))
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+  try {
+    const { blobs } = await list({ prefix: META_PREFIX });
+    const metas = await Promise.all(
+      blobs.map(async (b) => {
+        try {
+          const r = await get(b.pathname, { access: "private" });
+          if (!r || r.statusCode !== 200 || !r.stream) return null;
+          return JSON.parse(await new Response(r.stream).text()) as JobMeta;
+        } catch {
+          return null;
+        }
+      })
+    );
+    return metas
+      .filter((m): m is JobMeta => !!m)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  } catch {
+    return [];
+  }
+}
+
+/** Delete a conversion (bundle + metadata) from memory and Blob. */
+export async function deleteJob(id: string): Promise<void> {
+  jobs.delete(id);
+  if (!blobEnabled()) return;
+  try {
+    const [{ blobs: a }, { blobs: b }] = await Promise.all([
+      list({ prefix: `${BLOB_PREFIX}${id}.json` }),
+      list({ prefix: `${META_PREFIX}${id}.json` }),
+    ]);
+    await Promise.all([...a, ...b].map((x) => del(x.url).catch(() => {})));
+  } catch {
+    /* non-fatal */
   }
 }
 
