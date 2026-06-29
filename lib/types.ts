@@ -56,6 +56,36 @@ export interface ConvertReport {
  */
 export type ConvertMode = "optimize" | "mirror" | "hybrid";
 
+/**
+ * Opt-in mobile performance optimizations. All default false — when every flag
+ * is false the conversion output is byte-identical to before these were added.
+ * Applied as injected CSS (+ aggressive image encoding) scoped to mobile, so
+ * desktop fidelity is untouched.
+ */
+export interface MobileOptimizations {
+  /** Disable Framer motion animations below the mobile breakpoint. */
+  removeAnimations: boolean;
+  /** Remove character/word/reveal text-appear effects on mobile. */
+  removeTextEffects: boolean;
+  /** Remove viewport/IntersectionObserver scroll-triggered animations on mobile. */
+  removeScrollAnimations: boolean;
+  /** Respect prefers-reduced-motion and reduce heavy motion. */
+  reduceMotion: boolean;
+  /** Encode images more aggressively (lower-quality WebP, smaller payload). */
+  aggressiveImages: boolean;
+  /** Master switch: apply the most aggressive safe mobile optimizations. */
+  prioritizeMobileScore: boolean;
+}
+
+export const NO_MOBILE_OPT: MobileOptimizations = {
+  removeAnimations: false,
+  removeTextEffects: false,
+  removeScrollAnimations: false,
+  reduceMotion: false,
+  aggressiveImages: false,
+  prioritizeMobileScore: false,
+};
+
 export interface ConvertOptions {
   /** Conversion strategy. See ConvertMode. */
   mode: ConvertMode;
@@ -76,6 +106,8 @@ export interface ConvertOptions {
   maxImages: number;
   /** Self-host background/inline videos up to this size; larger stay on CDN. */
   maxVideoBytes: number;
+  /** Opt-in mobile performance optimizations (all default off). */
+  mobileOpt: MobileOptimizations;
 }
 
 export const DEFAULT_OPTIONS: ConvertOptions = {
@@ -87,4 +119,5 @@ export const DEFAULT_OPTIONS: ConvertOptions = {
   maxPages: 20,
   maxImages: 400,
   maxVideoBytes: 12_000_000,
+  mobileOpt: { ...NO_MOBILE_OPT },
 };

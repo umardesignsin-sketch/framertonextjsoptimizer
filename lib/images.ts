@@ -72,7 +72,8 @@ export function isOptimizableImage(url: string): boolean {
 /** Re-encode a raster image to WebP, downscaling to MAX_WIDTH. Returns null on failure. */
 export async function optimizeToWebp(
   url: string,
-  buffer: Buffer
+  buffer: Buffer,
+  quality = 78
 ): Promise<OptimizedImage | null> {
   try {
     const img = sharp(buffer, { animated: true });
@@ -81,7 +82,7 @@ export async function optimizeToWebp(
     if (meta.width && meta.width > MAX_WIDTH) {
       pipeline = pipeline.resize({ width: MAX_WIDTH, withoutEnlargement: true });
     }
-    const out = await pipeline.webp({ quality: 78, effort: 4 }).toBuffer();
+    const out = await pipeline.webp({ quality, effort: 4 }).toBuffer();
     return {
       localPath: `/assets/img/${hashName(url)}.webp`,
       buffer: out,
