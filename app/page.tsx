@@ -270,6 +270,8 @@ function Results({
     imgStat && imgStat.before > 0
       ? Math.round((1 - imgStat.after / imgStat.before) * 100)
       : 0;
+  // Shared so the comparison can use the real deployed URL as its "after".
+  const [deployedUrl, setDeployedUrl] = useState<string | null>(null);
 
   return (
     <div className="mt-8 space-y-6">
@@ -359,9 +361,9 @@ function Results({
         </a>
       </div>
 
-      <ScoreCompare originalUrl={report.sourceUrl} jobId={jobId} />
+      <ScoreCompare originalUrl={report.sourceUrl} jobId={jobId} deployedUrl={deployedUrl} />
 
-      <DeployPanel jobId={jobId} />
+      <DeployPanel jobId={jobId} onDeployed={setDeployedUrl} />
     </div>
   );
 }
@@ -389,10 +391,19 @@ function lhAvg(s: LhScores): number {
   return Math.round((s.performance + s.seo + s.accessibility + s.bestPractices) / 4);
 }
 
-function ScoreCompare({ originalUrl, jobId }: { originalUrl: string; jobId: string }) {
+function ScoreCompare({
+  originalUrl,
+  jobId,
+  deployedUrl,
+}: {
+  originalUrl: string;
+  jobId: string;
+  deployedUrl?: string | null;
+}) {
   const previewUrl =
     typeof window !== "undefined" ? `${window.location.origin}/api/preview/${jobId}/` : "";
   const [convertedUrl, setConvertedUrl] = useState(previewUrl);
+  const canUseDeployed = !!deployedUrl && deployedUrl !== convertedUrl;
   const [strategy, setStrategy] = useState<"mobile" | "desktop">("desktop");
   const [before, setBefore] = useState<LhScores | null>(null);
   const [after, setAfter] = useState<LhScores | null>(null);
@@ -470,6 +481,15 @@ function ScoreCompare({ originalUrl, jobId }: { originalUrl: string; jobId: stri
           {loading ? "Measuring…" : "Compare"}
         </button>
       </div>
+
+      {canUseDeployed && (
+        <button
+          onClick={() => setConvertedUrl(deployedUrl!)}
+          className="mt-2 text-[12px] font-medium text-foreground underline"
+        >
+          Use deployed URL for an accurate “after” →
+        </button>
+      )}
 
       {loading && (
         <p className="mt-3 animate-pulse text-[13px] text-muted-foreground">
@@ -554,7 +574,13 @@ function StatCard({
   );
 }
 
-function DeployPanel({ jobId }: { jobId: string }) {
+function DeployPanel({
+  jobId,
+  onDeployed,
+}: {
+  jobId: string;
+  onDeployed?: (url: string) => void;
+}) {
   const [provider, setProvider] = useState<"netlify" | "vercel">("netlify");
   const [token, setToken] = useState("");
   const [name, setName] = useState("");
@@ -582,6 +608,7 @@ function DeployPanel({ jobId }: { jobId: string }) {
       if (!res.ok) throw new Error(data.error || "Deploy failed");
       setResult(data);
       setState("done");
+      if (data?.url) onDeployed?.(data.url);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Deploy failed");
       setState("error");
