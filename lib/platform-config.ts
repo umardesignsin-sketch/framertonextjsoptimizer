@@ -21,10 +21,16 @@ function vercelJson(): string {
           headers: [{ key: "Cache-Control", value: IMMUTABLE }],
         },
         {
-          // HTML: cache at the edge but let it revalidate so content stays fresh.
+          // HTML: let the CDN cache it (fast TTFB) but the browser revalidate.
+          // `max-age=0, must-revalidate` previously blocked Vercel's edge cache,
+          // which made Vercel score worse than Netlify (slower TTFB/LCP). Vercel
+          // purges this automatically on each new deploy, so it stays fresh.
           source: "/(.*)",
           headers: [
-            { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
+            {
+              key: "Cache-Control",
+              value: "public, max-age=0, s-maxage=86400, stale-while-revalidate=604800",
+            },
             { key: "X-Content-Type-Options", value: "nosniff" },
           ],
         },

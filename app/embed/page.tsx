@@ -116,8 +116,8 @@ export default function EmbedWidget() {
       : "";
 
   return (
-    <div className="mx-auto max-w-[560px] p-4">
-      <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-[0_4px_30px_rgba(0,0,0,0.07)]">
+    <div className="mx-auto max-w-[620px] p-4">
+      <div className="flex min-h-[520px] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-[0_4px_30px_rgba(0,0,0,0.07)]">
         {/* Browser chrome */}
         <div className="relative flex items-center border-b border-border bg-foreground/[0.025] px-4 py-3">
           <div className="absolute left-4 flex gap-1.5">
@@ -130,7 +130,7 @@ export default function EmbedWidget() {
           </div>
         </div>
 
-        <div className="p-5">
+        <div className="flex flex-1 flex-col p-6">
           <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             Framer URL
           </label>
