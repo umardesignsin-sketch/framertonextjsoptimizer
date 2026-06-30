@@ -1,0 +1,78 @@
+// CMS platform — data model.
+// Phase 1: multi-tenant foundation (User, Site, Deployment). CMS content
+// entities (Page, BlogPost, Collection, Media, Nav, Forms, Seo, Settings,
+// Domain) are added in their respective phases.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum SiteStatus {
+  draft
+  converting
+  ready
+  published
+  error
+}
+
+enum DeployStatus {
+  queued
+  building
+  ready
+  error
+}
+
+/// A platform user. `id` mirrors the Clerk user id (synced via webhook).
+model User {
+  id        String   @id
+  email     String?
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sites Site[]
+}
+
+/// A converted website owned by a user. Root of all per-site CMS data, so
+/// every CMS record is isolated by `siteId` (+ ownership checks in the app).
+model Site {
+  id         String     @id @default(cuid())
+  ownerId    String
+  owner      User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name       String
+  framerUrl  String
+  /// Reference to the imported design bundle in Blob (the converter output).
+  themeRef   String?
+  status     SiteStatus @default(draft)
+  /// Netlify build hook URL used by "Publish" to trigger a rebuild.
+  buildHook  String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  deployments Deployment[]
+
+  @@index([ownerId])
+  @@index([status])
+}
+
+/// A deployment of a site to a host (Netlify first).
+model Deployment {
+  id              String       @id @default(cuid())
+  siteId          String
+  site            Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  provider        String       @default("netlify")
+  status          DeployStatus @default(queued)
+  netlifyDeployId String?
+  url             String?
+  log             String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([siteId, createdAt])
+}
