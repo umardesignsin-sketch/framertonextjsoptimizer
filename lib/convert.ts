@@ -27,7 +27,6 @@ import {
 import { seoPass } from "./seo";
 import { platformConfigFiles } from "./platform-config";
 import { optimizeImageLoading } from "./loading";
-import { mobileOptCss, imageQualityFor, injectMobileStyle } from "./mobile-opt";
 import {
   ConvertOptions,
   ConvertReport,
@@ -67,10 +66,6 @@ export async function convertSite(
   onProgress: ProgressFn = () => {}
 ): Promise<ConvertReport> {
   const opts: ConvertOptions = { ...DEFAULT_OPTIONS, ...options };
-  // Merge mobile opts so a partial object from the caller keeps the rest off.
-  opts.mobileOpt = { ...DEFAULT_OPTIONS.mobileOpt, ...(options.mobileOpt ?? {}) };
-  // CSS to inject for the selected mobile optimizations ("" when none selected).
-  const mobCss = mobileOptCss(opts.mobileOpt);
 
   // Hybrid: keep the Framer runtime (full fidelity) but optimize safe assets.
   // Force-disable the lossy transforms; keep image WebP optimization. Fonts and
@@ -129,11 +124,7 @@ export async function convertSite(
   if (opts.mode === "mirror") {
     onProgress("Mirror mode: keeping Framer runtime and all assets as-is");
     const mirrorFiles: ConvertedFile[] = [...pageHtml.entries()].map(
-      ([route, html]) => ({
-        path: routeToFilePath(route),
-        // Inject mobile-opt CSS only if the user selected any (else untouched).
-        content: injectMobileStyle(html, mobCss),
-      })
+      ([route, html]) => ({ path: routeToFilePath(route), content: html })
     );
     return {
       sourceUrl: start.toString(),
@@ -186,7 +177,7 @@ export async function convertSite(
         if (bin.status >= 400 || bin.buffer.length === 0) return;
         const result =
           isOptimizableImage(url) && !/image\/svg/i.test(bin.contentType)
-            ? await optimizeToWebp(url, bin.buffer, imageQualityFor(opts.mobileOpt))
+            ? await optimizeToWebp(url, bin.buffer)
             : copyAsset(url, bin.buffer);
         if (!result) return;
         assetMap.set(url, result.localPath);
@@ -299,10 +290,6 @@ export async function convertSite(
     altsAdded += seo.altsAdded;
     badgeRemoved = badgeRemoved || seo.badgeRemoved;
     seo.notes.forEach((n) => notes.add(n));
-
-    // Inject mobile-opt CSS last in <head> so its !important rules win the
-    // cascade. Only happens when the user selected an optimization.
-    if (mobCss) $("head").append(`<style data-mobile-opt>${mobCss}</style>`);
 
     htmlFiles.push({ path: routeToFilePath(route), content: $.html() });
   }

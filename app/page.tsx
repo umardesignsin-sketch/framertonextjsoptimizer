@@ -2,7 +2,6 @@
 
 import { useState, useRef, useCallback } from "react";
 import { SpeedCompare } from "@/components/SpeedCompare";
-import { NO_MOBILE_OPT, type MobileOptimizations } from "@/lib/types";
 
 type Stat = { label: string; before: number; after: number; unit: string };
 type PageRef = { route: string; sourceUrl: string };
@@ -36,32 +35,6 @@ export default function Home() {
   // options — the live tool runs Hybrid only (full fidelity + optimized assets).
   const mode = "hybrid" as const;
 
-  // Mobile performance optimization checklist (all off by default).
-  const [mobileOpt, setMobileOpt] = useState<MobileOptimizations>({ ...NO_MOBILE_OPT });
-  const setOpt = useCallback((key: keyof MobileOptimizations, val: boolean) => {
-    setMobileOpt((prev) => {
-      if (key === "prioritizeMobileScore") {
-        // Master switch toggles every option together.
-        return {
-          removeAnimations: val,
-          removeTextEffects: val,
-          removeScrollAnimations: val,
-          reduceMotion: val,
-          aggressiveImages: val,
-          prioritizeMobileScore: val,
-        };
-      }
-      const next = { ...prev, [key]: val };
-      next.prioritizeMobileScore =
-        next.removeAnimations &&
-        next.removeTextEffects &&
-        next.removeScrollAnimations &&
-        next.reduceMotion &&
-        next.aggressiveImages;
-      return next;
-    });
-  }, []);
-
   const logRef = useRef<HTMLDivElement>(null);
 
   const pushLine = useCallback((l: string) => {
@@ -85,7 +58,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: url.trim(),
-          options: { mode, mobileOpt },
+          options: { mode },
         }),
       });
       if (!res.body) throw new Error("No response stream");
@@ -129,21 +102,14 @@ export default function Home() {
       setError(e instanceof Error ? e.message : "Network error");
       setStatus("error");
     }
-  }, [url, status, mobileOpt, pushLine]);
+  }, [url, status, pushLine]);
 
   return (
     <div className="min-h-screen w-full">
       <Header />
       <main className="mx-auto max-w-5xl px-5 pb-24">
         <Hero />
-        <ConvertCard
-          url={url}
-          setUrl={setUrl}
-          status={status}
-          convert={convert}
-          mobileOpt={mobileOpt}
-          setOpt={setOpt}
-        />
+        <ConvertCard url={url} setUrl={setUrl} status={status} convert={convert} />
 
         {(status === "converting" || lines.length > 0) && (
           <LogPane lines={lines} logRef={logRef} active={status === "converting"} />
@@ -161,7 +127,6 @@ export default function Home() {
             jobId={jobId}
             device={device}
             setDevice={setDevice}
-            mobileOpt={mobileOpt}
           />
         )}
       </main>
@@ -227,8 +192,6 @@ function ConvertCard(props: {
   setUrl: (v: string) => void;
   status: Status;
   convert: () => void;
-  mobileOpt: MobileOptimizations;
-  setOpt: (key: keyof MobileOptimizations, val: boolean) => void;
 }) {
   const busy = props.status === "converting";
   return (
@@ -258,130 +221,6 @@ function ConvertCard(props: {
           <span className="h-1.5 w-1.5 rounded-full bg-foreground" />
           Hybrid mode — full fidelity, optimized
         </span>
-      </div>
-
-      <Checklist mobileOpt={props.mobileOpt} setOpt={props.setOpt} disabled={busy} />
-    </section>
-  );
-}
-
-const CHECKLIST: {
-  key: keyof MobileOptimizations;
-  label: string;
-  help: string;
-}[] = [
-  {
-    key: "removeAnimations",
-    label: "Remove animations on mobile devices",
-    help: "Disables Framer motion animations below the mobile breakpoint. Desktop animations are preserved.",
-  },
-  {
-    key: "removeTextEffects",
-    label: "Remove text appear effects on mobile",
-    help: "Drops character-by-character, word-by-word and reveal text animations on mobile. Normal text rendering is kept.",
-  },
-  {
-    key: "removeScrollAnimations",
-    label: "Remove scroll-triggered animations on mobile",
-    help: "Removes viewport / IntersectionObserver scroll-reveal animations on mobile.",
-  },
-  {
-    key: "reduceMotion",
-    label: "Reduce motion for mobile users",
-    help: "Respects prefers-reduced-motion and reduces heavy motion effects.",
-  },
-  {
-    key: "aggressiveImages",
-    label: "Optimize all images aggressively",
-    help: "Smaller WebP encoding + lazy loading to cut image payload and reduce layout shift.",
-  },
-  {
-    key: "prioritizeMobileScore",
-    label: "Prioritize Lighthouse Mobile Score",
-    help: "Master switch — applies the most aggressive safe optimizations (enables all of the above).",
-  },
-];
-
-function Checklist({
-  mobileOpt,
-  setOpt,
-  disabled,
-}: {
-  mobileOpt: MobileOptimizations;
-  setOpt: (key: keyof MobileOptimizations, val: boolean) => void;
-  disabled: boolean;
-}) {
-  return (
-    <div className="mt-5 rounded-lg border border-border bg-muted/40 p-4">
-      <h3 className="text-[13px] font-semibold">Performance optimization checklist</h3>
-      <p className="mt-0.5 text-[12px] text-muted-foreground">
-        Optional — these mainly improve <span className="font-medium">mobile</span>{" "}
-        performance. Desktop output is unaffected. Choose before converting.
-      </p>
-      <ul className="mt-3 space-y-2.5">
-        {CHECKLIST.map((item) => {
-          const checked = mobileOpt[item.key];
-          return (
-            <li key={item.key}>
-              <label className="flex cursor-pointer items-start gap-2.5">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  disabled={disabled}
-                  onChange={(e) => setOpt(item.key, e.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 accent-foreground disabled:opacity-50"
-                />
-                <span>
-                  <span className="block text-[13px] font-medium leading-tight">
-                    {item.label}
-                  </span>
-                  <span className="mt-0.5 block text-[12px] leading-snug text-muted-foreground">
-                    {item.help}
-                  </span>
-                </span>
-              </label>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-function OptimizationSummary({ mobileOpt }: { mobileOpt: MobileOptimizations }) {
-  const selected = CHECKLIST.filter((c) => mobileOpt[c.key]);
-  if (selected.length === 0) return null;
-  return (
-    <section className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
-      <h2 className="text-[15px] font-semibold">Performance optimizations applied</h2>
-      <div className="mt-3 grid gap-5 sm:grid-cols-2">
-        <div>
-          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Selected optimizations
-          </div>
-          <ul className="mt-1.5 space-y-1 text-[13px]">
-            {selected.map((c) => (
-              <li key={c.key} className="flex gap-2">
-                <span className="text-emerald-600">✓</span>
-                {c.label}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Expected impact
-          </div>
-          <ul className="mt-1.5 space-y-1 text-[13px]">
-            <li>Faster mobile rendering</li>
-            <li>Reduced JavaScript execution</li>
-            <li>Lower layout shifts</li>
-            <li>Improved Lighthouse Mobile Performance</li>
-          </ul>
-          <p className="mt-2 text-[11.5px] text-muted-foreground">
-            This is an estimate only, not a guaranteed score.
-          </p>
-        </div>
       </div>
     </section>
   );
@@ -426,13 +265,11 @@ function Results({
   jobId,
   device,
   setDevice,
-  mobileOpt,
 }: {
   report: Report;
   jobId: string;
   device: "desktop" | "mobile";
   setDevice: (d: "desktop" | "mobile") => void;
-  mobileOpt: MobileOptimizations;
 }) {
   const imgStat = report.stats.find((s) => s.label === "Image payload");
   const imgPct =
@@ -444,8 +281,6 @@ function Results({
 
   return (
     <div className="mt-8 space-y-6">
-      <OptimizationSummary mobileOpt={mobileOpt} />
-
       {/* stat grid */}
       <section>
         <h2 className="mb-3 text-[15px] font-semibold">Measured results</h2>
