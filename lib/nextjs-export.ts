@@ -43,7 +43,12 @@ function packageJson(name: string): string {
       private: true,
       scripts: { dev: "next dev", build: "next build", start: "next start" },
       dependencies: { next: "14.2.35", react: "^18.3.1", "react-dom": "^18.3.1" },
-      devDependencies: { "@types/node": "^20", typescript: "^5" },
+      devDependencies: {
+        "@types/node": "^20",
+        "@types/react": "^18.3.1",
+        "@types/react-dom": "^18.3.1",
+        typescript: "^5",
+      },
     },
     null,
     2
