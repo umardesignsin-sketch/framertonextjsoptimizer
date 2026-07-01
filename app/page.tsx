@@ -147,6 +147,9 @@ function Header() {
           </span>
         </div>
         <nav className="flex items-center gap-5 text-[13px]">
+          <a href="/nextjs" className="text-muted-foreground hover:text-foreground">
+            Pure Next.js
+          </a>
           <a href="/speed" className="text-muted-foreground hover:text-foreground">
             PageSpeed checker
           </a>
