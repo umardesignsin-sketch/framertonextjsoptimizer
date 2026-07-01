@@ -116,8 +116,8 @@ export default function EmbedWidget() {
       : "";
 
   return (
-    <div className="mx-auto max-w-[620px] p-4">
-      <div className="flex min-h-[520px] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-[0_4px_30px_rgba(0,0,0,0.07)]">
+    <div className="w-full p-4">
+      <div className="flex min-h-[520px] w-full flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-[0_4px_30px_rgba(0,0,0,0.07)]">
         {/* Browser chrome */}
         <div className="relative flex items-center border-b border-border bg-foreground/[0.025] px-4 py-3">
           <div className="absolute left-4 flex gap-1.5">
