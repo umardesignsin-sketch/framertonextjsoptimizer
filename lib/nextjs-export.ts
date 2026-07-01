@@ -1,87 +1,39 @@
-// Convert a Framer URL into a real, deployable Next.js project.
+// Convert a Framer URL into a real, deployable Next.js project — accurately.
 //
-// Unlike the hybrid converter (which outputs an optimized static HTML bundle),
-// this emits an actual Next.js App Router project: one `app/<route>/page.tsx`
-// per Framer page, rendering the page's markup, with the Framer design CSS
-// inlined per page. Framer's JS runtime is stripped and appear-elements are
-// revealed so the design renders statically. Assets load from Framer's CDN.
-//
-// Priority here is "it IS Next.js and deploys", not maximum Lighthouse.
+// Each Framer page becomes a statically-prerendered Next.js Route Handler
+// (`app/<route>/route.ts`) that returns the page's ORIGINAL HTML verbatim,
+// Framer runtime intact. So the deployed Next.js site renders identically to
+// the original — full content, animations, interactivity — because Framer's own
+// runtime + CDN assets do the work. (A stripped/static render loses animations
+// and hides appear-animated content; the hybrid converter is the optimized path.)
 import { fetchText, normalizeUrl } from "./fetch";
-import { load, detectFramer, extractMeta, type Doc, type PageMeta } from "./parse";
+import { load, detectFramer, extractMeta } from "./parse";
 import { discoverPages, normalizeRoute } from "./discover";
-import { stripRuntime } from "./strip-js";
 import type { ConvertReport, ConvertedFile } from "./types";
 
 export type ProgressFn = (msg: string) => void;
 
-/** Route path -> `app/.../page.tsx` file path. */
-function pageFilePath(route: string): string {
+/** Route path -> `app/.../route.ts` file path. */
+function routeFilePath(route: string): string {
   const r = normalizeRoute(route).replace(/^\/+/, "");
-  return r ? `app/${r}/page.tsx` : "app/page.tsx";
+  return r ? `app/${r}/route.ts` : "app/route.ts";
 }
 
-/** Pull all <style> blocks (the Framer design CSS) and the <body> markup. */
-function extractStylesAndBody($: Doc): { styles: string; body: string } {
-  let styles = "";
-  $("style").each((_, el) => {
-    styles += ($.html(el) || "") + "\n";
+/** A statically-prerendered route handler that returns the page HTML as-is. */
+function routeHandler(html: string): string {
+  return `// Auto-generated from the original Framer page. Served verbatim so the
+// Framer runtime + CDN assets render it identically to the source.
+export const dynamic = "force-static";
+
+const HTML = ${JSON.stringify(html)};
+
+export function GET() {
+  return new Response(HTML, {
+    headers: { "content-type": "text/html; charset=utf-8" },
   });
-  const body = $("body").html() || "";
-  return { styles, body };
-}
-
-function metadataLiteral(meta: PageMeta): string {
-  const md: Record<string, unknown> = {};
-  if (meta.title) md.title = meta.title;
-  if (meta.description) md.description = meta.description;
-  if (meta.ogTitle || meta.ogDescription || meta.ogImage) {
-    md.openGraph = {
-      ...(meta.ogTitle ? { title: meta.ogTitle } : {}),
-      ...(meta.ogDescription ? { description: meta.ogDescription } : {}),
-      ...(meta.ogImage ? { images: [meta.ogImage] } : {}),
-    };
-  }
-  return JSON.stringify(md, null, 2);
-}
-
-function pageComponent(meta: PageMeta, styles: string, body: string): string {
-  // Styles + body are injected as static HTML. Styles are placed before the
-  // markup so the design renders. Server component → static (SSG).
-  const html = styles + body;
-  return `import type { Metadata } from "next";
-
-export const metadata: Metadata = ${metadataLiteral(meta)};
-
-export default function Page() {
-  return <div dangerouslySetInnerHTML={{ __html: ${JSON.stringify(html)} }} />;
 }
 `;
 }
-
-function layoutTsx(meta: PageMeta): string {
-  const lang = meta.lang || "en";
-  return `import type { Metadata } from "next";
-import "./globals.css";
-
-export const metadata: Metadata = {
-  title: ${JSON.stringify(meta.title || "Site")},
-  description: ${JSON.stringify(meta.description || "")},
-};
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang=${JSON.stringify(lang)}>
-      <body>{children}</body>
-    </html>
-  );
-}
-`;
-}
-
-const GLOBALS_CSS = `html, body { margin: 0; padding: 0; }
-* { box-sizing: border-box; }
-`;
 
 function packageJson(name: string): string {
   return JSON.stringify(
@@ -91,12 +43,7 @@ function packageJson(name: string): string {
       private: true,
       scripts: { dev: "next dev", build: "next build", start: "next start" },
       dependencies: { next: "14.2.35", react: "^18.3.1", "react-dom": "^18.3.1" },
-      devDependencies: {
-        "@types/node": "^20",
-        "@types/react": "^18",
-        "@types/react-dom": "^18",
-        typescript: "^5",
-      },
+      devDependencies: { "@types/node": "^20", typescript: "^5" },
     },
     null,
     2
@@ -104,12 +51,7 @@ function packageJson(name: string): string {
 }
 
 const NEXT_CONFIG = `/** @type {import('next').NextConfig} */
-const nextConfig = {
-  reactStrictMode: true,
-  images: {
-    remotePatterns: [{ protocol: "https", hostname: "**" }],
-  },
-};
+const nextConfig = { reactStrictMode: true };
 module.exports = nextConfig;
 `;
 
@@ -118,21 +60,18 @@ const TSCONFIG = JSON.stringify(
     compilerOptions: {
       target: "ES2021",
       lib: ["dom", "dom.iterable", "esnext"],
-      allowJs: true,
-      skipLibCheck: true,
-      strict: true,
-      noEmit: true,
-      esModuleInterop: true,
       module: "esnext",
       moduleResolution: "bundler",
+      strict: true,
+      skipLibCheck: true,
+      noEmit: true,
+      esModuleInterop: true,
       resolveJsonModule: true,
       isolatedModules: true,
-      jsx: "preserve",
       incremental: true,
       plugins: [{ name: "next" }],
-      paths: { "@/*": ["./*"] },
     },
-    include: ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+    include: ["next-env.d.ts", "**/*.ts", ".next/types/**/*.ts"],
     exclude: ["node_modules"],
   },
   null,
@@ -160,13 +99,14 @@ npm run dev      # http://localhost:3000
 npm run build && npm start
 \`\`\`
 
-## Notes
+## How it works
 
-- Each Framer page is an \`app/<route>/page.tsx\` rendering the page's markup;
-  the Framer design CSS is inlined per page.
-- Framer's JS runtime was stripped, so this renders the design statically
-  (no Framer scroll/appear animations). Images/fonts load from Framer's CDN.
-- Edit the components/markup as normal React. Deploy to Vercel, Netlify, etc.
+Each page is a statically-prerendered Next.js **route handler**
+(\`app/<route>/route.ts\`) that returns the original Framer HTML verbatim, with
+Framer's runtime intact. So the site renders **identically to the original** —
+full content, animations, interactivity — with assets loading from Framer's CDN.
+
+Deploy to Vercel/Netlify like any Next.js app.
 `;
 }
 
@@ -223,11 +163,7 @@ export async function convertToNextJs(
   onProgress("Generating Next.js project…");
   const files: ConvertedFile[] = [];
   for (const [route, html] of pageHtml.entries()) {
-    const $ = load(html);
-    stripRuntime($, { hamburger: false }); // strip Framer JS + reveal content
-    const meta = extractMeta($);
-    const { styles, body } = extractStylesAndBody($);
-    files.push({ path: pageFilePath(route), content: pageComponent(meta, styles, body) });
+    files.push({ path: routeFilePath(route), content: routeHandler(html) });
   }
 
   const host = (() => {
@@ -238,8 +174,6 @@ export async function convertToNextJs(
     }
   })();
 
-  files.push({ path: "app/layout.tsx", content: layoutTsx(siteMeta) });
-  files.push({ path: "app/globals.css", content: GLOBALS_CSS });
   files.push({ path: "package.json", content: packageJson(`${host}-nextjs`) });
   files.push({ path: "next.config.js", content: NEXT_CONFIG });
   files.push({ path: "tsconfig.json", content: TSCONFIG });
@@ -255,8 +189,8 @@ export async function convertToNextJs(
     })),
     stats: [{ label: "Next.js routes", before: pageCount, after: pageCount, unit: "count" }],
     notes: [
-      "pure Next.js App Router project — each Framer page is an app/ route",
-      "Framer JS stripped (renders statically); assets load from Framer's CDN",
+      "pure Next.js App Router project — one statically-prerendered route per Framer page",
+      "renders identically to the original (Framer runtime kept, assets on CDN)",
       "run: npm install && npm run build",
     ],
     files,

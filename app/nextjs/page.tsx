@@ -104,13 +104,14 @@ export default function NextJsConverter() {
           <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             Paste a published Framer URL and get back a real, deployable{" "}
             <span className="font-medium text-foreground">Next.js App Router project</span> —
-            one <code>app/&lt;route&gt;/page.tsx</code> per page, editable as normal React.
+            one statically-prerendered route per page that renders{" "}
+            <span className="font-medium text-foreground">identically to the original</span>.
           </p>
           <div className="mt-4 rounded-lg border border-border bg-muted px-4 py-3 text-[13px] leading-relaxed text-muted-foreground">
-            <span className="font-medium text-foreground">Note:</span> this prioritizes giving
-            you real Next.js code over the Lighthouse score. Framer&apos;s JS runtime is stripped
-            (renders the design statically, no Framer animations); assets load from Framer&apos;s
-            CDN. For the highest score, use the{" "}
+            <span className="font-medium text-foreground">Note:</span> this prioritizes accuracy
+            and real Next.js code over the Lighthouse score. Framer&apos;s runtime is kept, so all
+            content, animations, and interactivity render exactly like the source (assets load
+            from Framer&apos;s CDN). For the highest score instead, use the{" "}
             <Link href="/" className="underline">Hybrid converter</Link>.
           </div>
         </section>
