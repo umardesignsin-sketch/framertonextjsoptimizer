@@ -2,6 +2,10 @@
 // Phase 1: multi-tenant foundation (User, Site, Deployment). CMS content
 // entities (Page, BlogPost, Collection, Media, Nav, Forms, Seo, Settings,
 // Domain) are added in their respective phases.
+//
+// CmsConnection/Collection/CollectionItem (below) are a one-way import of a
+// Framer project's own CMS via Framer's Server API (framer-api) — read-only
+// mirror; editing happens only in our admin panel, never written back to Framer.
 
 generator client {
   provider = "prisma-client-js"
@@ -56,6 +60,7 @@ model Site {
   updatedAt  DateTime   @updatedAt
 
   deployments Deployment[]
+  cms         CmsConnection?
 
   @@index([ownerId])
   @@index([status])
@@ -75,4 +80,67 @@ model Deployment {
   updatedAt       DateTime     @updatedAt
 
   @@index([siteId, createdAt])
+}
+
+enum CmsSyncStatus {
+  idle
+  syncing
+  synced
+  error
+}
+
+/// A one-way link to a Framer project's CMS via Framer's Server API
+/// (https://www.framer.com/developers/server-api-quick-start). The API key is
+/// encrypted at rest (lib/crypto.ts) and never sent to the client.
+model CmsConnection {
+  id           String        @id @default(cuid())
+  siteId       String        @unique
+  site         Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  /// Framer project URL, e.g. https://framer.com/projects/Sites--aabbccddeeff
+  projectUrl   String
+  apiKeyEnc    String
+  status       CmsSyncStatus @default(idle)
+  error        String?
+  lastSyncedAt DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  collections Collection[]
+}
+
+/// A CMS collection mirrored from Framer (read-only snapshot; re-synced on demand).
+model Collection {
+  id           String        @id @default(cuid())
+  connectionId String
+  connection   CmsConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  /// Framer's own collection id.
+  framerId     String
+  name         String
+  /// Framer field definitions ({id, name, type}[]) as returned by the Server API.
+  fields       Json
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  items CollectionItem[]
+
+  @@unique([connectionId, framerId])
+  @@index([connectionId])
+}
+
+/// One item within a mirrored collection. Edits here stay local — never
+/// written back to the source Framer project.
+model CollectionItem {
+  id           String     @id @default(cuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  /// Framer's own item id.
+  framerId     String
+  slug         String?
+  /// Field values keyed by Framer field id, as returned by the Server API.
+  data         Json
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([collectionId, framerId])
+  @@index([collectionId])
 }
