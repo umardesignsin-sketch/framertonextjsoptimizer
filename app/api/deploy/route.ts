@@ -1,7 +1,11 @@
-// POST /api/deploy  { jobId, provider: "netlify"|"vercel", token, name?, teamId? }
+// POST /api/deploy  { jobId, provider: "netlify"|"vercel", token, name?, teamId?, save? }
+// `save: true` (opt-in) stores the deploy token encrypted on the Deployment
+// row so the AI editor can push future changes to the same live site.
 import { getJob } from "@/lib/store";
 import { deployNetlify, deployVercel } from "@/lib/deploy";
 import { db, dbConfigured } from "@/lib/db";
+import { auth } from "@/lib/auth";
+import { encryptSecret, encryptionConfigured } from "@/lib/crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +18,7 @@ export async function POST(request: Request) {
     token?: string;
     name?: string;
     teamId?: string;
+    save?: boolean;
   } = {};
   try {
     body = await request.json();
@@ -21,7 +26,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { jobId, provider, token, name, teamId } = body;
+  const { jobId, provider, token, name, teamId, save } = body;
   if (!jobId || !provider || !token) {
     return Response.json(
       { error: "Missing jobId, provider, or token" },
@@ -48,11 +53,24 @@ export async function POST(request: Request) {
     }
 
     if (dbConfigured()) {
-      const site = await db.site.findFirst({ where: { themeRef: jobId } });
+      // Only attach the deployment (and optionally the token) to a site the
+      // logged-in caller owns — themeRef alone must not leak across users.
+      const session = await auth().catch(() => null);
+      const site = session?.user?.id
+        ? await db.site.findFirst({ where: { themeRef: jobId, ownerId: session.user.id } })
+        : null;
       if (site) {
+        const storeToken = !!save && encryptionConfigured();
         await db.deployment
           .create({
-            data: { siteId: site.id, provider: result.provider, status: "ready", url: result.url },
+            data: {
+              siteId: site.id,
+              provider: result.provider,
+              status: "ready",
+              url: result.url,
+              externalId: result.externalId || null,
+              tokenEnc: storeToken ? encryptSecret(token) : null,
+            },
           })
           .catch(() => {});
       }

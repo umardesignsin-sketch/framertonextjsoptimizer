@@ -418,6 +418,7 @@ function DeployPanel({
   const [provider, setProvider] = useState<"netlify" | "vercel">("netlify");
   const [token, setToken] = useState("");
   const [name, setName] = useState("");
+  const [save, setSave] = useState(false);
   const [state, setState] = useState<"idle" | "deploying" | "done" | "error">("idle");
   const [result, setResult] = useState<{ url: string; adminUrl?: string } | null>(null);
   const [err, setErr] = useState("");
@@ -436,6 +437,7 @@ function DeployPanel({
           provider,
           token: token.trim(),
           name: name.trim() || undefined,
+          save,
         }),
       });
       const data = await res.json();
@@ -453,8 +455,9 @@ function DeployPanel({
     <section className="rounded-xl border border-border bg-background p-5">
       <h3 className="text-[15px] font-semibold">Deploy</h3>
       <p className="mt-1 text-[13px] text-muted-foreground">
-        Deploys the static bundle to a fresh site using your own token. The token is
-        sent once to your host&apos;s API and never stored.
+        Deploys the static bundle to a fresh site using your own token. By default the
+        token is sent once to your host&apos;s API and never stored — unless you opt in
+        below to enable AI edits.
       </p>
 
       <div className="mt-4 flex flex-wrap items-end gap-3">
@@ -503,6 +506,20 @@ function DeployPanel({
           {state === "deploying" ? "Deploying…" : "Deploy"}
         </button>
       </div>
+
+      <label className="mt-3 flex items-start gap-2 text-[12.5px] text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={save}
+          onChange={(e) => setSave(e.target.checked)}
+          className="mt-0.5"
+        />
+        <span>
+          <span className="font-medium text-foreground">Save deploy for AI edits</span> — stores
+          this token encrypted (AES-256) so the AI editor on your dashboard can push future
+          changes to this same live site. Requires being logged in.
+        </span>
+      </label>
 
       {state === "done" && result && (
         <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px]">

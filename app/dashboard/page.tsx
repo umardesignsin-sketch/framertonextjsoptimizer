@@ -12,7 +12,7 @@ export default async function DashboardPage() {
   const sites = await db.site.findMany({
     where: { ownerId: userId },
     orderBy: { createdAt: "desc" },
-    include: { deployments: { orderBy: { createdAt: "desc" }, take: 5 } },
+    include: { deployments: { orderBy: { createdAt: "desc" }, take: 10 } },
   });
 
   return (
@@ -26,7 +26,10 @@ export default async function DashboardPage() {
         status: s.status,
         themeRef: s.themeRef,
         createdAt: s.createdAt.toISOString(),
-        deployments: s.deployments.map((d) => ({
+        // Note: only a boolean about the saved token reaches the client —
+        // never the (encrypted) token itself.
+        canAutoDeploy: s.deployments.some((d) => !!d.tokenEnc && !!d.externalId),
+        deployments: s.deployments.slice(0, 5).map((d) => ({
           id: d.id,
           provider: d.provider,
           status: d.status,

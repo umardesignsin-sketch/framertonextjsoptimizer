@@ -74,6 +74,12 @@ model Deployment {
   netlifyDeployId String?
   url             String?
   log             String?
+  /// Provider-side target for redeploys: Netlify site id / Vercel project name.
+  externalId      String?
+  /// User's deploy token, AES-256-GCM encrypted (lib/crypto.ts). Stored only
+  /// when the user opts in ("save for AI edits"); enables the AI editor to
+  /// push changes back to the same live site.
+  tokenEnc        String?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 

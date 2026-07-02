@@ -8,6 +8,8 @@ export interface DeployResult {
   url: string;
   adminUrl?: string;
   provider: "netlify" | "vercel";
+  /** Redeploy target: Netlify site id / Vercel project name. */
+  externalId?: string;
 }
 
 export async function deployNetlify(
@@ -38,9 +40,24 @@ export async function deployNetlify(
 
   // 2. Zip-deploy. Netlify serves the zip contents AS-IS (no build) — exactly
   //    what we want for prebuilt static files.
+  const deploy = await netlifyZipDeploy(token, site.id, files);
+
+  return {
+    provider: "netlify",
+    url: site.ssl_url || site.url || deploy.ssl_url || "",
+    adminUrl: site.admin_url,
+    externalId: site.id,
+  };
+}
+
+async function netlifyZipDeploy(
+  token: string,
+  siteId: string,
+  files: ConvertedFile[]
+): Promise<{ ssl_url?: string; deploy_ssl_url?: string }> {
   const zip = await zipBundle(files);
   const deployRes = await fetch(
-    `https://api.netlify.com/api/v1/sites/${site.id}/deploys`,
+    `https://api.netlify.com/api/v1/sites/${siteId}/deploys`,
     {
       method: "POST",
       headers: {
@@ -55,15 +72,27 @@ export async function deployNetlify(
       `Netlify deploy failed (${deployRes.status}): ${await safeText(deployRes)}`
     );
   }
-  const deploy = (await deployRes.json()) as {
-    ssl_url?: string;
-    deploy_ssl_url?: string;
-  };
+  return (await deployRes.json()) as { ssl_url?: string; deploy_ssl_url?: string };
+}
 
+/** Redeploys updated files to an EXISTING Netlify site (same URL). */
+export async function redeployNetlify(
+  token: string,
+  siteId: string,
+  files: ConvertedFile[]
+): Promise<DeployResult> {
+  const deploy = await netlifyZipDeploy(token, siteId, files);
+  const siteRes = await fetch(`https://api.netlify.com/api/v1/sites/${siteId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const site = siteRes.ok
+    ? ((await siteRes.json()) as { ssl_url?: string; url?: string; admin_url?: string })
+    : {};
   return {
     provider: "netlify",
-    url: site.ssl_url || site.url || deploy.ssl_url || "",
+    url: site.ssl_url || site.url || deploy.ssl_url || deploy.deploy_ssl_url || "",
     adminUrl: site.admin_url,
+    externalId: siteId,
   };
 }
 
@@ -112,7 +141,20 @@ export async function deployVercel(
     adminUrl: dep.id
       ? `https://vercel.com/dashboard`
       : undefined,
+    // Deploying again with the same project name lands on the same project,
+    // so the name is the redeploy target.
+    externalId: projectName,
   };
+}
+
+/** Redeploys updated files to an EXISTING Vercel project (same project name). */
+export async function redeployVercel(
+  token: string,
+  projectName: string,
+  files: ConvertedFile[],
+  teamId?: string
+): Promise<DeployResult> {
+  return deployVercel(token, files, projectName, teamId);
 }
 
 async function safeText(res: Response): Promise<string> {
