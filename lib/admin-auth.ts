@@ -1,8 +1,6 @@
 // Simple single-password gate for the admin panel.
 // Set ADMIN_PASSWORD in the environment. The session cookie stores a hash of
 // the password (not the password itself); middleware re-derives and compares.
-import { cookies } from "next/headers";
-
 export const ADMIN_COOKIE = "fno_admin";
 
 export function adminPassword(): string | undefined {
@@ -21,10 +19,4 @@ export async function isValidSession(cookieValue: string | undefined): Promise<b
   const pw = adminPassword();
   if (!pw || !cookieValue) return false;
   return cookieValue === (await sessionToken(pw));
-}
-
-/** For use inside API route handlers (not covered by proxy.ts, which only matches /admin/*). */
-export async function requireAdmin(): Promise<boolean> {
-  const jar = await cookies();
-  return isValidSession(jar.get(ADMIN_COOKIE)?.value);
 }
