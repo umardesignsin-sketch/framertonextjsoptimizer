@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { SpeedCompare } from "@/components/SpeedCompare";
+import { AuthNavLink } from "@/components/AuthNavLink";
 
 type Stat = { label: string; before: number; after: number; unit: string };
 type PageRef = { route: string; sourceUrl: string };
@@ -161,6 +162,7 @@ function Header() {
           >
             About Lighthouse ↗
           </a>
+          <AuthNavLink />
         </nav>
       </div>
     </header>

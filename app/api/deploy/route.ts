@@ -1,6 +1,7 @@
 // POST /api/deploy  { jobId, provider: "netlify"|"vercel", token, name?, teamId? }
 import { getJob } from "@/lib/store";
 import { deployNetlify, deployVercel } from "@/lib/deploy";
+import { db, dbConfigured } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +46,18 @@ export async function POST(request: Request) {
     if (!result) {
       return Response.json({ error: "Unknown provider" }, { status: 400 });
     }
+
+    if (dbConfigured()) {
+      const site = await db.site.findFirst({ where: { themeRef: jobId } });
+      if (site) {
+        await db.deployment
+          .create({
+            data: { siteId: site.id, provider: result.provider, status: "ready", url: result.url },
+          })
+          .catch(() => {});
+      }
+    }
+
     return Response.json(result);
   } catch (e) {
     return Response.json(

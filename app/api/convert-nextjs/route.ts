@@ -3,6 +3,9 @@
 // Produces a real, deployable Next.js project (downloadable via /api/download).
 import { convertToNextJs } from "@/lib/nextjs-export";
 import { makeJobId, saveJob } from "@/lib/store";
+import { auth } from "@/lib/auth";
+import { dbConfigured } from "@/lib/db";
+import { recordConversion } from "@/lib/sites";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +30,18 @@ export async function POST(request: Request) {
         const report = await convertToNextJs(url, (msg) => send({ type: "progress", msg }));
         const jobId = makeJobId();
         await saveJob(jobId, report);
+
+        if (dbConfigured()) {
+          const session = await auth();
+          if (session?.user?.id) {
+            await recordConversion(session.user.id, {
+              sourceUrl: report.sourceUrl,
+              jobId,
+              outputKind: "nextjs",
+            }).catch(() => {});
+          }
+        }
+
         const manifest = report.files.map((f) => ({
           path: f.path,
           bytes: Buffer.byteLength(f.content || ""),

@@ -3,6 +3,9 @@
 import { convertSite } from "@/lib/convert";
 import { makeJobId, saveJob } from "@/lib/store";
 import type { ConvertOptions } from "@/lib/types";
+import { auth } from "@/lib/auth";
+import { dbConfigured } from "@/lib/db";
+import { recordConversion } from "@/lib/sites";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +32,17 @@ export async function POST(request: Request) {
         );
         const jobId = makeJobId();
         await saveJob(jobId, report);
+
+        if (dbConfigured()) {
+          const session = await auth();
+          if (session?.user?.id) {
+            await recordConversion(session.user.id, {
+              sourceUrl: report.sourceUrl,
+              jobId,
+              outputKind: "hybrid",
+            }).catch(() => {});
+          }
+        }
 
         // Slim report for the client (file manifest only, no contents).
         const manifest = report.files.map((f) => ({

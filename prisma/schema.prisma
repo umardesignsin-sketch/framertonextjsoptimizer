@@ -28,13 +28,14 @@ enum DeployStatus {
   error
 }
 
-/// A platform user. `id` mirrors the Clerk user id (synced via webhook).
+/// A platform user (email + password, via Auth.js credentials login).
 model User {
-  id        String   @id
-  email     String?
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   sites Site[]
 }
@@ -47,7 +48,9 @@ model Site {
   owner      User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   name       String
   framerUrl  String
-  /// Reference to the imported design bundle in Blob (the converter output).
+  /// "hybrid" (default converter) or "nextjs" (pure Next.js export).
+  outputKind String     @default("hybrid")
+  /// Reference to the imported design bundle in Blob (the converter output job id).
   themeRef   String?
   status     SiteStatus @default(draft)
   /// Netlify build hook URL used by "Publish" to trigger a rebuild.

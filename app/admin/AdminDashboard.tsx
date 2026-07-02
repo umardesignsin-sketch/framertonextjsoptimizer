@@ -11,7 +11,7 @@ function fmtBytes(n: number): string {
 }
 function fmtDate(ms: number): string {
   try {
-    return new Date(ms).toLocaleString();
+    return new Date(ms).toLocaleString("en-US");
   } catch {
     return "—";
   }
