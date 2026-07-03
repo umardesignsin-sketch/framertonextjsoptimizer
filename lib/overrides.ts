@@ -45,6 +45,8 @@ function attrsEqual(a: Element, b: Element): boolean {
 }
 
 /** Strip animation start-state styles so the enforced markup renders settled.
+ *  Framer appear effects animate transform (slide/scale), opacity (fade), and
+ *  filter (blur-up) — all must go or injected text renders frozen mid-effect.
  *  Elements' own styles are left alone at runtime (Framer positions elements
  *  with transforms) — only the injected fragment's inline styles are cleaned. */
 function neutralizeFragment(html: string): string {
@@ -52,7 +54,10 @@ function neutralizeFragment(html: string): string {
     const cleaned = style
       .split(";")
       .map((s: string) => s.trim())
-      .filter((s: string) => s && !/^(transform|opacity|will-change)\s*:/i.test(s))
+      .filter(
+        (s: string) =>
+          s && !/^(transform|opacity|will-change|filter|-webkit-filter)\s*:/i.test(s)
+      )
       .join("; ");
     return `style="${cleaned}"`;
   });
@@ -164,7 +169,11 @@ export function injectOverrides(html: string, overrides: Override[]): string {
   }
 
   const merged = new Map<string, Override>();
-  for (const o of [...existing, ...overrides]) merged.set(`${o.t}|${o.m}|${o.k}`, o);
+  // Re-neutralize carried-over entries too, so fragments saved by an older
+  // (less thorough) neutralizer get cleaned up on the next edit.
+  for (const o of [...existing, ...overrides]) {
+    merged.set(`${o.t}|${o.m}|${o.k}`, { ...o, h: neutralizeFragment(o.h) });
+  }
   if (merged.size === 0) return html;
 
   const script = `<script id="${SCRIPT_ID}">window.__FNO_OV__=${JSON.stringify(

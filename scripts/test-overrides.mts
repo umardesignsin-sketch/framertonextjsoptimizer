@@ -5,7 +5,7 @@ import { buildOverrides, injectOverrides } from "../lib/overrides";
 
 const original = `<!DOCTYPE html><html><head><title>T</title></head><body>
 <div id="main"><div class="framer-abc" data-framer-name="Hero">
-<h1 class="framer-h1"><span style="transform: translateY(150px); opacity: 0.001; will-change: transform">Attention</span> <span style="transform: translateY(150px)">Taken</span></h1>
+<h1 class="framer-h1"><span style="transform: translateY(150px); opacity: 0.001; will-change: transform; filter: blur(10px)">Attention</span> <span style="transform: translateY(150px); -webkit-filter: blur(10px)">Taken</span></h1>
 <p class="framer-sub">Subtitle stays.</p>
 </div><footer class="framer-foot"><span>hello@old.com</span></footer></div>
 </body></html>`;
@@ -14,8 +14,8 @@ const original = `<!DOCTYPE html><html><head><title>T</title></head><body>
 // plus a footer text change.
 const edited = original
   .replace(
-    `<span style="transform: translateY(150px); opacity: 0.001; will-change: transform">Attention</span> <span style="transform: translateY(150px)">Taken</span>`,
-    `<span style="transform: translateY(150px)">Under Command</span>`
+    `<span style="transform: translateY(150px); opacity: 0.001; will-change: transform; filter: blur(10px)">Attention</span> <span style="transform: translateY(150px); -webkit-filter: blur(10px)">Taken</span>`,
+    `<span style="transform: translateY(150px); filter: blur(10px)">Under Command</span>`
   )
   .replace("hello@old.com", "hi@new.io");
 
@@ -42,6 +42,8 @@ const checks: ReadonlyArray<readonly [string, boolean]> = [
   ["footer span recorded with old email key", !!footerOverride && footerOverride.m === "text"],
   ["transform stripped from fragments", overrides.every((o) => !/transform\s*:/.test(o.h))],
   ["opacity stripped from fragments", overrides.every((o) => !/opacity\s*:/.test(o.h))],
+  ["filter/blur stripped from fragments", overrides.every((o) => !/filter\s*:/.test(o.h))],
+  ["merged payload has no blur anywhere", parsed.every((o) => !/filter\s*:/.test(o.h))],
   ["script injected before </body>", out.includes("</script></body>")],
   ["re-edit keeps a single merged script", scriptCount === 1],
   ["merged payload keeps h1 override", parsed.some((o) => o.h.includes("Under Command"))],
