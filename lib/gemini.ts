@@ -22,6 +22,7 @@ export async function geminiJson(prompt: string): Promise<string> {
         generationConfig: {
           responseMimeType: "application/json",
           temperature: 0.2,
+          maxOutputTokens: 65536,
         },
       }),
     }

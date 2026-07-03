@@ -162,7 +162,7 @@ Below are the site's HTML documents (scripts, styles, and svg internals are omit
 RULES:
 - Reply ONLY with JSON matching: {"edits":[{"file":"<path>","find":"<exact substring>","replace":"<replacement>"}],"summary":"<one or two sentences describing what you changed>"}
 - "file" is the path WITHOUT any "(part i of n)" suffix.
-- "find" MUST be copied verbatim from the shown content (exact characters, including whitespace) and SHOULD be unique within that file. Include enough surrounding context to make it unique.
+- "find" MUST be copied verbatim from the shown content (exact characters, including whitespace) and SHOULD be unique within that file. Include enough surrounding context to make it unique, but keep each "find" under ~400 characters.
 - Framer duplicates markup for responsive breakpoints — the same text often appears several times. Every occurrence of "find" gets replaced, so prefer a "find" that covers exactly the repeated fragment you want changed everywhere.
 - Keep edits minimal and surgical. Do NOT reformat or rewrite unrelated markup.
 - Preserve all Framer attributes, classes, and structure unless the instruction requires changing them.
@@ -173,6 +173,25 @@ ${fileBlocks}`;
 
 function isRateLimit(e: unknown): boolean {
   return e instanceof Error && /\(429\)|RESOURCE_EXHAUSTED|rate/i.test(e.message);
+}
+
+/** Recovers whatever complete edit objects exist in a malformed/truncated
+ *  model response (JSON mode can get cut off at the output-token limit). */
+export function salvageEdits(raw: string): AiEdit[] {
+  const out: AiEdit[] = [];
+  // Complete {...} objects with no nested braces — an edit is exactly that.
+  const matches = raw.match(/\{(?:[^{}"]|"(?:[^"\\]|\\.)*")*\}/g) || [];
+  for (const m of matches) {
+    try {
+      const o = JSON.parse(m) as Partial<AiEdit>;
+      if (typeof o.file === "string" && typeof o.find === "string" && typeof o.replace === "string") {
+        out.push({ file: o.file, find: o.find, replace: o.replace });
+      }
+    } catch {
+      /* skip fragment */
+    }
+  }
+  return out;
 }
 
 async function callModel(prompt: string): Promise<string> {
@@ -251,19 +270,42 @@ export async function runAiEdit(
 
   const allEdits: AiEdit[] = [];
   const summaries: string[] = [];
+  let failedPasses = 0;
   for (let i = 0; i < requests.length; i++) {
     if (requests.length > 1) onProgress(`AI pass ${i + 1}/${requests.length}…`);
-    const raw = await callModel(buildPrompt(instruction, requests[i].join("\n\n")));
-    let parsed: { edits?: AiEdit[]; summary?: string };
+    let raw: string;
+    try {
+      raw = await callModel(buildPrompt(instruction, requests[i].join("\n\n")));
+    } catch (e) {
+      failedPasses++;
+      onProgress(
+        `Pass ${i + 1} failed (${e instanceof Error ? e.message.slice(0, 80) : "error"}) — continuing…`
+      );
+      continue;
+    }
+    let parsed: { edits?: AiEdit[]; summary?: string } | null = null;
     try {
       parsed = JSON.parse(raw);
     } catch {
-      throw new Error("AI returned malformed JSON — try rephrasing the instruction");
+      // Truncated/malformed response — keep whatever complete edits survive.
+      const rescued = salvageEdits(raw);
+      if (rescued.length) {
+        allEdits.push(...rescued);
+        onProgress(`Pass ${i + 1} response was truncated — recovered ${rescued.length} edit(s).`);
+      } else {
+        failedPasses++;
+        onProgress(`Pass ${i + 1} returned a malformed response — continuing…`);
+      }
+      continue;
     }
+    if (!parsed) continue;
     if (Array.isArray(parsed.edits)) allEdits.push(...parsed.edits);
     if (parsed.summary && (parsed.edits?.length || requests.length === 1)) {
       summaries.push(parsed.summary);
     }
+  }
+  if (failedPasses === requests.length) {
+    throw new Error("The AI failed on every pass — try again or rephrase the instruction");
   }
 
   // Dedupe identical edits (breakpoint copies of one doc can span requests).

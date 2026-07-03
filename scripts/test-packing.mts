@@ -1,6 +1,6 @@
 // Unit test for lib/ai-edit.ts pruning + request packing.
 // Run: npx tsx scripts/test-packing.mts
-import { pruneForModel, packRequests } from "../lib/ai-edit";
+import { pruneForModel, packRequests, salvageEdits } from "../lib/ai-edit";
 
 // --- pruneForModel ---
 const html = `<html><head><style>.a{color:red}</style><script>var x=1;</script></head>
@@ -46,8 +46,18 @@ const checks: ReadonlyArray<readonly [string, boolean]> = [
   ["overflow reports skipped docs", capped.skipped.length === 4],
 ];
 
+// --- salvageEdits ---
+const truncated = `{"edits":[{"file":"index.html","find":"<span>Fade</span>","replace":"<span>Insane</span>"},{"file":"index.html","find":"Fade \\"quoted\\"","replace":"Insane"},{"file":"projects/index.html","find":"<span>Fa`;
+const rescued = salvageEdits(truncated);
+const salvageChecks: ReadonlyArray<readonly [string, boolean]> = [
+  ["salvages complete edits from truncated JSON", rescued.length === 2],
+  ["salvaged edit content intact", rescued[0]?.replace === "<span>Insane</span>"],
+  ["handles escaped quotes inside strings", rescued[1]?.find === 'Fade "quoted"'],
+  ["ignores the incomplete trailing edit", !rescued.some((e) => e.find.includes("<span>Fa") && !e.find.includes("Fade"))],
+];
+
 let ok = true;
-for (const [name, pass] of checks) {
+for (const [name, pass] of [...checks, ...salvageChecks]) {
   console.log((pass ? "PASS" : "FAIL") + " — " + name);
   if (!pass) ok = false;
 }
