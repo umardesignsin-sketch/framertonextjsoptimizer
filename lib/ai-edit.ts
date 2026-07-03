@@ -10,6 +10,7 @@
 // regeneration) so huge Framer documents can't be mangled wholesale.
 import type { ConvertedFile } from "./types";
 import { geminiJson } from "./gemini";
+import { buildOverrides, injectOverrides } from "./overrides";
 
 /** Per-document and total character budgets sent to the model. */
 const MAX_DOC_CHARS = 700_000;
@@ -132,8 +133,16 @@ function applyEdits(
   const updatedFiles = files.map((f) => {
     const doc = docByPath.get(f.path);
     if (!doc || !f.content) return f;
-    const newHtml = htmlByPath.get(f.path)!;
+    let newHtml = htmlByPath.get(f.path)!;
     if (newHtml === doc.html) return f;
+    // The kept Framer runtime re-renders original content on hydration, which
+    // would silently undo the edit — enforce changed elements post-hydration.
+    try {
+      const overrides = buildOverrides(doc.html, newHtml);
+      if (overrides.length > 0) newHtml = injectOverrides(newHtml, overrides);
+    } catch {
+      /* overrides are best-effort; the plain HTML edit still applies */
+    }
     return { ...f, content: doc.wrap(newHtml, f.content) };
   });
 
