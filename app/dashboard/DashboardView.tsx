@@ -40,6 +40,7 @@ function AiEditPanel({ site }: { site: SiteRow }) {
   const [error, setError] = useState("");
   const [done, setDone] = useState<{
     applied: number;
+    failed: number;
     summary: string;
     deployed: boolean;
     deployedUrl?: string | null;
@@ -81,6 +82,7 @@ function AiEditPanel({ site }: { site: SiteRow }) {
             summary?: string;
             deployed?: boolean;
             deployedUrl?: string | null;
+            failedEdits?: { file: string; reason: string }[];
           };
           try {
             evt = JSON.parse(part);
@@ -91,6 +93,7 @@ function AiEditPanel({ site }: { site: SiteRow }) {
           else if (evt.type === "done") {
             setDone({
               applied: evt.applied || 0,
+              failed: evt.failedEdits?.length || 0,
               summary: evt.summary || "",
               deployed: !!evt.deployed,
               deployedUrl: evt.deployedUrl,
@@ -151,6 +154,7 @@ function AiEditPanel({ site }: { site: SiteRow }) {
           }`}
         >
           {done.applied > 0 ? `Applied ${done.applied} edit(s). ` : "No changes applied. "}
+          {done.failed > 0 && `${done.failed} proposed edit(s) could not be matched and were skipped. `}
           {done.summary}
           {done.deployed && done.deployedUrl && (
             <>
