@@ -12,18 +12,33 @@
 // Large-page strategy: what we SEND the model is pruned (script/style bodies
 // and svg internals dropped — byte-identical elsewhere, so returned "find"
 // strings still match the real file), the homepage goes first, and oversized
-// documents are split across multiple sequential model calls.
+// documents are split across multiple sequential model calls (up to
+// MAX_REQUESTS, sized to fit the API route's time budget — see maxDuration
+// in app/api/ai-edit/route.ts) so large sites aren't silently left out.
+//
+// Reliability: Gemini's `responseSchema` (lib/gemini.ts) constrains output to
+// the edits shape, which fixes plain malformed JSON. It does NOT prevent
+// truncation if a pass hits the output-token limit — salvageEdits() recovers
+// whatever complete edits exist in a cut-off response, and each pass is
+// isolated (a failed/truncated pass logs progress and the run continues).
 import type { ConvertedFile } from "./types";
-import { geminiJson } from "./gemini";
+import { geminiJson, GeminiRateLimitError } from "./gemini";
 import { buildOverrides, injectOverrides } from "./overrides";
 
-/** Max characters of pruned content per model request (~140K tokens, safely
- *  inside free-tier per-minute token limits). */
-const MAX_REQUEST_CHARS = 550_000;
-/** Hard cap on model calls per edit run. */
+/** Max characters of pruned content per model request (~160K tokens — fits
+ *  alone inside the free tier's ~250K tokens-per-minute window). */
+const MAX_REQUEST_CHARS = 650_000;
+/** Hard cap on model calls per edit run — paced passes at ~45s spacing must
+ *  fit the API route's maxDuration (300s in app/api/ai-edit/route.ts). */
 const MAX_REQUESTS = 6;
-/** Wait once this long on a rate-limit response before retrying. */
-const RATE_LIMIT_BACKOFF_MS = 45_000;
+/** Stay under the per-minute token quota: don't start a call if tokens sent
+ *  in the trailing minute plus this call would exceed the budget. */
+const TPM_BUDGET_TOKENS = 200_000;
+/** Attempts per pass on rate-limit responses (honoring Google's retryDelay). */
+const MAX_ATTEMPTS_PER_PASS = 3;
+/** Stop starting new passes past this elapsed time so applying/saving/deploy
+ *  still fit inside the route's execution window. */
+const RUN_TIME_BUDGET_MS = 240_000;
 
 const NEXTJS_HTML_RE = /const HTML = ("(?:[^"\\]|\\.)*");/;
 
@@ -109,6 +124,8 @@ function extractDocs(files: ConvertedFile[]): EditableDoc[] {
 /** Packs docs (splitting oversized ones) into ≤ MAX_REQUESTS model calls. */
 export function packRequests(docs: { path: string; prompt: string }[]): {
   requests: string[][];
+  /** Doc paths included in each request (parallel to `requests`). */
+  requestPaths: string[][];
   skipped: string[];
 } {
   // Flatten docs into labeled parts, splitting any doc bigger than one request.
@@ -129,14 +146,18 @@ export function packRequests(docs: { path: string; prompt: string }[]): {
   }
 
   const requests: string[][] = [];
+  const requestPaths: string[][] = [];
   const skipped = new Set<string>();
   let cur: string[] = [];
+  let curPaths = new Set<string>();
   let chars = 0;
 
   for (const p of parts) {
     if (chars + p.text.length > MAX_REQUEST_CHARS && cur.length) {
       requests.push(cur);
+      requestPaths.push([...curPaths]);
       cur = [];
+      curPaths = new Set();
       chars = 0;
     }
     if (requests.length >= MAX_REQUESTS) {
@@ -144,11 +165,15 @@ export function packRequests(docs: { path: string; prompt: string }[]): {
       continue;
     }
     cur.push(p.text);
+    curPaths.add(p.path);
     chars += p.text.length;
   }
-  if (cur.length && requests.length < MAX_REQUESTS) requests.push(cur);
+  if (cur.length && requests.length < MAX_REQUESTS) {
+    requests.push(cur);
+    requestPaths.push([...curPaths]);
+  }
 
-  return { requests, skipped: [...skipped] };
+  return { requests, requestPaths, skipped: [...skipped] };
 }
 
 function buildPrompt(instruction: string, fileBlocks: string): string {
@@ -160,23 +185,42 @@ ${instruction}
 Below are the site's HTML documents (scripts, styles, and svg internals are omitted; some large documents arrive in parts). Apply the instruction by producing precise text edits.
 
 RULES:
-- Reply ONLY with JSON matching: {"edits":[{"file":"<path>","find":"<exact substring>","replace":"<replacement>"}],"summary":"<one or two sentences describing what you changed>"}
 - "file" is the path WITHOUT any "(part i of n)" suffix.
 - "find" MUST be copied verbatim from the shown content (exact characters, including whitespace) and SHOULD be unique within that file. Include enough surrounding context to make it unique, but keep each "find" under ~400 characters.
 - Framer duplicates markup for responsive breakpoints — the same text often appears several times. Every occurrence of "find" gets replaced, so prefer a "find" that covers exactly the repeated fragment you want changed everywhere.
 - Keep edits minimal and surgical. Do NOT reformat or rewrite unrelated markup.
 - Preserve all Framer attributes, classes, and structure unless the instruction requires changing them.
-- If nothing in the shown content matches the instruction, return {"edits":[],"summary":"<explain why>"}.
+- If nothing in the shown content matches the instruction, return an empty "edits" array and explain why in "summary".
 
 ${fileBlocks}`;
 }
 
-function isRateLimit(e: unknown): boolean {
-  return e instanceof Error && /\(429\)|RESOURCE_EXHAUSTED|rate/i.test(e.message);
+/** Rolling window of (timestamp, estimated tokens) for calls already sent —
+ *  used to pace passes under the per-minute token quota instead of blindly
+ *  firing and eating 429s. */
+const sentWindow: { at: number; tokens: number }[] = [];
+
+function estimateTokens(chars: number): number {
+  return Math.ceil(chars / 4);
+}
+
+/** Milliseconds to wait before a call of `tokens` fits the trailing-minute budget. */
+function paceDelayMs(tokens: number): number {
+  const now = Date.now();
+  while (sentWindow.length && now - sentWindow[0].at > 60_000) sentWindow.shift();
+  let used = sentWindow.reduce((s, w) => s + w.tokens, 0);
+  if (used + tokens <= TPM_BUDGET_TOKENS) return 0;
+  // Find when enough of the window has expired to make room.
+  for (const w of sentWindow) {
+    used -= w.tokens;
+    if (used + tokens <= TPM_BUDGET_TOKENS) return Math.max(0, w.at + 61_000 - now);
+  }
+  return 61_000;
 }
 
 /** Recovers whatever complete edit objects exist in a malformed/truncated
- *  model response (JSON mode can get cut off at the output-token limit). */
+ *  model response (the response can still get cut off at the output-token
+ *  limit even with responseSchema constraining the shape). */
 export function salvageEdits(raw: string): AiEdit[] {
   const out: AiEdit[] = [];
   // Complete {...} objects with no nested braces — an edit is exactly that.
@@ -194,14 +238,32 @@ export function salvageEdits(raw: string): AiEdit[] {
   return out;
 }
 
-async function callModel(prompt: string): Promise<string> {
-  try {
-    return await geminiJson(prompt);
-  } catch (e) {
-    if (!isRateLimit(e)) throw e;
-    await new Promise((r) => setTimeout(r, RATE_LIMIT_BACKOFF_MS));
-    return geminiJson(prompt);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function callModel(prompt: string, onProgress: (msg: string) => void): Promise<string> {
+  const tokens = estimateTokens(prompt.length);
+
+  // Proactive pacing: wait for quota headroom instead of triggering a 429.
+  const wait = paceDelayMs(tokens);
+  if (wait > 0) {
+    onProgress(`Pacing for the rate-limit window (~${Math.round(wait / 1000)}s)…`);
+    await sleep(wait);
   }
+
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_PASS; attempt++) {
+    sentWindow.push({ at: Date.now(), tokens });
+    try {
+      return await geminiJson(prompt);
+    } catch (e) {
+      lastError = e;
+      if (!(e instanceof GeminiRateLimitError) || attempt === MAX_ATTEMPTS_PER_PASS) throw e;
+      const backoff = Math.min(e.retryAfterMs + 2_000, 60_000);
+      onProgress(`Rate limited — retrying in ${Math.round(backoff / 1000)}s (attempt ${attempt + 1})…`);
+      await sleep(backoff);
+    }
+  }
+  throw lastError;
 }
 
 function applyEdits(
@@ -261,23 +323,33 @@ export async function runAiEdit(
     throw new Error("No editable HTML documents found in this bundle");
   }
 
-  const { requests, skipped } = packRequests(docs);
+  const { requests, requestPaths, skipped } = packRequests(docs);
+  const notAnalyzed = new Set<string>(skipped);
   onProgress(
     `Analyzing ${docs.length} page(s) in ${requests.length} AI pass(es)` +
       (skipped.length ? ` (${skipped.length} left out: ${skipped.slice(0, 3).join(", ")}…)` : "") +
       "…"
   );
 
+  const startedAt = Date.now();
   const allEdits: AiEdit[] = [];
   const summaries: string[] = [];
   let failedPasses = 0;
   for (let i = 0; i < requests.length; i++) {
+    // Leave room to apply/save/redeploy inside the route's execution window;
+    // report what didn't fit instead of dying mid-run.
+    if (i > 0 && Date.now() - startedAt > RUN_TIME_BUDGET_MS) {
+      for (const p of requestPaths[i]) notAnalyzed.add(p);
+      onProgress(`Out of time for pass ${i + 1} — run the edit again to cover the remaining pages.`);
+      continue;
+    }
     if (requests.length > 1) onProgress(`AI pass ${i + 1}/${requests.length}…`);
     let raw: string;
     try {
-      raw = await callModel(buildPrompt(instruction, requests[i].join("\n\n")));
+      raw = await callModel(buildPrompt(instruction, requests[i].join("\n\n")), onProgress);
     } catch (e) {
       failedPasses++;
+      for (const p of requestPaths[i]) notAnalyzed.add(p);
       onProgress(
         `Pass ${i + 1} failed (${e instanceof Error ? e.message.slice(0, 80) : "error"}) — continuing…`
       );
@@ -294,6 +366,7 @@ export async function runAiEdit(
         onProgress(`Pass ${i + 1} response was truncated — recovered ${rescued.length} edit(s).`);
       } else {
         failedPasses++;
+        for (const p of requestPaths[i]) notAnalyzed.add(p);
         onProgress(`Pass ${i + 1} returned a malformed response — continuing…`);
       }
       continue;
@@ -311,7 +384,7 @@ export async function runAiEdit(
   // Dedupe identical edits (breakpoint copies of one doc can span requests).
   const seen = new Set<string>();
   const edits = allEdits.filter((e) => {
-    const key = `${e.file} ${e.find} ${e.replace}`;
+    const key = `${e.file} ${e.find} ${e.replace}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -323,7 +396,7 @@ export async function runAiEdit(
   return {
     files: updatedFiles,
     applied,
-    skippedFiles: skipped,
+    skippedFiles: [...notAnalyzed],
     failedEdits: failed,
     summary: summaries.join(" "),
   };

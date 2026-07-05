@@ -1,4 +1,4 @@
-// Unit test for lib/ai-edit.ts pruning + request packing.
+// Unit test for lib/ai-edit.ts pruning + request packing + salvage.
 // Run: npx tsx scripts/test-packing.mts
 import { pruneForModel, packRequests, salvageEdits } from "../lib/ai-edit";
 
@@ -14,20 +14,24 @@ const keptVerbatim = ["<h1>Keep me</h1>", "<p>Also keep</p>", '<svg viewBox="0 0
   (s) => pruned.includes(s) && html.includes(s)
 );
 
-// --- packRequests --- (cap = 550_000 chars/request, 6 requests)
+// --- packRequests --- (cap = 650_000 chars/request, 6 requests)
 const small = { path: "index.html", prompt: "x".repeat(100_000) };
-const big = { path: "big.html", prompt: "y".repeat(1_300_000) }; // 3 parts
+const big = { path: "big.html", prompt: "y".repeat(1_600_000) }; // 3 parts
 const mid = { path: "mid.html", prompt: "z".repeat(400_000) };
-const { requests, skipped } = packRequests([small, big, mid]);
+const { requests, requestPaths, skipped } = packRequests([small, big, mid]);
 
 const flat = requests.map((r) => r.join("\n\n"));
-const totalOk = flat.every((r) => r.length <= 560_000);
+const totalOk = flat.every((r) => r.length <= 660_000);
 const bigParts = flat.join("\n").match(/big\.html \(part \d of 3\)/g) || [];
+const pathsAligned =
+  requestPaths.length === requests.length &&
+  requestPaths[0].includes("index.html") &&
+  requestPaths.flat().includes("mid.html");
 
-// Overflow case: 10 huge docs must cap at 6 requests and report skips.
-const many = Array.from({ length: 10 }, (_, i) => ({
+// Overflow case: 12 huge docs must cap at 6 requests and report skips.
+const many = Array.from({ length: 12 }, (_, i) => ({
   path: `p${i}.html`,
-  prompt: "q".repeat(540_000),
+  prompt: "q".repeat(400_000),
 }));
 const capped = packRequests(many);
 
@@ -42,8 +46,9 @@ const checks: ReadonlyArray<readonly [string, boolean]> = [
   ["big doc split into 3 labeled parts", bigParts.length === 3],
   ["all docs included when they fit", skipped.length === 0],
   ["homepage first in first request", flat[0].includes("index.html")],
+  ["requestPaths aligned with requests", pathsAligned],
   ["overflow capped at 6 requests", capped.requests.length === 6],
-  ["overflow reports skipped docs", capped.skipped.length === 4],
+  ["overflow reports skipped docs", capped.skipped.length === 6],
 ];
 
 // --- salvageEdits ---

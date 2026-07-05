@@ -41,6 +41,7 @@ function AiEditPanel({ site }: { site: SiteRow }) {
   const [done, setDone] = useState<{
     applied: number;
     failed: number;
+    notAnalyzed: number;
     summary: string;
     deployed: boolean;
     deployedUrl?: string | null;
@@ -83,6 +84,7 @@ function AiEditPanel({ site }: { site: SiteRow }) {
             deployed?: boolean;
             deployedUrl?: string | null;
             failedEdits?: { file: string; reason: string }[];
+            skippedFiles?: string[];
           };
           try {
             evt = JSON.parse(part);
@@ -94,6 +96,7 @@ function AiEditPanel({ site }: { site: SiteRow }) {
             setDone({
               applied: evt.applied || 0,
               failed: evt.failedEdits?.length || 0,
+              notAnalyzed: evt.skippedFiles?.length || 0,
               summary: evt.summary || "",
               deployed: !!evt.deployed,
               deployedUrl: evt.deployedUrl,
@@ -155,6 +158,8 @@ function AiEditPanel({ site }: { site: SiteRow }) {
         >
           {done.applied > 0 ? `Applied ${done.applied} edit(s). ` : "No changes applied. "}
           {done.failed > 0 && `${done.failed} proposed edit(s) could not be matched and were skipped. `}
+          {done.notAnalyzed > 0 &&
+            `${done.notAnalyzed} page(s) could not be analyzed this run — apply the same edit again to cover them. `}
           {done.summary}
           {done.deployed && done.deployedUrl && (
             <>
