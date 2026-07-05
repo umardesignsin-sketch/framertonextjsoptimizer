@@ -24,6 +24,8 @@ export interface Override {
   k: string;
   /** The new innerHTML to enforce (animation start-states neutralized). */
   h: string;
+  /** Optional stable-looking class to narrow the scan (perf, html mode). */
+  c?: string;
 }
 
 const SCRIPT_ID = "fno-ai-overrides";
@@ -80,15 +82,21 @@ export function buildOverrides(originalHtml: string, editedHtml: string): Overri
   function record(aEl: Element, bEl: Element) {
     const newInner = $b(bEl).html() || "";
     if (newInner.length > MAX_FRAGMENT) return;
+    // A hydration-stable class narrows the runtime scan from every element of
+    // the tag to a querySelectorAll on tag.class — Framer's hashed classes
+    // survive hydration; variant classes may not, so this is best-effort perf.
+    const cls = (bEl.attribs?.class || "")
+      .split(/\s+/)
+      .find((x) => /^framer-[A-Za-z0-9]+$/.test(x));
     const oldText = norm($a(aEl).text());
     const newText = norm($b(bEl).text());
     if (oldText && oldText !== newText) {
-      found.push({ t: bEl.tagName, m: "text", k: oldText, h: neutralizeFragment(newInner) });
+      found.push({ t: bEl.tagName, m: "text", k: oldText, h: neutralizeFragment(newInner), c: cls });
     } else {
       // Text-identical change (attribute/asset swap) — match on old innerHTML.
       const oldInner = norm($a(aEl).html() || "");
       if (!oldInner) return;
-      found.push({ t: bEl.tagName, m: "html", k: oldInner, h: neutralizeFragment(newInner) });
+      found.push({ t: bEl.tagName, m: "html", k: oldInner, h: neutralizeFragment(newInner), c: cls });
     }
   }
 
@@ -123,15 +131,32 @@ export function buildOverrides(originalHtml: string, editedHtml: string): Overri
   return found;
 }
 
-// Runs in the browser: repeatedly (interval during load + MutationObserver
-// after) scans elements of each override's tag; any element still showing the
-// old content gets the new innerHTML. Replacing changes the content key, so
-// enforcement is naturally idempotent — no loops.
-const RUNTIME = `(function(){var O=window.__FNO_OV__||[];function nm(s){return s.replace(/\\s+/g," ").trim()}
-function apply(){for(var i=0;i<O.length;i++){var o=O[i];try{var els=document.getElementsByTagName(o.t);for(var j=0;j<els.length;j++){var el=els[j];var key=o.m==="text"?nm(el.textContent||""):nm(el.innerHTML||"");if(key===o.k){el.innerHTML=o.h;}}}catch(e){}}}
-apply();if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",apply);
-var n=0,t=setInterval(function(){apply();if(++n>24)clearInterval(t);},250);
-new MutationObserver(apply).observe(document.documentElement,{childList:true,subtree:true,characterData:true});})();`;
+// Runs in the browser: scans elements of each override's tag; any element
+// still showing the old content gets the new innerHTML. Replacing changes the
+// content key, so enforcement is naturally idempotent.
+//
+// Cost/safety bounds (a page can mutate 60×/s from marquees/typewriters):
+//  - scans are THROTTLED to one per 600ms, coalesced from any mutation burst
+//  - a reentrancy flag keeps our own writes from re-triggering the observer
+//  - each override stops after writing in 5 separate scan rounds — a looping
+//    animation that keeps restoring the old content would otherwise be fought
+//    forever; one round may legitimately write many breakpoint copies
+//  - html-mode scans narrow by the recorded framer-class when available
+const RUNTIME = `(function(){var O=window.__FNO_OV__||[];var rounds=[];var applying=false;
+function nm(s){return s.replace(/\\s+/g," ").trim()}
+function apply(){if(applying)return;applying=true;try{
+for(var i=0;i<O.length;i++){var o=O[i];if((rounds[i]||0)>=5)continue;var wrote=false;try{
+var els=o.c?document.querySelectorAll(o.t+"."+o.c):document.getElementsByTagName(o.t);
+for(var j=0;j<els.length;j++){var el=els[j];var key=o.m==="text"?nm(el.textContent||""):nm(el.innerHTML||"");
+if(key===o.k){el.innerHTML=o.h;wrote=true;}}}catch(e){}
+if(wrote)rounds[i]=(rounds[i]||0)+1;}
+}finally{applying=false}}
+var last=0,timer=null;
+function schedule(){if(timer)return;var wait=Math.max(0,600-(Date.now()-last));timer=setTimeout(function(){timer=null;last=Date.now();apply();},wait);}
+apply();last=Date.now();
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",schedule);
+var n=0,t=setInterval(function(){schedule();if(++n>10)clearInterval(t);},600);
+new MutationObserver(function(){if(!applying)schedule();}).observe(document.documentElement,{childList:true,subtree:true,characterData:true});})();`;
 
 const SCRIPT_RE = new RegExp(
   `<script id="${SCRIPT_ID}"[^>]*>window\\.__FNO_OV__=(\\[.*?\\]);.*?</script>`,
