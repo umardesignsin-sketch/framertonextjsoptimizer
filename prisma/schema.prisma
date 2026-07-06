@@ -55,6 +55,9 @@ model Site {
   status     SiteStatus @default(draft)
   /// Netlify build hook URL used by "Publish" to trigger a rebuild.
   buildHook  String?
+  /// Visual-editor unpublished draft: an EditorEdit[] captured in the editor,
+  /// applied to the bundle + pushed live on Publish.
+  draftEdits Json?
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 

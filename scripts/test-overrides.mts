@@ -1,7 +1,8 @@
 // Unit test for lib/overrides.ts — content-keyed diff detection, style
-// neutralization, script injection, and merge-on-re-edit.
+// neutralization, script injection, merge-on-re-edit, and the visual editor's
+// text/link/image override builder.
 // Run: npx tsx scripts/test-overrides.mts
-import { buildOverrides, injectOverrides } from "../lib/overrides";
+import { buildOverrides, injectOverrides, editorOverrides } from "../lib/overrides";
 
 const original = `<!DOCTYPE html><html><head><title>T</title></head><body>
 <div id="main"><div class="framer-abc" data-framer-name="Hero">
@@ -36,6 +37,24 @@ const parsed = JSON.parse(payload) as { t: string; m: string; k: string; h: stri
 const h1Override = overrides.find((o) => o.t === "h1");
 const footerOverride = overrides.find((o) => o.k.includes("hello@old.com"));
 
+// --- editorOverrides: text / link / image edits captured from the iframe ---
+const eo = editorOverrides([
+  { kind: "text", tag: "H1", oldText: "  Old  Hero  ", newText: "New <b>Hero</b>" },
+  { kind: "link", oldHref: "/about", newHref: "/team" },
+  { kind: "image", oldSrc: "assets/img/a.webp", newSrc: "https://cdn/x.png" },
+  { kind: "text", tag: "P", oldText: "same", newText: "same" }, // no-op dropped
+]);
+const eoText = eo.find((o) => o.m === "text");
+const eoLink = eo.find((o) => o.m === "attr");
+const eoImg = eo.find((o) => o.m === "img");
+// Inject editor overrides into a page and confirm they serialize + enforce.
+const editorPage = injectOverrides(
+  `<html><body><h1>Old Hero</h1><a href="/about">x</a><img src="assets/img/a.webp"></body></html>`,
+  eo
+);
+const eoPayload = editorPage.match(new RegExp("__FNO_OV__=(\\[.*?\\]);", "s"))?.[1] || "[]";
+const eoParsed = JSON.parse(eoPayload) as { t: string; m: string; k: string; h: string; a?: string }[];
+
 const checks: ReadonlyArray<readonly [string, boolean]> = [
   ["h1 recorded (span restructure bubbles to h1)", !!h1Override],
   ["h1 keyed on old text", !!h1Override && h1Override.m === "text" && h1Override.k.includes("Attention")],
@@ -49,6 +68,13 @@ const checks: ReadonlyArray<readonly [string, boolean]> = [
   ["merged payload keeps h1 override", parsed.some((o) => o.h.includes("Under Command"))],
   ["merged payload chains email edits (old key -> newest value)", parsed.some((o) => o.k.includes("hi@new.io") && o.h.includes("hi@final.io"))],
   ["no raw </script> break in payload", !payload.includes("</script")],
+  // editorOverrides
+  ["editor: 3 edits (no-op dropped)", eo.length === 3],
+  ["editor text: tag lowercased, key normalized", !!eoText && eoText.t === "h1" && eoText.k === "Old Hero"],
+  ["editor text: new value HTML-escaped", !!eoText && eoText.h === "New &lt;b&gt;Hero&lt;/b&gt;"],
+  ["editor link: attr/href override", !!eoLink && eoLink.a === "href" && eoLink.k === "/about" && eoLink.h === "/team"],
+  ["editor image: img mode with old src key", !!eoImg && eoImg.k === "assets/img/a.webp" && eoImg.h === "https://cdn/x.png"],
+  ["editor overrides serialize into the page", eoParsed.length === 3 && eoParsed.some((o) => o.m === "attr") && eoParsed.some((o) => o.m === "img")],
 ];
 
 let ok = true;

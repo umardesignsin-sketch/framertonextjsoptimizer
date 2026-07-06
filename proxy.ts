@@ -24,7 +24,7 @@ export const proxy = auth(async (req) => {
     return NextResponse.next();
   }
 
-  if (pathname.startsWith("/dashboard")) {
+  if (pathname.startsWith("/dashboard") || pathname.startsWith("/editor")) {
     if (!req.auth?.user) {
       const url = req.nextUrl.clone();
       url.pathname = "/login";
@@ -38,5 +38,5 @@ export const proxy = auth(async (req) => {
 });
 
 export const config = {
-  matcher: ["/admin/:path*", "/dashboard/:path*"],
+  matcher: ["/admin/:path*", "/dashboard/:path*", "/editor/:path*"],
 };

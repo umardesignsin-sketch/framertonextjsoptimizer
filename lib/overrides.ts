@@ -1,10 +1,14 @@
-// Post-hydration content overrides for AI edits.
+// Post-hydration content overrides for the visual editor (and any file-level
+// edit to a converted bundle).
 //
 // Hybrid/pure-Next.js bundles keep Framer's JS runtime for fidelity, but that
 // runtime re-renders the page from Framer's own JS data on load — so a static
-// HTML edit gets overwritten a moment after hydration. To make AI edits stick,
-// we diff the original vs edited document and inject a small runtime script
-// that re-applies each change and keeps enforcing it via a MutationObserver.
+// HTML edit gets overwritten a moment after hydration. To make an edit stick,
+// we inject a small runtime script that re-applies each change (text, link
+// href, or image src) and keeps enforcing it via a MutationObserver.
+// Overrides come from two sources: buildOverrides() (diff of two documents,
+// used by any file transform) and editorOverrides() (edits captured live from
+// the visual editor's iframe DOM).
 //
 // Targeting is CONTENT-based, not structural: Framer's hydration shifts
 // nth-child positions (it inserts sibling nodes) and drops variant classes, so
@@ -16,16 +20,56 @@ import * as cheerio from "cheerio";
 import type { Element } from "domhandler";
 
 export interface Override {
-  /** Tag name to scan (e.g. "h1", "span"). */
+  /** Tag name to scan (e.g. "h1", "span", "a", "img"). */
   t: string;
-  /** Match mode: old text content, or old innerHTML (for non-text changes). */
-  m: "text" | "html";
+  /**
+   * Match mode:
+   *  - "text": key = normalized textContent   → set innerHTML = h
+   *  - "html": key = normalized innerHTML      → set innerHTML = h
+   *  - "attr": key = attribute `a`'s value     → set attribute a = h (links)
+   *  - "img":  key = src (or srcset contains k)→ set src = h, drop srcset/sizes
+   */
+  m: "text" | "html" | "attr" | "img";
   /** Normalized old content key the element must still show. */
   k: string;
-  /** The new innerHTML to enforce (animation start-states neutralized). */
+  /** New value: innerHTML (text/html) or attribute value (attr/img). */
   h: string;
+  /** Attribute name for m:"attr" (e.g. "href"). */
+  a?: string;
   /** Optional stable-looking class to narrow the scan (perf, html mode). */
   c?: string;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** Edits captured directly from the visual editor's iframe DOM. */
+export type EditorEdit =
+  | { kind: "text"; tag: string; oldText: string; newText: string; cls?: string }
+  | { kind: "link"; oldHref: string; newHref: string }
+  | { kind: "image"; oldSrc: string; newSrc: string };
+
+/** Turns editor-captured edits into runtime Override objects. */
+export function editorOverrides(edits: EditorEdit[]): Override[] {
+  const out: Override[] = [];
+  for (const e of edits) {
+    if (e.kind === "text") {
+      const k = norm(e.oldText);
+      if (!k || norm(e.newText) === k) continue;
+      out.push({ t: (e.tag || "").toLowerCase() || "*", m: "text", k, h: escapeHtml(e.newText), c: e.cls });
+    } else if (e.kind === "link") {
+      if (!e.oldHref || e.oldHref === e.newHref) continue;
+      out.push({ t: "a", m: "attr", a: "href", k: e.oldHref, h: e.newHref });
+    } else if (e.kind === "image") {
+      if (!e.oldSrc || e.oldSrc === e.newSrc) continue;
+      out.push({ t: "img", m: "img", k: e.oldSrc, h: e.newSrc });
+    }
+  }
+  return out;
 }
 
 const SCRIPT_ID = "fno-ai-overrides";
@@ -147,8 +191,10 @@ function nm(s){return s.replace(/\\s+/g," ").trim()}
 function apply(){if(applying)return;applying=true;try{
 for(var i=0;i<O.length;i++){var o=O[i];if((rounds[i]||0)>=5)continue;var wrote=false;try{
 var els=o.c?document.querySelectorAll(o.t+"."+o.c):document.getElementsByTagName(o.t);
-for(var j=0;j<els.length;j++){var el=els[j];var key=o.m==="text"?nm(el.textContent||""):nm(el.innerHTML||"");
-if(key===o.k){el.innerHTML=o.h;wrote=true;}}}catch(e){}
+for(var j=0;j<els.length;j++){var el=els[j];
+if(o.m==="attr"){if(el.getAttribute(o.a)===o.k){el.setAttribute(o.a,o.h);wrote=true;}}
+else if(o.m==="img"){var s=el.getAttribute("src"),ss=el.getAttribute("srcset")||"";if(s===o.k||ss.indexOf(o.k)>=0){el.setAttribute("src",o.h);el.removeAttribute("srcset");el.removeAttribute("sizes");wrote=true;}}
+else{var key=o.m==="text"?nm(el.textContent||""):nm(el.innerHTML||"");if(key===o.k){el.innerHTML=o.h;wrote=true;}}}}catch(e){}
 if(wrote)rounds[i]=(rounds[i]||0)+1;}
 }finally{applying=false}}
 var last=0,timer=null;
@@ -168,7 +214,7 @@ function isOverride(o: unknown): o is Override {
   return (
     !!x &&
     typeof x.t === "string" &&
-    (x.m === "text" || x.m === "html") &&
+    (x.m === "text" || x.m === "html" || x.m === "attr" || x.m === "img") &&
     typeof x.k === "string" &&
     typeof x.h === "string"
   );
@@ -194,10 +240,13 @@ export function injectOverrides(html: string, overrides: Override[]): string {
   }
 
   const merged = new Map<string, Override>();
-  // Re-neutralize carried-over entries too, so fragments saved by an older
-  // (less thorough) neutralizer get cleaned up on the next edit.
+  // Re-neutralize carried-over innerHTML fragments (text/html) so entries saved
+  // by an older neutralizer get cleaned up on the next edit; attr/img values
+  // (hrefs/srcs) are not HTML and are stored verbatim.
   for (const o of [...existing, ...overrides]) {
-    merged.set(`${o.t}|${o.m}|${o.k}`, { ...o, h: neutralizeFragment(o.h) });
+    const key = `${o.t}|${o.m}|${o.a || ""}|${o.k}`;
+    const value = o.m === "text" || o.m === "html" ? { ...o, h: neutralizeFragment(o.h) } : { ...o };
+    merged.set(key, value);
   }
   if (merged.size === 0) return html;
 
