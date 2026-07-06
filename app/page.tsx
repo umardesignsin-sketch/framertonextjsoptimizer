@@ -457,7 +457,7 @@ function DeployPanel({
       <p className="mt-1 text-[13px] text-muted-foreground">
         Deploys the static bundle to a fresh site using your own token. By default the
         token is sent once to your host&apos;s API and never stored — unless you opt in
-        below to enable AI edits.
+        below to enable live editing.
       </p>
 
       <div className="mt-4 flex flex-wrap items-end gap-3">
@@ -515,8 +515,8 @@ function DeployPanel({
           className="mt-0.5"
         />
         <span>
-          <span className="font-medium text-foreground">Save deploy for AI edits</span> — stores
-          this token encrypted (AES-256) so the AI editor on your dashboard can push future
+          <span className="font-medium text-foreground">Save deploy for live editing</span> — stores
+          this token encrypted (AES-256) so the visual editor on your dashboard can publish future
           changes to this same live site. Requires being logged in.
         </span>
       </label>
