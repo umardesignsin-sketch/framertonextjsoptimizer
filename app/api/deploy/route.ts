@@ -4,7 +4,7 @@
 import { getJob } from "@/lib/store";
 import { deployNetlify, deployVercel } from "@/lib/deploy";
 import { db, dbConfigured } from "@/lib/db";
-import { auth } from "@/lib/auth";
+import { getAuthUser } from "@/lib/supabase/user";
 import { encryptSecret, encryptionConfigured } from "@/lib/crypto";
 
 export const runtime = "nodejs";
@@ -55,9 +55,9 @@ export async function POST(request: Request) {
     if (dbConfigured()) {
       // Only attach the deployment (and optionally the token) to a site the
       // logged-in caller owns — themeRef alone must not leak across users.
-      const session = await auth().catch(() => null);
-      const site = session?.user?.id
-        ? await db.site.findFirst({ where: { themeRef: jobId, ownerId: session.user.id } })
+      const authed = await getAuthUser().catch(() => null);
+      const site = authed?.id
+        ? await db.site.findFirst({ where: { themeRef: jobId, ownerId: authed.id } })
         : null;
       if (site) {
         const storeToken = !!save && encryptionConfigured();

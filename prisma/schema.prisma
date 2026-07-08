@@ -28,14 +28,15 @@ enum DeployStatus {
   error
 }
 
-/// A platform user (email + password, via Auth.js credentials login).
+/// A platform user. `id` is the Supabase Auth user UUID; the password and
+/// email verification live in Supabase's auth schema. This row is upserted on
+/// first authenticated request so app data (Sites) can FK to it.
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  name         String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id        String   @id
+  email     String?
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   sites Site[]
 }

@@ -1,18 +1,27 @@
 "use client";
 
-import { useSession } from "next-auth/react";
+import { useEffect, useState } from "react";
+import { createSupabaseBrowser } from "@/lib/supabase/client";
 
 export function AuthNavLink() {
-  const { data: session, status } = useSession();
+  const [state, setState] = useState<"loading" | "in" | "out">("loading");
 
-  if (status === "loading") return null;
+  useEffect(() => {
+    const supabase = createSupabaseBrowser();
+    supabase.auth.getUser().then(({ data }) => setState(data.user ? "in" : "out"));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) =>
+      setState(session?.user ? "in" : "out")
+    );
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
+  if (state === "loading") return null;
   return (
     <a
-      href={session ? "/dashboard" : "/login"}
+      href={state === "in" ? "/dashboard" : "/login"}
       className="text-muted-foreground hover:text-foreground"
     >
-      {session ? "Dashboard" : "Log in"}
+      {state === "in" ? "Dashboard" : "Log in"}
     </a>
   );
 }

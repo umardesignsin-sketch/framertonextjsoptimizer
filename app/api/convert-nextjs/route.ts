@@ -3,7 +3,7 @@
 // Produces a real, deployable Next.js project (downloadable via /api/download).
 import { convertToNextJs } from "@/lib/nextjs-export";
 import { makeJobId, saveJob } from "@/lib/store";
-import { auth } from "@/lib/auth";
+import { requireUser } from "@/lib/supabase/user";
 import { dbConfigured } from "@/lib/db";
 import { recordConversion } from "@/lib/sites";
 
@@ -12,6 +12,11 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
+  const user = await requireUser();
+  if (!user) {
+    return Response.json({ error: "Please log in to convert a site." }, { status: 401 });
+  }
+
   let body: { url?: string } = {};
   try {
     body = await request.json();
@@ -32,14 +37,11 @@ export async function POST(request: Request) {
         await saveJob(jobId, report);
 
         if (dbConfigured()) {
-          const session = await auth();
-          if (session?.user?.id) {
-            await recordConversion(session.user.id, {
-              sourceUrl: report.sourceUrl,
-              jobId,
-              outputKind: "nextjs",
-            }).catch(() => {});
-          }
+          await recordConversion(user.id, {
+            sourceUrl: report.sourceUrl,
+            jobId,
+            outputKind: "nextjs",
+          }).catch(() => {});
         }
 
         const manifest = report.files.map((f) => ({

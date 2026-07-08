@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { signIn } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { createSupabaseBrowser } from "@/lib/supabase/client";
 
 function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -18,14 +17,14 @@ function LoginForm() {
     setBusy(true);
     setError("");
     try {
-      const res = await signIn("credentials", {
+      const supabase = createSupabaseBrowser();
+      const { error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
-        redirect: false,
       });
-      if (res?.error) throw new Error("Invalid email or password");
-      router.push(params.get("next") || "/dashboard");
-      router.refresh();
+      if (error) throw new Error(error.message);
+      // Full navigation so the server immediately sees the new session cookie.
+      window.location.assign(params.get("next") || "/dashboard");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Login failed");
     } finally {
@@ -62,7 +61,10 @@ function LoginForm() {
       </div>
       {error && <p className="mt-3 text-[13px] text-red-600">{error}</p>}
       <p className="mt-4 text-[13px] text-muted-foreground">
-        No account? <Link href="/signup" className="underline">Sign up</Link>
+        No account?{" "}
+        <Link href={`/signup${params.get("next") ? `?next=${params.get("next")}` : ""}`} className="underline">
+          Sign up
+        </Link>
       </p>
     </div>
   );

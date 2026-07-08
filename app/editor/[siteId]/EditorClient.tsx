@@ -3,22 +3,29 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
-// Kept in sync with lib/overrides.ts EditorEdit (not imported — that module
-// pulls in cheerio, which shouldn't ship to the browser).
+// Mirror of lib/overrides.ts EditorEdit (not imported — that module pulls in
+// cheerio, which shouldn't ship to the browser).
 type EditorEdit =
   | { kind: "text"; tag: string; oldText: string; newText: string; cls?: string }
   | { kind: "link"; oldHref: string; newHref: string }
   | { kind: "image"; oldSrc: string; newSrc: string };
 
 type Tool = "text" | "link" | "image" | "preview";
-type Breakpoint = "desktop" | "tablet" | "phone";
+type LeftTab = "pages" | "layers" | "assets";
 
-const BP_WIDTH: Record<Breakpoint, number> = { desktop: 1280, tablet: 834, phone: 390 };
+const FRAMES: { bp: string; w: number }[] = [
+  { bp: "Desktop", w: 1280 },
+  { bp: "Tablet", w: 834 },
+  { bp: "Phone", w: 390 },
+];
+const GAP = 72;
+const LABEL_H = 34;
+
 const TOOLS: { id: Tool; label: string; hint: string }[] = [
   { id: "text", label: "Text", hint: "Click any text to edit it" },
   { id: "link", label: "Link", hint: "Click a link to change where it goes" },
   { id: "image", label: "Image", hint: "Click an image to swap it" },
-  { id: "preview", label: "Preview", hint: "Click through the site normally" },
+  { id: "preview", label: "Preview", hint: "Interact with the site normally" },
 ];
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim();
@@ -28,7 +35,6 @@ const framerClass = (el: Element): string | undefined =>
   (el.getAttribute("class") || "").split(/\s+/).find((c) => /^framer-[A-Za-z0-9]+$/.test(c)) ||
   undefined;
 
-/** Climbs from a click target to the nearest editable text block. */
 function textContainer(node: EventTarget | null): HTMLElement | null {
   let el = node as HTMLElement | null;
   while (el && el.nodeType === 1) {
@@ -40,30 +46,36 @@ function textContainer(node: EventTarget | null): HTMLElement | null {
   return node as HTMLElement | null;
 }
 
+function pageLabel(route: string): string {
+  if (route === "/" || route === "") return "Home";
+  return route;
+}
+
 export function EditorClient({
   siteId,
   siteName,
-  previewBase,
+  pages,
   initialEdits,
   canPublish,
 }: {
   siteId: string;
   siteName: string;
   previewBase: string;
+  pages: { route: string; path: string }[];
   initialEdits: EditorEdit[];
   canPublish: boolean;
 }) {
   const [tool, setTool] = useState<Tool>("text");
-  const [breakpoint, setBreakpoint] = useState<Breakpoint>("desktop");
+  const [leftTab, setLeftTab] = useState<LeftTab>("pages");
+  const [pagePath, setPagePath] = useState(pages[0]?.path || "");
   const [edits, setEdits] = useState<EditorEdit[]>(initialEdits);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [publishing, setPublishing] = useState(false);
   const [publishMsg, setPublishMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(
     null
   );
-  const [scale, setScale] = useState(1);
-  const [frameHeight, setFrameHeight] = useState(1600);
-  // In-app editor for link/image values (replaces window.prompt).
+  const [zoom, setZoom] = useState(0.4);
+  const [heights, setHeights] = useState<number[]>(FRAMES.map(() => 1600));
   const [dialog, setDialog] = useState<{
     kind: "link" | "image";
     el: HTMLElement;
@@ -71,12 +83,9 @@ export function EditorClient({
     value: string;
   } | null>(null);
 
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const paneRef = useRef<HTMLDivElement>(null);
+  const frameRefs = useRef<(HTMLIFrameElement | null)[]>([]);
   const toolRef = useRef(tool);
   const editsRef = useRef(edits);
-  // Keep the live values available to the iframe event handlers (which are
-  // attached once) without re-attaching them on every change.
   useEffect(() => {
     toolRef.current = tool;
   }, [tool]);
@@ -117,7 +126,6 @@ export function EditorClient({
               : `image|${e.oldSrc}`;
         const key = idOf(edit);
         const filtered = prev.filter((e) => idOf(e) !== key);
-        // Drop no-ops (edited back to original).
         const isNoop =
           (edit.kind === "text" && norm(edit.newText) === norm(edit.oldText)) ||
           (edit.kind === "link" && edit.newHref === edit.oldHref) ||
@@ -130,54 +138,51 @@ export function EditorClient({
     [scheduleSave]
   );
 
-  // ---- apply the current draft to the iframe DOM (survives Framer reverts) ----
+  // ---- apply the current draft to every frame (survives Framer reverts) ----
   const applyAll = useCallback(() => {
-    const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
-    for (const e of editsRef.current) {
-      try {
-        if (e.kind === "text") {
-          const els = doc.getElementsByTagName((e.tag || "*").toLowerCase());
-          for (let i = 0; i < els.length; i++) {
-            const el = els[i] as HTMLElement;
-            if (norm(el.textContent || "") === norm(e.oldText)) {
-              el.setAttribute("data-fno-orig", e.oldText);
-              el.innerHTML = escapeHtml(e.newText);
+    for (const iframe of frameRefs.current) {
+      const doc = iframe?.contentDocument;
+      if (!doc) continue;
+      for (const e of editsRef.current) {
+        try {
+          if (e.kind === "text") {
+            const els = doc.getElementsByTagName((e.tag || "*").toLowerCase());
+            for (let i = 0; i < els.length; i++) {
+              const el = els[i] as HTMLElement;
+              if (norm(el.textContent || "") === norm(e.oldText)) {
+                el.setAttribute("data-fno-orig", e.oldText);
+                el.innerHTML = escapeHtml(e.newText);
+              }
             }
+          } else if (e.kind === "link") {
+            doc.querySelectorAll("a").forEach((a) => {
+              if (a.getAttribute("href") === e.oldHref) {
+                a.setAttribute("data-fno-orig-href", e.oldHref);
+                a.setAttribute("href", e.newHref);
+              }
+            });
+          } else if (e.kind === "image") {
+            doc.querySelectorAll("img").forEach((img) => {
+              const s = img.getAttribute("src");
+              const ss = img.getAttribute("srcset") || "";
+              if (s === e.oldSrc || ss.indexOf(e.oldSrc) >= 0) {
+                img.setAttribute("data-fno-orig-src", e.oldSrc);
+                img.setAttribute("src", e.newSrc);
+                img.removeAttribute("srcset");
+                img.removeAttribute("sizes");
+              }
+            });
           }
-        } else if (e.kind === "link") {
-          doc.querySelectorAll("a").forEach((a) => {
-            if (a.getAttribute("href") === e.oldHref) {
-              a.setAttribute("data-fno-orig-href", e.oldHref);
-              a.setAttribute("href", e.newHref);
-            }
-          });
-        } else if (e.kind === "image") {
-          doc.querySelectorAll("img").forEach((img) => {
-            const s = img.getAttribute("src");
-            const ss = img.getAttribute("srcset") || "";
-            if (s === e.oldSrc || ss.indexOf(e.oldSrc) >= 0) {
-              img.setAttribute("data-fno-orig-src", e.oldSrc);
-              img.setAttribute("src", e.newSrc);
-              img.removeAttribute("srcset");
-              img.removeAttribute("sizes");
-            }
-          });
+        } catch {
+          /* skip */
         }
-      } catch {
-        /* skip */
       }
     }
   }, []);
 
-  // ---- edit interactions inside the iframe ----
+  // ---- edit interactions ----
   const beginTextEdit = useCallback(
     (el: HTMLElement, doc: Document) => {
-      // origKey matches the runtime's matcher (norm(textContent)); it anchors
-      // the override to the ORIGINAL bundle content and never changes across
-      // re-edits. origVisible is what the user currently sees (norm(innerText))
-      // — used only to decide whether they actually changed anything, since
-      // textContent and innerText differ by inter-block whitespace.
       const origKey = el.getAttribute("data-fno-orig") ?? norm(el.textContent || "");
       const origVisible = norm(el.innerText);
       el.setAttribute("data-fno-orig", origKey);
@@ -222,12 +227,10 @@ export function EditorClient({
     const orig = a.getAttribute("data-fno-orig-href") ?? (a.getAttribute("href") || "");
     setDialog({ kind: "link", el: a, orig, value: a.getAttribute("href") || orig });
   }, []);
-
   const editImage = useCallback((img: HTMLImageElement) => {
     const orig = img.getAttribute("data-fno-orig-src") ?? (img.getAttribute("src") || "");
     setDialog({ kind: "image", el: img, orig, value: img.getAttribute("src") || orig });
   }, []);
-
   const applyDialog = useCallback(() => {
     if (!dialog) return;
     const value = dialog.value.trim();
@@ -236,10 +239,7 @@ export function EditorClient({
       dialog.el.setAttribute("href", value);
       recordEdit({ kind: "link", oldHref: dialog.orig, newHref: value });
     } else {
-      if (!value) {
-        setDialog(null);
-        return;
-      }
+      if (!value) return setDialog(null);
       dialog.el.setAttribute("data-fno-orig-src", dialog.orig);
       dialog.el.setAttribute("src", value);
       dialog.el.removeAttribute("srcset");
@@ -249,98 +249,88 @@ export function EditorClient({
     setDialog(null);
   }, [dialog, recordEdit]);
 
-  // ---- wire the iframe on load (and re-wire on internal navigation) ----
-  const onFrameLoad = useCallback(() => {
-    const iframe = iframeRef.current;
-    const doc = iframe?.contentDocument;
-    if (!doc) return;
+  // ---- wire a frame's document on load ----
+  const wireFrame = useCallback(
+    (index: number) => {
+      const doc = frameRefs.current[index]?.contentDocument;
+      if (!doc) return;
 
-    const onClick = (e: MouseEvent) => {
-      const t = toolRef.current;
-      if (t === "preview") return;
-      const target = e.target as HTMLElement;
-      if (t === "text") {
-        const el = textContainer(target);
-        if (!el) return;
-        e.preventDefault();
-        e.stopPropagation();
-        beginTextEdit(el, doc);
-      } else if (t === "link") {
-        const a = target.closest("a");
-        if (!a) return;
-        e.preventDefault();
-        e.stopPropagation();
-        editLink(a as HTMLAnchorElement);
-      } else if (t === "image") {
-        const img = (target.tagName === "IMG" ? target : target.closest("img")) as HTMLImageElement | null;
-        if (!img) return;
-        e.preventDefault();
-        e.stopPropagation();
-        editImage(img);
-      }
-    };
-    let hovered: HTMLElement | null = null;
-    const onMove = (e: MouseEvent) => {
-      const t = toolRef.current;
-      if (hovered) {
-        hovered.style.removeProperty("outline");
-        hovered = null;
-      }
-      if (t === "preview") return;
-      const target = e.target as HTMLElement;
-      const cand =
-        t === "text"
-          ? textContainer(target)
-          : t === "link"
-            ? (target.closest("a") as HTMLElement | null)
-            : (target.tagName === "IMG" ? target : (target.closest("img") as HTMLElement | null));
-      if (cand) {
-        cand.style.outline = "1.5px dashed rgba(37,99,235,0.6)";
-        hovered = cand;
-      }
-    };
-    doc.addEventListener("click", onClick, true);
-    doc.addEventListener("mousemove", onMove, true);
+      const onClick = (e: MouseEvent) => {
+        const t = toolRef.current;
+        if (t === "preview") return;
+        const target = e.target as HTMLElement;
+        if (t === "text") {
+          const el = textContainer(target);
+          if (!el) return;
+          e.preventDefault();
+          e.stopPropagation();
+          beginTextEdit(el, doc);
+        } else if (t === "link") {
+          const a = target.closest("a");
+          if (!a) return;
+          e.preventDefault();
+          e.stopPropagation();
+          editLink(a as HTMLAnchorElement);
+        } else if (t === "image") {
+          const img = (target.tagName === "IMG" ? target : target.closest("img")) as HTMLImageElement | null;
+          if (!img) return;
+          e.preventDefault();
+          e.stopPropagation();
+          editImage(img);
+        }
+      };
+      let hovered: HTMLElement | null = null;
+      const onMove = (e: MouseEvent) => {
+        const t = toolRef.current;
+        if (hovered) {
+          hovered.style.removeProperty("outline");
+          hovered = null;
+        }
+        if (t === "preview") return;
+        const target = e.target as HTMLElement;
+        const cand =
+          t === "text"
+            ? textContainer(target)
+            : t === "link"
+              ? (target.closest("a") as HTMLElement | null)
+              : (target.tagName === "IMG" ? target : (target.closest("img") as HTMLElement | null));
+        if (cand) {
+          cand.style.outline = "1.5px dashed rgba(37,99,235,0.7)";
+          hovered = cand;
+        }
+      };
+      doc.addEventListener("click", onClick, true);
+      doc.addEventListener("mousemove", onMove, true);
 
-    // Apply the draft repeatedly for a few seconds to beat Framer's hydration.
-    let n = 0;
-    applyAll();
-    const iv = setInterval(() => {
+      let n = 0;
       applyAll();
-      if (++n > 12) clearInterval(iv);
-    }, 500);
+      const iv = setInterval(() => {
+        applyAll();
+        if (++n > 12) clearInterval(iv);
+      }, 500);
 
-    // Natural full-page height for scaling.
-    const measure = () => {
-      try {
-        const h = doc.body?.scrollHeight || 1600;
-        setFrameHeight(Math.max(600, h));
-      } catch {
-        /* ignore */
-      }
-    };
-    setTimeout(measure, 1200);
-    setTimeout(measure, 3000);
-  }, [applyAll, beginTextEdit, editImage, editLink]);
+      const measure = () => {
+        try {
+          const h = doc.body?.scrollHeight || 1600;
+          setHeights((prev) => {
+            if (Math.abs((prev[index] || 0) - h) < 4) return prev;
+            const next = [...prev];
+            next[index] = Math.max(600, h);
+            return next;
+          });
+        } catch {
+          /* ignore */
+        }
+      };
+      setTimeout(measure, 1200);
+      setTimeout(measure, 3000);
+    },
+    [applyAll, beginTextEdit, editImage, editLink]
+  );
 
-  // Re-apply the draft when it changes or breakpoint switches.
   useEffect(() => {
     applyAll();
-  }, [edits, breakpoint, applyAll]);
-
-  // ---- responsive scaling to fit the pane ----
-  useEffect(() => {
-    const pane = paneRef.current;
-    if (!pane) return;
-    const recompute = () => {
-      const avail = pane.clientWidth - 48;
-      setScale(Math.min(1, avail / BP_WIDTH[breakpoint]));
-    };
-    recompute();
-    const ro = new ResizeObserver(recompute);
-    ro.observe(pane);
-    return () => ro.disconnect();
-  }, [breakpoint]);
+  }, [edits, applyAll]);
 
   async function publish() {
     if (publishing) return;
@@ -366,86 +356,54 @@ export function EditorClient({
     if (!confirm("Discard all unpublished changes and reload the original?")) return;
     setEdits([]);
     scheduleSave([]);
-    const iframe = iframeRef.current;
-    if (iframe) iframe.src = previewBase + "?r=" + Date.now();
+    setPagePath((p) => p + (p.includes("?") ? "&" : "?") + "r=" + Date.now());
   }
 
+  const rowW = FRAMES.reduce((s, f) => s + f.w, 0) + GAP * (FRAMES.length - 1);
+  const rowH = Math.max(...heights) + LABEL_H;
   const activeHint = TOOLS.find((t) => t.id === tool)?.hint || "";
 
   return (
-    <div className="flex h-screen flex-col bg-muted/40">
-      {/* Toolbar */}
-      <header className="flex flex-wrap items-center gap-3 border-b border-border bg-background px-4 py-2.5">
-        <Link href="/dashboard" className="text-[13px] text-muted-foreground hover:text-foreground">
-          ← Dashboard
+    <div className="flex h-screen flex-col bg-[#111113] text-neutral-200">
+      {/* Top bar */}
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[#2a2a2e] bg-[#161618] px-3 text-[13px]">
+        <Link href="/dashboard" className="flex h-6 w-6 items-center justify-center rounded bg-[#2a2a2e] text-[13px] font-bold hover:bg-[#333]">
+          ←
         </Link>
-        <span className="text-[13px] font-medium">{siteName}</span>
-
-        <div className="ml-2 flex gap-1 rounded-md bg-muted p-0.5">
+        <div className="flex items-center gap-1 rounded bg-[#2a2a2e] px-2 py-1">
+          <span className="text-[12px] font-medium">Canvas</span>
+        </div>
+        <div className="mx-auto flex items-center gap-2 text-[12.5px] text-neutral-300">
+          <span className="font-medium">{siteName}</span>
+          <span className="text-neutral-500">· {pageLabel(pages.find((p) => p.path === pagePath)?.route || "/")}</span>
+        </div>
+        {/* tools */}
+        <div className="flex gap-0.5 rounded-md bg-[#0e0e10] p-0.5">
           {TOOLS.map((t) => (
             <button
               key={t.id}
               onClick={() => setTool(t.id)}
-              className={`rounded px-2.5 py-1 text-[12.5px] ${
-                tool === t.id ? "bg-background font-medium shadow-sm" : "text-muted-foreground"
+              title={t.hint}
+              className={`rounded px-2 py-1 text-[12px] ${
+                tool === t.id ? "bg-[#2a2a2e] font-medium text-white" : "text-neutral-400 hover:text-neutral-200"
               }`}
             >
               {t.label}
             </button>
           ))}
         </div>
-
-        <div className="flex gap-1 rounded-md bg-muted p-0.5">
-          {(["desktop", "tablet", "phone"] as Breakpoint[]).map((b) => (
-            <button
-              key={b}
-              onClick={() => setBreakpoint(b)}
-              title={`${BP_WIDTH[b]}px`}
-              className={`rounded px-2.5 py-1 text-[12.5px] capitalize ${
-                breakpoint === b ? "bg-background font-medium shadow-sm" : "text-muted-foreground"
-              }`}
-            >
-              {b}
-            </button>
-          ))}
-        </div>
-
-        <span className="text-[12px] text-muted-foreground">{activeHint}</span>
-
-        <div className="ml-auto flex items-center gap-3">
-          <span className="text-[12px] text-muted-foreground">
-            {edits.length} change{edits.length === 1 ? "" : "s"}
-            {saveState === "saving" ? " · saving…" : saveState === "saved" ? " · saved" : ""}
-          </span>
-          {edits.length > 0 && (
-            <button
-              onClick={discardAll}
-              className="rounded-lg border border-border-strong px-3 py-1.5 text-[12.5px] hover:border-foreground"
-            >
-              Discard
-            </button>
-          )}
-          <button
-            onClick={publish}
-            disabled={publishing || edits.length === 0 || !canPublish}
-            title={
-              !canPublish
-                ? "Deploy this site once with “Save deploy for live editing” checked to enable publishing."
-                : ""
-            }
-            className="rounded-lg bg-foreground px-4 py-1.5 text-[13px] font-medium text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {publishing ? "Publishing…" : "Publish"}
-          </button>
-        </div>
+        <button
+          onClick={publish}
+          disabled={publishing || edits.length === 0 || !canPublish}
+          title={!canPublish ? "Deploy this site once with “Save deploy for live editing” checked." : ""}
+          className="rounded-md bg-blue-600 px-3.5 py-1.5 text-[12.5px] font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {publishing ? "Publishing…" : "Publish"}
+        </button>
       </header>
 
       {publishMsg && (
-        <div
-          className={`px-4 py-2 text-[12.5px] ${
-            publishMsg.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"
-          }`}
-        >
+        <div className={`px-4 py-1.5 text-[12px] ${publishMsg.ok ? "bg-emerald-900/40 text-emerald-300" : "bg-red-900/40 text-red-300"}`}>
           {publishMsg.text}
           {publishMsg.url && (
             <>
@@ -457,60 +415,169 @@ export function EditorClient({
           )}
         </div>
       )}
-      {!canPublish && (
-        <div className="bg-amber-50 px-4 py-2 text-[12.5px] text-amber-800">
-          Editing is live-previewed here. To publish to your real site, deploy it once from the
-          converter with “Save deploy for live editing” checked.
-        </div>
-      )}
 
-      {/* Canvas */}
-      <div ref={paneRef} className="relative flex-1 overflow-auto p-6">
-        <div className="mx-auto" style={{ width: BP_WIDTH[breakpoint] * scale }}>
-          <div
-            style={{
-              width: BP_WIDTH[breakpoint],
-              height: frameHeight,
-              transform: `scale(${scale})`,
-              transformOrigin: "top left",
-            }}
-            className="overflow-hidden rounded-lg border border-border bg-white shadow-sm"
-          >
-            <iframe
-              ref={iframeRef}
-              src={previewBase}
-              onLoad={onFrameLoad}
-              title="Site editor"
-              style={{ width: BP_WIDTH[breakpoint], height: frameHeight, border: 0 }}
-            />
+      <div className="flex min-h-0 flex-1">
+        {/* Left panel */}
+        <aside className="flex w-56 shrink-0 flex-col border-r border-[#2a2a2e] bg-[#161618]">
+          <div className="flex gap-4 border-b border-[#2a2a2e] px-3 py-2 text-[12.5px]">
+            {(["pages", "layers", "assets"] as LeftTab[]).map((tb) => (
+              <button
+                key={tb}
+                onClick={() => setLeftTab(tb)}
+                className={`capitalize ${leftTab === tb ? "font-medium text-white" : "text-neutral-500 hover:text-neutral-300"}`}
+              >
+                {tb}
+              </button>
+            ))}
           </div>
-        </div>
+          <div className="flex-1 overflow-auto p-2 text-[12.5px]">
+            {leftTab === "pages" ? (
+              <ul className="space-y-0.5">
+                {pages.map((p) => (
+                  <li key={p.route}>
+                    <button
+                      onClick={() => setPagePath(p.path)}
+                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left ${
+                        p.path === pagePath ? "bg-[#2a2a2e] text-white" : "text-neutral-300 hover:bg-[#1e1e21]"
+                      }`}
+                    >
+                      <span className="text-neutral-500">{p.route === "/" ? "⌂" : "▤"}</span>
+                      {pageLabel(p.route)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="px-2 py-4 text-neutral-500">
+                {leftTab === "layers"
+                  ? "Layer tree isn’t editable in this version — use the Text/Link/Image tools directly on the canvas."
+                  : "Asset management is coming soon. Swap images with the Image tool."}
+              </p>
+            )}
+          </div>
+        </aside>
+
+        {/* Canvas */}
+        <main className="relative min-w-0 flex-1 overflow-auto bg-[#0d0d0f]">
+          <div className="p-16" style={{ width: rowW * zoom + 128, height: rowH * zoom + 128 }}>
+            <div style={{ width: rowW, transform: `scale(${zoom})`, transformOrigin: "top left" }} className="flex" >
+              {FRAMES.map((f, i) => (
+                <div key={f.bp} style={{ width: f.w, marginRight: i < FRAMES.length - 1 ? GAP : 0 }}>
+                  <div className="mb-2 flex items-center gap-2 text-[15px] text-neutral-400">
+                    <span>▷</span>
+                    <span className="font-medium text-neutral-300">{f.bp}</span>
+                    <span className="text-neutral-600">{f.w}</span>
+                  </div>
+                  <div
+                    className="overflow-hidden rounded-md bg-white shadow-2xl ring-1 ring-black/40"
+                    style={{ width: f.w, height: heights[i] }}
+                  >
+                    <iframe
+                      ref={(el) => {
+                        frameRefs.current[i] = el;
+                      }}
+                      src={pagePath}
+                      onLoad={() => wireFrame(i)}
+                      title={`${f.bp} preview`}
+                      style={{ width: f.w, height: heights[i], border: 0 }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* zoom + hint bar */}
+          <div className="pointer-events-none sticky bottom-0 left-0 flex items-center justify-between px-4 py-2">
+            <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-[#2a2a2e] bg-[#161618]/95 px-2 py-1 text-[12px]">
+              <button onClick={() => setZoom((z) => Math.max(0.1, +(z - 0.05).toFixed(2)))} className="px-1 text-neutral-300 hover:text-white">
+                −
+              </button>
+              <span className="w-10 text-center text-neutral-400">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom((z) => Math.min(1, +(z + 0.05).toFixed(2)))} className="px-1 text-neutral-300 hover:text-white">
+                +
+              </button>
+              <button onClick={() => setZoom(0.4)} className="ml-1 rounded px-1.5 text-neutral-500 hover:text-neutral-300">
+                Fit
+              </button>
+            </div>
+            <div className="pointer-events-auto rounded-lg border border-[#2a2a2e] bg-[#161618]/95 px-3 py-1 text-[12px] text-neutral-400">
+              {activeHint}
+            </div>
+          </div>
+        </main>
+
+        {/* Right panel */}
+        <aside className="flex w-64 shrink-0 flex-col border-l border-[#2a2a2e] bg-[#161618]">
+          <div className="flex items-center justify-between border-b border-[#2a2a2e] px-3 py-2 text-[12.5px]">
+            <span className="font-medium text-white">Changes</span>
+            <span className="text-neutral-500">
+              {edits.length}
+              {saveState === "saving" ? " · saving…" : saveState === "saved" ? " · saved" : ""}
+            </span>
+          </div>
+          <div className="flex-1 overflow-auto p-2 text-[12px]">
+            {edits.length === 0 ? (
+              <p className="px-1 py-3 text-neutral-500">
+                No changes yet. Pick a tool and click text, a link, or an image on the canvas.
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {edits.map((e, i) => (
+                  <li key={i} className="rounded bg-[#1e1e21] px-2 py-1.5">
+                    <span className="mr-1.5 rounded bg-[#2a2a2e] px-1 py-0.5 text-[10px] uppercase text-neutral-400">
+                      {e.kind}
+                    </span>
+                    <span className="text-neutral-300">
+                      {e.kind === "text"
+                        ? `“${e.newText.slice(0, 24)}”`
+                        : e.kind === "link"
+                          ? e.newHref.slice(0, 30)
+                          : "image swapped"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="border-t border-[#2a2a2e] p-2">
+            {edits.length > 0 && (
+              <button
+                onClick={discardAll}
+                className="w-full rounded-md border border-[#2a2a2e] px-3 py-1.5 text-[12px] text-neutral-300 hover:border-neutral-500"
+              >
+                Discard all changes
+              </button>
+            )}
+            {!canPublish && (
+              <p className="mt-2 text-[11.5px] text-amber-400/90">
+                Deploy this site once with “Save deploy for live editing” checked to enable Publish.
+              </p>
+            )}
+          </div>
+        </aside>
       </div>
 
       {dialog && (
         <div
-          className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4"
           onClick={() => setDialog(null)}
         >
           <div
-            className="w-full max-w-md rounded-xl border border-border bg-background p-4 shadow-xl"
+            className="w-full max-w-md rounded-xl border border-[#2a2a2e] bg-[#1b1b1e] p-4 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-[14px] font-medium">
+            <h3 className="text-[14px] font-medium text-white">
               {dialog.kind === "link" ? "Change link" : "Change image"}
             </h3>
-            <p className="mt-1 text-[12px] text-muted-foreground">
+            <p className="mt-1 text-[12px] text-neutral-400">
               {dialog.kind === "link"
-                ? "Where should this link go? (a URL or a path like /contact)"
+                ? "Where should this link go? A URL or a path like /contact."
                 : "Paste a public image URL to swap it."}
             </p>
             {dialog.kind === "image" && dialog.value && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={dialog.value}
-                alt=""
-                className="mt-2 max-h-32 rounded border border-border object-contain"
-              />
+              <img src={dialog.value} alt="" className="mt-2 max-h-32 rounded border border-[#2a2a2e] object-contain" />
             )}
             <input
               autoFocus
@@ -521,19 +588,13 @@ export function EditorClient({
                 if (e.key === "Escape") setDialog(null);
               }}
               placeholder={dialog.kind === "link" ? "https://… or /path" : "https://…/image.jpg"}
-              className="mt-3 h-10 w-full rounded-lg border border-border-strong bg-background px-3 text-[13px] outline-none focus:border-foreground"
+              className="mt-3 h-10 w-full rounded-lg border border-[#2a2a2e] bg-[#0e0e10] px-3 text-[13px] text-neutral-100 outline-none focus:border-blue-500"
             />
             <div className="mt-3 flex justify-end gap-2">
-              <button
-                onClick={() => setDialog(null)}
-                className="rounded-lg border border-border-strong px-3 py-1.5 text-[13px]"
-              >
+              <button onClick={() => setDialog(null)} className="rounded-lg border border-[#2a2a2e] px-3 py-1.5 text-[13px] text-neutral-300">
                 Cancel
               </button>
-              <button
-                onClick={applyDialog}
-                className="rounded-lg bg-foreground px-3 py-1.5 text-[13px] font-medium text-background"
-              >
+              <button onClick={applyDialog} className="rounded-lg bg-blue-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-blue-500">
                 Apply
               </button>
             </div>

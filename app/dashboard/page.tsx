@@ -1,23 +1,24 @@
-import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/supabase/user";
 import { DashboardView } from "./DashboardView";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export default async function DashboardPage() {
-  const session = await auth();
-  const userId = session!.user.id;
+  const user = await requireUser();
+  if (!user) redirect("/login?next=/dashboard");
 
   const sites = await db.site.findMany({
-    where: { ownerId: userId },
+    where: { ownerId: user.id },
     orderBy: { createdAt: "desc" },
     include: { deployments: { orderBy: { createdAt: "desc" }, take: 10 } },
   });
 
   return (
     <DashboardView
-      email={session!.user.email || ""}
+      email={user.email || ""}
       sites={sites.map((s) => ({
         id: s.id,
         name: s.name,

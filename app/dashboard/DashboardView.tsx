@@ -1,7 +1,8 @@
 "use client";
 
-import { signOut } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { createSupabaseBrowser } from "@/lib/supabase/client";
 
 interface DeploymentRow {
   id: string;
@@ -33,6 +34,12 @@ function fmtDate(iso: string): string {
 }
 
 export function DashboardView({ email, sites }: { email: string; sites: SiteRow[] }) {
+  const router = useRouter();
+  async function logout() {
+    await createSupabaseBrowser().auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
   return (
     <div className="mx-auto max-w-5xl px-5 py-10">
       <header className="flex items-center justify-between">
@@ -45,7 +52,7 @@ export function DashboardView({ email, sites }: { email: string; sites: SiteRow[
             New conversion
           </Link>
           <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
+            onClick={logout}
             className="rounded-lg border border-border-strong px-3 py-1.5 text-[13px] hover:border-foreground"
           >
             Log out

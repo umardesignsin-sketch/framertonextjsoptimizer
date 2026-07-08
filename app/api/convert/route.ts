@@ -3,7 +3,7 @@
 import { convertSite } from "@/lib/convert";
 import { makeJobId, saveJob } from "@/lib/store";
 import type { ConvertOptions } from "@/lib/types";
-import { auth } from "@/lib/auth";
+import { requireUser } from "@/lib/supabase/user";
 import { dbConfigured } from "@/lib/db";
 import { recordConversion } from "@/lib/sites";
 
@@ -12,6 +12,12 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
+  // Converting requires a logged-in account (site + embeds).
+  const user = await requireUser();
+  if (!user) {
+    return Response.json({ error: "Please log in to convert a site." }, { status: 401 });
+  }
+
   let body: { url?: string; options?: Partial<ConvertOptions> } = {};
   try {
     body = await request.json();
@@ -34,14 +40,11 @@ export async function POST(request: Request) {
         await saveJob(jobId, report);
 
         if (dbConfigured()) {
-          const session = await auth();
-          if (session?.user?.id) {
-            await recordConversion(session.user.id, {
-              sourceUrl: report.sourceUrl,
-              jobId,
-              outputKind: "hybrid",
-            }).catch(() => {});
-          }
+          await recordConversion(user.id, {
+            sourceUrl: report.sourceUrl,
+            jobId,
+            outputKind: "hybrid",
+          }).catch(() => {});
         }
 
         // Slim report for the client (file manifest only, no contents).

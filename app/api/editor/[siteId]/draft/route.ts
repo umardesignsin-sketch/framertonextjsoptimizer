@@ -1,6 +1,6 @@
 // GET/PUT /api/editor/[siteId]/draft — load or save the visual editor's
 // unpublished draft edits for a site the caller owns.
-import { auth } from "@/lib/auth";
+import { getAuthUser } from "@/lib/supabase/user";
 import { db, dbConfigured } from "@/lib/db";
 import type { EditorEdit } from "@/lib/overrides";
 
@@ -8,8 +8,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function ownedSite(siteId: string) {
-  const session = await auth();
-  const userId = session?.user?.id;
+  const authed = await getAuthUser();
+  const userId = authed?.id;
   if (!userId) return { error: "Unauthorized", status: 401 as const };
   const site = await db.site.findFirst({ where: { id: siteId, ownerId: userId } });
   if (!site) return { error: "Not found", status: 404 as const };

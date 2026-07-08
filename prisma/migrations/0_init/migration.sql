@@ -24,9 +24,11 @@ CREATE TABLE "Site" (
     "ownerId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "framerUrl" TEXT NOT NULL,
+    "outputKind" TEXT NOT NULL DEFAULT 'hybrid',
     "themeRef" TEXT,
     "status" "SiteStatus" NOT NULL DEFAULT 'draft',
     "buildHook" TEXT,
+    "draftEdits" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -42,6 +44,8 @@ CREATE TABLE "Deployment" (
     "netlifyDeployId" TEXT,
     "url" TEXT,
     "log" TEXT,
+    "externalId" TEXT,
+    "tokenEnc" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
