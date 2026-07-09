@@ -34,11 +34,10 @@ function mimeFor(path: string): string {
 }
 
 export async function GET(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ jobId: string; path?: string[] }> }
 ) {
   const { jobId, path } = await params;
-  const canvas = new URL(req.url).searchParams.get("fnoCanvas") === "1";
   const job = await getJob(jobId);
   if (!job) {
     return new Response("Job expired or not found. Re-run the conversion.", {
@@ -65,7 +64,6 @@ export async function GET(
     let html = file.content || "";
     if (file.path.endsWith(".html")) {
       html = rewriteForPreview(html, `/api/preview/${jobId}/`);
-      if (canvas) html = freezeForCanvas(html);
     }
     bodyBytes = new TextEncoder().encode(html);
   }
@@ -76,32 +74,6 @@ export async function GET(
       "Cache-Control": "no-store",
     },
   });
-}
-
-/**
- * Freeze a page for the editor canvas (Framer-style design surface): strip
- * every script so the site's runtime never runs — no custom cursors, ripple
- * effects, hover JS, or hydration reverts — and pin CSS to a static state.
- * Safe for appear animations: their hidden start state is gated behind a
- * `.framer-anim` class that only a (now stripped) script adds, so every
- * element renders at its final visible state.
- */
-function freezeForCanvas(html: string): string {
-  let out = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
-  const css =
-    "<style data-fno-canvas>" +
-    "*,*::before,*::after{animation:none!important;transition:none!important;cursor:default!important}" +
-    "html,body{scroll-behavior:auto!important}" +
-    "a,button,[role=button]{cursor:default!important}" +
-    "video{pointer-events:none!important}" +
-    // Appear/scroll-reveal elements are SSR'd at their hidden START state
-    // (inline opacity:0.001 + transform) and revealed by the runtime we just
-    // stripped. Park them at their visible resting state instead.
-    "[data-framer-appear-id]{opacity:1!important;transform:none!important}" +
-    "</style>";
-  if (/<\/head>/i.test(out)) out = out.replace(/<\/head>/i, css + "</head>");
-  else out = css + out;
-  return out;
 }
 
 /**

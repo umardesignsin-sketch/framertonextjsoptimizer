@@ -25,12 +25,24 @@ const TOOLS: { id: Tool; label: string; hint: string }[] = [
   { id: "text", label: "Text", hint: "Click any text to edit it" },
   { id: "link", label: "Link", hint: "Click a link to change where it goes" },
   { id: "image", label: "Image", hint: "Click an image to swap it" },
-  { id: "preview", label: "Preview", hint: "Live site — effects and animations run" },
+  { id: "preview", label: "Preview", hint: "Interact with the live site — effects run" },
 ];
 
-/** Canvas frames load a frozen page (scripts stripped, effects off) — like
- *  Framer's canvas. Only the Preview tool loads the live version. */
-const withCanvasParam = (p: string) => p + (p.includes("?") ? "&" : "?") + "fnoCanvas=1";
+/** Pointer events the editing shield swallows so the page's own listeners
+ *  (cursor ripples, hover effects, custom cursors) never fire while editing. */
+const SHIELD_BLOCKED = [
+  "pointermove",
+  "pointerdown",
+  "pointerup",
+  "pointerover",
+  "pointerout",
+  "mousedown",
+  "mouseup",
+  "mouseover",
+  "mouseout",
+  "dblclick",
+  "contextmenu",
+] as const;
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim();
 const escapeHtml = (s: string) =>
@@ -47,7 +59,7 @@ function textContainer(node: EventTarget | null): HTMLElement | null {
     if (/^(H1|H2|H3|H4|H5|H6|P|LI|BUTTON)$/.test(el.tagName)) return el;
     el = el.parentElement;
   }
-  return node as HTMLElement | null;
+  return null;
 }
 
 function pageLabel(route: string): string {
@@ -187,6 +199,9 @@ export function EditorClient({
   // ---- edit interactions ----
   const beginTextEdit = useCallback(
     (el: HTMLElement, doc: Document) => {
+      // Let the caret/typing reach the element while editing.
+      const shield = doc.getElementById("fno-shield") as HTMLElement | null;
+      if (shield) shield.style.pointerEvents = "none";
       const origKey = el.getAttribute("data-fno-orig") ?? norm(el.textContent || "");
       const origVisible = norm(el.innerText);
       el.setAttribute("data-fno-orig", origKey);
@@ -202,6 +217,7 @@ export function EditorClient({
         sel.addRange(range);
       }
       const finish = () => {
+        if (shield) shield.style.pointerEvents = "";
         el.removeEventListener("blur", finish);
         el.removeEventListener("keydown", onKey);
         el.removeAttribute("contenteditable");
@@ -257,54 +273,83 @@ export function EditorClient({
   const wireFrame = useCallback(
     (index: number) => {
       const doc = frameRefs.current[index]?.contentDocument;
-      if (!doc) return;
+      if (!doc || !doc.body) return;
+      if (doc.getElementById("fno-shield")) return; // already wired
 
-      const onClick = (e: MouseEvent) => {
+      // Editing shield: a transparent layer above the page that swallows all
+      // pointer events while an editing tool is active. The page never sees
+      // the mouse, so hover states, cursor-follow effects (ripples), and
+      // custom cursors stay off — the canvas is calm like Framer's, but the
+      // site still renders fully live underneath. Preview hides the shield.
+      const shield = doc.createElement("div");
+      shield.id = "fno-shield";
+      shield.style.cssText =
+        "position:fixed;inset:0;z-index:2147483647;background:transparent;cursor:default;display:" +
+        (toolRef.current === "preview" ? "none" : "block");
+      // Attach to <html>, not <body>: Framer's hydration re-renders body
+      // children and would strip the shield. Re-attach if anything removes it.
+      doc.documentElement.appendChild(shield);
+      new MutationObserver(() => {
+        if (!shield.isConnected) doc.documentElement.appendChild(shield);
+      }).observe(doc.documentElement, { childList: true });
+
+      // Everything stacked under the cursor (shield excluded). Scanning the
+      // whole stack lets tools pick text/links/images that sit UNDER effect
+      // layers like full-page WebGL canvases.
+      const pickStack = (x: number, y: number): HTMLElement[] => {
+        shield.style.pointerEvents = "none";
+        const els = doc.elementsFromPoint(x, y) as HTMLElement[];
+        shield.style.pointerEvents = "";
+        return els.filter((el) => el !== shield);
+      };
+
+      // Resolve the first element in the stack the active tool can act on.
+      const resolveTarget = (x: number, y: number): HTMLElement | null => {
+        const t = toolRef.current;
+        for (const el of pickStack(x, y)) {
+          const m =
+            t === "text"
+              ? textContainer(el)
+              : t === "link"
+                ? (el.closest("a") as HTMLElement | null)
+                : t === "image"
+                  ? ((el.tagName === "IMG" ? el : el.closest("img")) as HTMLElement | null)
+                  : null;
+          if (m) return m;
+        }
+        return null;
+      };
+
+      for (const type of SHIELD_BLOCKED) {
+        shield.addEventListener(type, (e) => e.stopPropagation());
+      }
+
+      shield.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         const t = toolRef.current;
         if (t === "preview") return;
-        const target = e.target as HTMLElement;
-        if (t === "text") {
-          const el = textContainer(target);
-          if (!el) return;
-          e.preventDefault();
-          e.stopPropagation();
-          beginTextEdit(el, doc);
-        } else if (t === "link") {
-          const a = target.closest("a");
-          if (!a) return;
-          e.preventDefault();
-          e.stopPropagation();
-          editLink(a as HTMLAnchorElement);
-        } else if (t === "image") {
-          const img = (target.tagName === "IMG" ? target : target.closest("img")) as HTMLImageElement | null;
-          if (!img) return;
-          e.preventDefault();
-          e.stopPropagation();
-          editImage(img);
-        }
-      };
+        const target = resolveTarget(e.clientX, e.clientY);
+        if (!target) return;
+        if (t === "text") beginTextEdit(target, doc);
+        else if (t === "link") editLink(target as HTMLAnchorElement);
+        else if (t === "image") editImage(target as HTMLImageElement);
+      });
+
       let hovered: HTMLElement | null = null;
-      const onMove = (e: MouseEvent) => {
-        const t = toolRef.current;
+      shield.addEventListener("mousemove", (e) => {
+        e.stopPropagation();
         if (hovered) {
           hovered.style.removeProperty("outline");
           hovered = null;
         }
-        if (t === "preview") return;
-        const target = e.target as HTMLElement;
-        const cand =
-          t === "text"
-            ? textContainer(target)
-            : t === "link"
-              ? (target.closest("a") as HTMLElement | null)
-              : (target.tagName === "IMG" ? target : (target.closest("img") as HTMLElement | null));
+        if (toolRef.current === "preview") return;
+        const cand = resolveTarget(e.clientX, e.clientY);
         if (cand) {
           cand.style.outline = "1.5px dashed rgba(37,99,235,0.7)";
           hovered = cand;
         }
-      };
-      doc.addEventListener("click", onClick, true);
-      doc.addEventListener("mousemove", onMove, true);
+      });
 
       let n = 0;
       applyAll();
@@ -336,6 +381,39 @@ export function EditorClient({
     applyAll();
   }, [edits, applyAll]);
 
+  // Wire frames by polling instead of trusting <iframe onLoad>: fast local
+  // loads can finish before hydration attaches the handler, losing the event.
+  // wireFrame is idempotent (skips already-wired docs), and the poll also
+  // re-wires after in-frame navigation (e.g. clicking links in Preview).
+  useEffect(() => {
+    const iv = setInterval(() => {
+      frameRefs.current.forEach((f, i) => {
+        try {
+          const d = f?.contentDocument;
+          if (d && d.readyState === "complete" && d.body && !d.getElementById("fno-shield")) {
+            wireFrame(i);
+          }
+        } catch {
+          /* frame not ready */
+        }
+      });
+    }, 300);
+    return () => clearInterval(iv);
+  }, [wireFrame]);
+
+  // Show/hide each frame's editing shield when the tool changes. No reload —
+  // the same live page stays put; Preview just lets the mouse through.
+  useEffect(() => {
+    for (const f of frameRefs.current) {
+      try {
+        const sh = f?.contentDocument?.getElementById("fno-shield") as HTMLElement | null;
+        if (sh) sh.style.display = tool === "preview" ? "none" : "block";
+      } catch {
+        /* frame not ready */
+      }
+    }
+  }, [tool]);
+
   async function publish() {
     if (publishing) return;
     setPublishing(true);
@@ -366,7 +444,6 @@ export function EditorClient({
   const rowW = FRAMES.reduce((s, f) => s + f.w, 0) + GAP * (FRAMES.length - 1);
   const rowH = Math.max(...heights) + LABEL_H;
   const activeHint = TOOLS.find((t) => t.id === tool)?.hint || "";
-  const frameSrc = tool === "preview" ? pagePath : withCanvasParam(pagePath);
 
   return (
     <div className="flex h-screen flex-col bg-[#111113] text-neutral-200">
@@ -481,7 +558,7 @@ export function EditorClient({
                       ref={(el) => {
                         frameRefs.current[i] = el;
                       }}
-                      src={frameSrc}
+                      src={pagePath}
                       onLoad={() => wireFrame(i)}
                       title={`${f.bp} preview`}
                       style={{ width: f.w, height: heights[i], border: 0 }}
