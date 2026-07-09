@@ -44,7 +44,9 @@ const eo = editorOverrides([
   { kind: "image", oldSrc: "assets/img/a.webp", newSrc: "https://cdn/x.png" },
   { kind: "text", tag: "P", oldText: "same", newText: "same" }, // no-op dropped
 ]);
-const eoText = eo.find((o) => o.m === "text");
+// Editor text edits use "txt" mode: text-node rewrite that preserves nested
+// spans (fonts, hover/appear effect markup) instead of flattening innerHTML.
+const eoText = eo.find((o) => o.m === "txt");
 const eoLink = eo.find((o) => o.m === "attr");
 const eoImg = eo.find((o) => o.m === "img");
 // Inject editor overrides into a page and confirm they serialize + enforce.

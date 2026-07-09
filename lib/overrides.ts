@@ -24,12 +24,16 @@ export interface Override {
   t: string;
   /**
    * Match mode:
-   *  - "text": key = normalized textContent   → set innerHTML = h
+   *  - "txt":  key = normalized textContent   → rewrite TEXT NODES only,
+   *            preserving nested spans (fonts, hover/appear effect markup).
+   *            h is HTML-escaped plain text, decoded at runtime.
+   *  - "text": key = normalized textContent   → set innerHTML = h (legacy;
+   *            flattens nested markup — kept for buildOverrides fragments)
    *  - "html": key = normalized innerHTML      → set innerHTML = h
    *  - "attr": key = attribute `a`'s value     → set attribute a = h (links)
    *  - "img":  key = src (or srcset contains k)→ set src = h, drop srcset/sizes
    */
-  m: "text" | "html" | "attr" | "img";
+  m: "txt" | "text" | "html" | "attr" | "img";
   /** Normalized old content key the element must still show. */
   k: string;
   /** New value: innerHTML (text/html) or attribute value (attr/img). */
@@ -60,7 +64,9 @@ export function editorOverrides(edits: EditorEdit[]): Override[] {
     if (e.kind === "text") {
       const k = norm(e.oldText);
       if (!k || norm(e.newText) === k) continue;
-      out.push({ t: (e.tag || "").toLowerCase() || "*", m: "text", k, h: escapeHtml(e.newText), c: e.cls });
+      // "txt" mode rewrites text nodes in place so nested spans that carry
+      // custom fonts and hover/appear effect markup survive the edit.
+      out.push({ t: (e.tag || "").toLowerCase() || "*", m: "txt", k, h: escapeHtml(e.newText), c: e.cls });
     } else if (e.kind === "link") {
       if (!e.oldHref || e.oldHref === e.newHref) continue;
       out.push({ t: "a", m: "attr", a: "href", k: e.oldHref, h: e.newHref });
@@ -188,12 +194,20 @@ export function buildOverrides(originalHtml: string, editedHtml: string): Overri
 //  - html-mode scans narrow by the recorded framer-class when available
 const RUNTIME = `(function(){var O=window.__FNO_OV__||[];var rounds=[];var applying=false;
 function nm(s){return s.replace(/\\s+/g," ").trim()}
+function dec(h){var d=document.createElement("div");d.innerHTML=h;return d.textContent||""}
+function setTxt(el,h,k){var txt=dec(h);var w=document.createTreeWalker(el,4);var ns=[],n;
+while((n=w.nextNode())){if(nm(n.data||""))ns.push(n)}
+if(!ns.length){el.textContent=txt;return}
+var hit=false;
+for(var i=0;i<ns.length;i++){if(nm(ns[i].data)===k){ns[i].data=txt;hit=true}}
+if(!hit){ns[0].data=txt;for(var j=1;j<ns.length;j++)ns[j].data=""}}
 function apply(){if(applying)return;applying=true;try{
 for(var i=0;i<O.length;i++){var o=O[i];if((rounds[i]||0)>=5)continue;var wrote=false;try{
 var els=o.c?document.querySelectorAll(o.t+"."+o.c):document.getElementsByTagName(o.t);
 for(var j=0;j<els.length;j++){var el=els[j];
 if(o.m==="attr"){if(el.getAttribute(o.a)===o.k){el.setAttribute(o.a,o.h);wrote=true;}}
 else if(o.m==="img"){var s=el.getAttribute("src"),ss=el.getAttribute("srcset")||"";if(s===o.k||ss.indexOf(o.k)>=0){el.setAttribute("src",o.h);el.removeAttribute("srcset");el.removeAttribute("sizes");wrote=true;}}
+else if(o.m==="txt"){if(nm(el.textContent||"")===o.k){setTxt(el,o.h,o.k);wrote=true;}}
 else{var key=o.m==="text"?nm(el.textContent||""):nm(el.innerHTML||"");if(key===o.k){el.innerHTML=o.h;wrote=true;}}}}catch(e){}
 if(wrote)rounds[i]=(rounds[i]||0)+1;}
 }finally{applying=false}}
@@ -214,7 +228,7 @@ function isOverride(o: unknown): o is Override {
   return (
     !!x &&
     typeof x.t === "string" &&
-    (x.m === "text" || x.m === "html" || x.m === "attr" || x.m === "img") &&
+    (x.m === "txt" || x.m === "text" || x.m === "html" || x.m === "attr" || x.m === "img") &&
     typeof x.k === "string" &&
     typeof x.h === "string"
   );
@@ -241,8 +255,8 @@ export function injectOverrides(html: string, overrides: Override[]): string {
 
   const merged = new Map<string, Override>();
   // Re-neutralize carried-over innerHTML fragments (text/html) so entries saved
-  // by an older neutralizer get cleaned up on the next edit; attr/img values
-  // (hrefs/srcs) are not HTML and are stored verbatim.
+  // by an older neutralizer get cleaned up on the next edit; txt (escaped plain
+  // text) and attr/img values (hrefs/srcs) are not HTML and stored verbatim.
   for (const o of [...existing, ...overrides]) {
     const key = `${o.t}|${o.m}|${o.a || ""}|${o.k}`;
     const value = o.m === "text" || o.m === "html" ? { ...o, h: neutralizeFragment(o.h) } : { ...o };

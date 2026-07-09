@@ -51,8 +51,40 @@ const SHIELD_BLOCKED = [
 ] as const;
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim();
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/**
+ * Replace an element's visible text WITHOUT flattening its markup. Nested
+ * spans carry custom fonts and hover/appear effect structure — assigning
+ * innerHTML would destroy them. Rewrites text nodes in place instead:
+ *  - single text node → set it
+ *  - several nodes where some equal the whole old text (stacked hover
+ *    copies) → set each copy
+ *  - text split across spans → set the first node, blank the rest
+ */
+function setTextPreserving(el: HTMLElement, newText: string, oldKey: string) {
+  const doc = el.ownerDocument;
+  const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  let n: Node | null;
+  while ((n = walker.nextNode())) {
+    if (norm((n as Text).data || "")) nodes.push(n as Text);
+  }
+  if (nodes.length === 0) {
+    el.textContent = newText;
+    return;
+  }
+  let hit = false;
+  for (const node of nodes) {
+    if (norm(node.data) === oldKey) {
+      node.data = newText;
+      hit = true;
+    }
+  }
+  if (!hit) {
+    nodes[0].data = newText;
+    for (let i = 1; i < nodes.length; i++) nodes[i].data = "";
+  }
+}
 const framerClass = (el: Element): string | undefined =>
   (el.getAttribute("class") || "").split(/\s+/).find((c) => /^framer-[A-Za-z0-9]+$/.test(c)) ||
   undefined;
@@ -228,7 +260,7 @@ export function EditorClient({
               const el = els[i] as HTMLElement;
               if (norm(el.textContent || "") === norm(e.oldText)) {
                 el.setAttribute("data-fno-orig", e.oldText);
-                el.innerHTML = escapeHtml(e.newText);
+                setTextPreserving(el, e.newText, norm(e.oldText));
               }
             }
           } else if (e.kind === "link") {
@@ -265,6 +297,9 @@ export function EditorClient({
       if (shield) shield.style.pointerEvents = "none";
       const origKey = el.getAttribute("data-fno-orig") ?? norm(el.textContent || "");
       const origVisible = norm(el.innerText);
+      // Snapshot the markup: contenteditable typing can merge/split nodes, so
+      // we restore this structure on finish and re-apply only the text.
+      const origHTML = el.innerHTML;
       el.setAttribute("data-fno-orig", origKey);
       el.setAttribute("contenteditable", "true");
       el.style.outline = "2px solid #2563eb";
@@ -284,8 +319,11 @@ export function EditorClient({
         el.removeAttribute("contenteditable");
         el.style.outline = "";
         const newText = norm(el.innerText);
+        // Put the original markup back (typing may have mangled it), then
+        // apply the new text through the preserved structure.
+        el.innerHTML = origHTML;
         if (newText && newText !== origVisible) {
-          el.innerHTML = escapeHtml(newText);
+          setTextPreserving(el, newText, origVisible);
           recordEdit({ kind: "text", tag: el.tagName, oldText: origKey, newText, cls: framerClass(el) });
         }
       };
@@ -294,7 +332,7 @@ export function EditorClient({
           ev.preventDefault();
           el.blur();
         } else if (ev.key === "Escape") {
-          el.innerHTML = escapeHtml(origVisible);
+          el.innerHTML = origHTML;
           el.blur();
         }
       };
@@ -502,6 +540,13 @@ export function EditorClient({
         doc.querySelectorAll("[data-framer-appear-id]").forEach((el) => {
           const cs = doc.defaultView!.getComputedStyle(el);
           if (parseFloat(cs.opacity) < 0.5) (el as HTMLElement).style.setProperty("opacity", "1", "important");
+        });
+        // Per-letter/word text effects park each span at an inline start state
+        // (the `opacity:0.001` marker, often with a blur) without any appear-id.
+        doc.querySelectorAll('[style*="0.001"]').forEach((el) => {
+          const st = (el as HTMLElement).style;
+          if (parseFloat(st.opacity || "1") < 0.5) st.setProperty("opacity", "1", "important");
+          if ((st.filter || "").includes("blur")) st.setProperty("filter", "none", "important");
         });
       };
       // Some bundles pin the page inside a fixed-height scroll wrapper
