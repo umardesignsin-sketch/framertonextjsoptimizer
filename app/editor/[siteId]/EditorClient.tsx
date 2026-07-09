@@ -358,21 +358,67 @@ export function EditorClient({
         if (++n > 12) clearInterval(iv);
       }, 500);
 
+      // ---- full-page artboards (no internal scrolling) ----------------
+      // Two things make frames scroll internally instead of the canvas:
+      // 1. vh-sized sections grow with the iframe, so expanding the frame
+      //    to fit content grows the content again (feedback loop). Freeze
+      //    vh units at a fixed design viewport, like Framer's artboards.
+      // 2. Framer smooth-scroll wraps the page in a fixed-height inner
+      //    scroller, so body.scrollHeight lies about the true page height.
+      //    Measure the tallest scroller in the document instead.
+      const DESIGN_VH = 900; // design viewport height, px per 100vh
+      const fixVh = (css: string) =>
+        css.replace(/(-?\d*\.?\d+)(d|s|l)?vh\b/g, (_m, num) => `${(parseFloat(num) / 100) * DESIGN_VH}px`);
+      const fixRules = (rules: CSSRuleList) => {
+        for (const rule of Array.from(rules)) {
+          const nested = (rule as CSSMediaRule).cssRules;
+          if (nested) fixRules(nested);
+          const st = (rule as CSSStyleRule).style;
+          if (!st) continue;
+          for (let i = st.length - 1; i >= 0; i--) {
+            const prop = st[i];
+            const val = st.getPropertyValue(prop);
+            if (/\d(d|s|l)?vh\b/.test(val)) st.setProperty(prop, fixVh(val), st.getPropertyPriority(prop));
+          }
+        }
+      };
+      const freezeVh = () => {
+        for (const sheet of Array.from(doc.styleSheets)) {
+          try {
+            fixRules(sheet.cssRules);
+          } catch {
+            /* cross-origin sheet — skip */
+          }
+        }
+        doc.querySelectorAll('[style*="vh"]').forEach((el) => {
+          const s = el.getAttribute("style") || "";
+          if (/\d(d|s|l)?vh\b/.test(s)) el.setAttribute("style", fixVh(s));
+        });
+      };
+
       const measure = () => {
         try {
-          const h = doc.body?.scrollHeight || 1600;
+          freezeVh(); // re-run: hydration may inject fresh vh styles late
+          let h = Math.max(doc.documentElement?.scrollHeight || 0, doc.body?.scrollHeight || 0);
+          doc.body?.querySelectorAll("div,main,section").forEach((el) => {
+            if (el.scrollHeight > h) h = el.scrollHeight;
+          });
+          h = Math.min(Math.max(600, h || 1600), 40000);
           setHeights((prev) => {
             if (Math.abs((prev[index] || 0) - h) < 4) return prev;
             const next = [...prev];
-            next[index] = Math.max(600, h);
+            next[index] = h;
             return next;
           });
         } catch {
           /* ignore */
         }
       };
+      freezeVh();
+      setTimeout(measure, 400);
       setTimeout(measure, 1200);
       setTimeout(measure, 3000);
+      setTimeout(measure, 6000);
     },
     [applyAll, beginTextEdit, editImage, editLink]
   );
