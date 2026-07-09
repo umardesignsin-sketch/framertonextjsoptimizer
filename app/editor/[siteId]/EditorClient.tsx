@@ -25,8 +25,12 @@ const TOOLS: { id: Tool; label: string; hint: string }[] = [
   { id: "text", label: "Text", hint: "Click any text to edit it" },
   { id: "link", label: "Link", hint: "Click a link to change where it goes" },
   { id: "image", label: "Image", hint: "Click an image to swap it" },
-  { id: "preview", label: "Preview", hint: "Interact with the site normally" },
+  { id: "preview", label: "Preview", hint: "Live site — effects and animations run" },
 ];
+
+/** Canvas frames load a frozen page (scripts stripped, effects off) — like
+ *  Framer's canvas. Only the Preview tool loads the live version. */
+const withCanvasParam = (p: string) => p + (p.includes("?") ? "&" : "?") + "fnoCanvas=1";
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim();
 const escapeHtml = (s: string) =>
@@ -362,6 +366,7 @@ export function EditorClient({
   const rowW = FRAMES.reduce((s, f) => s + f.w, 0) + GAP * (FRAMES.length - 1);
   const rowH = Math.max(...heights) + LABEL_H;
   const activeHint = TOOLS.find((t) => t.id === tool)?.hint || "";
+  const frameSrc = tool === "preview" ? pagePath : withCanvasParam(pagePath);
 
   return (
     <div className="flex h-screen flex-col bg-[#111113] text-neutral-200">
@@ -476,7 +481,7 @@ export function EditorClient({
                       ref={(el) => {
                         frameRefs.current[i] = el;
                       }}
-                      src={pagePath}
+                      src={frameSrc}
                       onLoad={() => wireFrame(i)}
                       title={`${f.bp} preview`}
                       style={{ width: f.w, height: heights[i], border: 0 }}
