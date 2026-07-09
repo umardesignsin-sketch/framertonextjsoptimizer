@@ -2,6 +2,20 @@ import { SpeedCompare } from "@/components/SpeedCompare";
 
 export const metadata = {
   title: "PageSpeed checker — Framer vs converted",
+  description:
+    "Compare Lighthouse and PageSpeed scores for a published Framer site against its optimized conversion, side by side.",
+  // Self-canonicalize to the query-less path so the ?original/?converted variants
+  // don't fragment indexing.
+  alternates: {
+    canonical: "/speed",
+  },
+  openGraph: {
+    type: "website",
+    url: "/speed",
+    title: "PageSpeed checker — Framer vs converted",
+    description:
+      "Compare Lighthouse and PageSpeed scores for a published Framer site against its optimized conversion, side by side.",
+  },
 };
 
 export default async function SpeedPage({

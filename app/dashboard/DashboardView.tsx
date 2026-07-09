@@ -89,12 +89,18 @@ export function DashboardView({ email, sites }: { email: string; sites: SiteRow[
                   </p>
                   <div className="mt-2 flex flex-wrap items-center gap-3">
                     <span>Status: {s.status}</span>
+                    <Link
+                      href={`/studio/${s.id}`}
+                      className="rounded-lg bg-foreground px-3 py-1.5 text-[12px] font-medium text-background hover:opacity-90"
+                    >
+                      ✦ Open Studio
+                    </Link>
                     {s.themeRef && (
                       <Link
                         href={`/editor/${s.id}`}
-                        className="rounded-lg bg-foreground px-3 py-1.5 text-[12px] font-medium text-background hover:opacity-90"
+                        className="rounded-lg border border-border-strong px-3 py-1.5 text-[12px] font-medium hover:border-foreground"
                       >
-                        ✎ Edit site
+                        ✎ Edit live site
                       </Link>
                     )}
                     {s.themeRef && (
