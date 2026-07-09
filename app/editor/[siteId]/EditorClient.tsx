@@ -29,7 +29,11 @@ const TOOLS: { id: Tool; label: string; hint: string }[] = [
 ];
 
 /** Pointer events the editing shield swallows so the page's own listeners
- *  (cursor ripples, hover effects, custom cursors) never fire while editing. */
+ *  (cursor ripples, hover effects, custom cursors) never fire while editing.
+ *  wheel/touchmove are included to starve smooth-scroll hijackers (Lenis
+ *  etc.) that would scroll the artboard's content virtually — propagation is
+ *  stopped but the native default is kept, so the browser still chains the
+ *  scroll to the outer canvas. */
 const SHIELD_BLOCKED = [
   "pointermove",
   "pointerdown",
@@ -42,6 +46,8 @@ const SHIELD_BLOCKED = [
   "mouseout",
   "dblclick",
   "contextmenu",
+  "wheel",
+  "touchmove",
 ] as const;
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim();
@@ -98,6 +104,7 @@ export function EditorClient({
     orig: string;
     value: string;
   } | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const frameRefs = useRef<(HTMLIFrameElement | null)[]>([]);
   const toolRef = useRef(tool);
@@ -152,6 +159,60 @@ export function EditorClient({
       });
     },
     [scheduleSave]
+  );
+
+  // ---- image upload (drag & drop / file picker) ----
+  const uploadImage = useCallback(
+    async (file: File): Promise<string> => {
+      if (!file.type.startsWith("image/")) throw new Error("Not an image file");
+      const res = await fetch(`/api/editor/${siteId}/upload`, {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Upload failed");
+      return json.url as string;
+    },
+    [siteId]
+  );
+
+  /** Upload a file picked/dropped in the image dialog into the URL field. */
+  const handleDialogFile = useCallback(
+    async (file: File) => {
+      setUploading(true);
+      try {
+        const url = await uploadImage(file);
+        setDialog((d) => (d ? { ...d, value: url } : d));
+      } catch (e) {
+        alert(e instanceof Error ? e.message : "Upload failed");
+      } finally {
+        setUploading(false);
+      }
+    },
+    [uploadImage]
+  );
+
+  /** Upload a dropped file and swap it into an <img> on the canvas. */
+  const uploadAndSwap = useCallback(
+    async (file: File, img: HTMLImageElement) => {
+      const orig = img.getAttribute("data-fno-orig-src") ?? (img.getAttribute("src") || "");
+      const prevOpacity = img.style.opacity;
+      img.style.opacity = "0.4";
+      try {
+        const url = await uploadImage(file);
+        img.setAttribute("data-fno-orig-src", orig);
+        img.setAttribute("src", url);
+        img.removeAttribute("srcset");
+        img.removeAttribute("sizes");
+        recordEdit({ kind: "image", oldSrc: orig, newSrc: url });
+      } catch (e) {
+        alert(e instanceof Error ? e.message : "Upload failed");
+      } finally {
+        img.style.opacity = prevOpacity;
+      }
+    },
+    [uploadImage, recordEdit]
   );
 
   // ---- apply the current draft to every frame (survives Framer reverts) ----
@@ -351,6 +412,41 @@ export function EditorClient({
         }
       });
 
+      // Drag & drop an image file straight onto any <img> to replace it —
+      // works with every tool. The drop target highlights while dragging.
+      const imgUnder = (x: number, y: number): HTMLImageElement | null => {
+        for (const el of pickStack(x, y)) {
+          const img = (el.tagName === "IMG" ? el : el.closest("img")) as HTMLImageElement | null;
+          if (img) return img;
+        }
+        return null;
+      };
+      shield.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (hovered) {
+          hovered.style.removeProperty("outline");
+          hovered = null;
+        }
+        const img = imgUnder(e.clientX, e.clientY);
+        if (img) {
+          img.style.outline = "2.5px solid #2563eb";
+          hovered = img;
+        }
+      });
+      shield.addEventListener("drop", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (hovered) {
+          hovered.style.removeProperty("outline");
+          hovered = null;
+        }
+        const file = e.dataTransfer?.files?.[0];
+        if (!file || !file.type.startsWith("image/")) return;
+        const img = imgUnder(e.clientX, e.clientY);
+        if (img) void uploadAndSwap(file, img);
+      });
+
       let n = 0;
       applyAll();
       const iv = setInterval(() => {
@@ -371,14 +467,18 @@ export function EditorClient({
         css.replace(/(-?\d*\.?\d+)(d|s|l)?vh\b/g, (_m, num) => `${(parseFloat(num) / 100) * DESIGN_VH}px`);
       const fixRules = (rules: CSSRuleList) => {
         for (const rule of Array.from(rules)) {
-          const nested = (rule as CSSMediaRule).cssRules;
-          if (nested) fixRules(nested);
-          const st = (rule as CSSStyleRule).style;
-          if (!st) continue;
-          for (let i = st.length - 1; i >= 0; i--) {
-            const prop = st[i];
-            const val = st.getPropertyValue(prop);
-            if (/\d(d|s|l)?vh\b/.test(val)) st.setProperty(prop, fixVh(val), st.getPropertyPriority(prop));
+          try {
+            const nested = (rule as CSSMediaRule).cssRules;
+            if (nested) fixRules(nested);
+            const st = (rule as CSSStyleRule).style;
+            if (!st) continue;
+            for (let i = st.length - 1; i >= 0; i--) {
+              const prop = st[i];
+              const val = st.getPropertyValue(prop);
+              if (/\d(d|s|l)?vh\b/.test(val)) st.setProperty(prop, fixVh(val), st.getPropertyPriority(prop));
+            }
+          } catch {
+            /* unwritable rule — skip it, keep going */
           }
         }
       };
@@ -395,10 +495,50 @@ export function EditorClient({
           if (/\d(d|s|l)?vh\b/.test(s)) el.setAttribute("style", fixVh(s));
         });
       };
+      // Appear/scroll-reveal elements wait for a scroll that never happens on
+      // a full-height artboard, staying invisible (blank hero). Reveal them:
+      // opacity only — transforms stay untouched so layout can't break.
+      const revealAppear = () => {
+        doc.querySelectorAll("[data-framer-appear-id]").forEach((el) => {
+          const cs = doc.defaultView!.getComputedStyle(el);
+          if (parseFloat(cs.opacity) < 0.5) (el as HTMLElement).style.setProperty("opacity", "1", "important");
+        });
+      };
+      // Some bundles pin the page inside a fixed-height scroll wrapper
+      // (smooth-scroll). After vh is frozen those wrappers stay short and
+      // scroll internally no matter how tall the artboard is — expand them.
+      const expandScrollers = () => {
+        const els = [doc.documentElement, doc.body, ...Array.from(doc.body?.querySelectorAll("div,main,section") || [])];
+        for (const el of els as HTMLElement[]) {
+          if (!el) continue;
+          if (el.scrollHeight <= el.clientHeight + 60) continue;
+          const cs = doc.defaultView!.getComputedStyle(el);
+          if (cs.overflowY === "auto" || cs.overflowY === "scroll" || (el === doc.body && cs.overflow === "hidden")) {
+            el.style.setProperty("height", "auto", "important");
+            el.style.setProperty("max-height", "none", "important");
+            el.style.setProperty("overflow-y", "visible", "important");
+          }
+        }
+      };
 
       const measure = () => {
         try {
-          freezeVh(); // re-run: hydration may inject fresh vh styles late
+          // Guarded separately: a style quirk must never abort measuring.
+          try {
+            freezeVh(); // re-run: hydration may inject fresh vh styles late
+          } catch {
+            /* ignore */
+          }
+          try {
+            expandScrollers();
+          } catch {
+            /* ignore */
+          }
+          try {
+            revealAppear();
+          } catch {
+            /* ignore */
+          }
           let h = Math.max(doc.documentElement?.scrollHeight || 0, doc.body?.scrollHeight || 0);
           doc.body?.querySelectorAll("div,main,section").forEach((el) => {
             if (el.scrollHeight > h) h = el.scrollHeight;
@@ -420,7 +560,7 @@ export function EditorClient({
       setTimeout(measure, 3000);
       setTimeout(measure, 6000);
     },
-    [applyAll, beginTextEdit, editImage, editLink]
+    [applyAll, beginTextEdit, editImage, editLink, uploadAndSwap]
   );
 
   useEffect(() => {
@@ -701,8 +841,43 @@ export function EditorClient({
             <p className="mt-1 text-[12px] text-neutral-400">
               {dialog.kind === "link"
                 ? "Where should this link go? A URL or a path like /contact."
-                : "Paste a public image URL to swap it."}
+                : "Drop an image file, browse, or paste a public image URL."}
             </p>
+            {dialog.kind === "image" && (
+              <label
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const f = e.dataTransfer.files?.[0];
+                  if (f) void handleDialogFile(f);
+                }}
+                className={`mt-3 flex min-h-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed px-3 py-4 text-center text-[12.5px] transition-colors ${
+                  uploading
+                    ? "border-blue-500/60 text-blue-300"
+                    : "border-[#3a3a3f] text-neutral-400 hover:border-blue-500/70 hover:text-neutral-200"
+                }`}
+              >
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/avif"
+                  className="hidden"
+                  disabled={uploading}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void handleDialogFile(f);
+                    e.target.value = "";
+                  }}
+                />
+                {uploading ? (
+                  <span>Uploading…</span>
+                ) : (
+                  <>
+                    <span className="font-medium text-neutral-300">Drop an image here or click to browse</span>
+                    <span className="text-[11.5px] text-neutral-500">PNG, JPG, WebP, GIF, SVG · up to 8 MB</span>
+                  </>
+                )}
+              </label>
+            )}
             {dialog.kind === "image" && dialog.value && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={dialog.value} alt="" className="mt-2 max-h-32 rounded border border-[#2a2a2e] object-contain" />
