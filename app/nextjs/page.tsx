@@ -176,6 +176,8 @@ export default function NextJsConverter() {
               </div>
             </div>
 
+            <DeployPanel jobId={jobId} />
+
             <div className="overflow-hidden rounded-xl border border-border">
               <div className="border-b border-border px-4 py-2.5 text-[13px] font-medium">Project files</div>
               <ul className="max-h-72 divide-y divide-border overflow-y-auto text-[13px]">
@@ -191,5 +193,118 @@ export default function NextJsConverter() {
         )}
       </main>
     </div>
+  );
+}
+
+function DeployPanel({ jobId }: { jobId: string }) {
+  const [provider, setProvider] = useState<"netlify" | "vercel">("netlify");
+  const [token, setToken] = useState("");
+  const [name, setName] = useState("");
+  const [save, setSave] = useState(true);
+  const [state, setState] = useState<"idle" | "deploying" | "done" | "error">("idle");
+  const [result, setResult] = useState<{ url: string } | null>(null);
+  const [err, setErr] = useState("");
+
+  const deploy = async () => {
+    if (!token.trim()) return;
+    setState("deploying");
+    setErr("");
+    setResult(null);
+    try {
+      const res = await fetch("/api/deploy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId, provider, token: token.trim(), name: name.trim() || undefined, save }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Deploy failed");
+      setResult(data);
+      setState("done");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Deploy failed");
+      setState("error");
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-border bg-background p-5">
+      <h3 className="text-[15px] font-semibold">Deploy &amp; save for live editing</h3>
+      <p className="mt-1 text-[13px] text-muted-foreground">
+        Publishes your pages as a live site using your own token — no build step, renders exactly like
+        the source. Keep{" "}
+        <span className="font-medium text-foreground">Save deploy for live editing</span> checked so the
+        visual editor on your dashboard can push text, link, and image changes straight to this site.
+      </p>
+
+      <div className="mt-4 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block text-[12px] text-muted-foreground">Provider</label>
+          <div className="flex gap-1 rounded-md bg-muted p-0.5">
+            {(["netlify", "vercel"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setProvider(p)}
+                className={`rounded px-3 py-1.5 text-[13px] capitalize ${
+                  provider === p ? "bg-background shadow-sm" : "text-muted-foreground"
+                }`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="min-w-[200px] flex-1">
+          <label className="mb-1 block text-[12px] text-muted-foreground">
+            {provider === "netlify" ? "Netlify personal access token" : "Vercel access token"}
+          </label>
+          <input
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="paste token"
+            className="h-10 w-full rounded-lg border border-border-strong bg-background px-3 text-[14px] outline-none focus:border-foreground"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[12px] text-muted-foreground">Site name (optional)</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="auto"
+            className="h-10 w-36 rounded-lg border border-border-strong bg-background px-3 text-[14px] outline-none focus:border-foreground"
+          />
+        </div>
+        <button
+          onClick={deploy}
+          disabled={state === "deploying" || !token.trim()}
+          className="h-10 rounded-lg bg-foreground px-4 text-[14px] font-medium text-background hover:opacity-90 disabled:opacity-40"
+        >
+          {state === "deploying" ? "Deploying…" : "Deploy"}
+        </button>
+      </div>
+
+      <label className="mt-3 flex items-start gap-2 text-[12.5px] text-muted-foreground">
+        <input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} className="mt-0.5" />
+        <span>
+          <span className="font-medium text-foreground">Save deploy for live editing</span> — stores this
+          token encrypted (AES-256) so the visual editor can publish future changes to this same live
+          site. Requires being logged in.
+        </span>
+      </label>
+
+      {state === "error" && err && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">{err}</div>
+      )}
+      {state === "done" && result && (
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px]">
+          Deployed →{" "}
+          <a href={result.url} target="_blank" rel="noreferrer" className="font-medium text-emerald-700 underline">
+            {result.url}
+          </a>
+          . Open the editor from your{" "}
+          <Link href="/dashboard" className="underline">dashboard</Link> to edit it live.
+        </div>
+      )}
+    </section>
   );
 }

@@ -2,7 +2,7 @@
 // `save: true` (opt-in) stores the deploy token encrypted on the Deployment
 // row so the AI editor can push future changes to the same live site.
 import { getJob } from "@/lib/store";
-import { deployNetlify, deployVercel } from "@/lib/deploy";
+import { deployNetlify, deployVercel, toDeployableFiles } from "@/lib/deploy";
 import { db, dbConfigured } from "@/lib/db";
 import { getAuthUser } from "@/lib/supabase/user";
 import { encryptSecret, encryptionConfigured } from "@/lib/crypto";
@@ -42,11 +42,14 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Pure-Next.js reports render to static HTML here so both hosts deploy
+    // them with no build, identical to the hybrid path.
+    const files = toDeployableFiles(job.report.files);
     const result =
       provider === "netlify"
-        ? await deployNetlify(token, job.report.files, name)
+        ? await deployNetlify(token, files, name)
         : provider === "vercel"
-          ? await deployVercel(token, job.report.files, name, teamId)
+          ? await deployVercel(token, files, name, teamId)
           : null;
     if (!result) {
       return Response.json({ error: "Unknown provider" }, { status: 400 });

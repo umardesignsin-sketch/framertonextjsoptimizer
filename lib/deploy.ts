@@ -4,6 +4,49 @@
 import type { ConvertedFile } from "./types";
 import { zipBundle } from "./bundle";
 
+// Pure-Next.js route handlers embed the page HTML as a JSON string literal.
+const NEXTJS_HTML_RE = /const HTML = ("(?:[^"\\]|\\.)*");/;
+
+/** Static file path a pure-Next.js route handler maps to. */
+function nextRouteToHtmlPath(routeTsPath: string): string {
+  // app/route.ts -> index.html ; app/contact/route.ts -> contact/index.html
+  const inner = routeTsPath
+    .replace(/^app\//, "")
+    .replace(/route\.ts$/, "")
+    .replace(/\/+$/, "");
+  return inner ? `${inner}/index.html` : "index.html";
+}
+
+/**
+ * The files to actually deploy for a converted report. Hybrid bundles are
+ * already static (.html + assets) and pass through untouched. Pure-Next.js
+ * exports have no static HTML — each page is an `app/<route>/route.ts` handler
+ * with the page HTML in a `const HTML = "..."` literal — so we render those to
+ * static `<route>/index.html` files. Both hosts then serve them with no build,
+ * and the emitted HTML is byte-identical to what `next build` would prerender
+ * (Framer runtime intact, assets from Framer's CDN). This lets pure-Next.js
+ * sites use the exact same deploy + live-edit (publish) pipeline as hybrid.
+ */
+export function toDeployableFiles(files: ConvertedFile[]): ConvertedFile[] {
+  const hasHtml = files.some((f) => f.path.toLowerCase().endsWith(".html"));
+  if (hasHtml) return files; // hybrid / already-static bundle
+  const routeFiles = files.filter(
+    (f) => f.path.endsWith("route.ts") && NEXTJS_HTML_RE.test(f.content || "")
+  );
+  if (routeFiles.length === 0) return files;
+  const out: ConvertedFile[] = [];
+  for (const f of routeFiles) {
+    const m = (f.content || "").match(NEXTJS_HTML_RE);
+    if (!m) continue;
+    try {
+      out.push({ path: nextRouteToHtmlPath(f.path), content: JSON.parse(m[1]) as string });
+    } catch {
+      /* skip malformed literal */
+    }
+  }
+  return out.length ? out : files;
+}
+
 export interface DeployResult {
   url: string;
   adminUrl?: string;

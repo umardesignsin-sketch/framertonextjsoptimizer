@@ -10,7 +10,7 @@ import { editorOverrides, injectOverrides, type EditorEdit } from "./overrides";
 import { getJob } from "./store";
 import { db } from "./db";
 import { decryptSecret, encryptionConfigured } from "./crypto";
-import { redeployNetlify, redeployVercel } from "./deploy";
+import { redeployNetlify, redeployVercel, toDeployableFiles } from "./deploy";
 
 const NEXTJS_HTML_RE = /const HTML = ("(?:[^"\\]|\\.)*");/;
 
@@ -78,12 +78,15 @@ export async function publishSite(siteId: string, ownerId: string): Promise<Publ
   }
 
   const edited = applyEditsToReport(job.report, edits);
+  // Pure-Next.js: overrides were injected into the route.ts HTML literals;
+  // render them to static HTML so the redeploy matches the original deploy.
+  const files = toDeployableFiles(edited.files);
   const token = decryptSecret(target.tokenEnc);
 
   const res =
     target.provider === "netlify"
-      ? await redeployNetlify(token, target.externalId, edited.files)
-      : await redeployVercel(token, target.externalId, edited.files);
+      ? await redeployNetlify(token, target.externalId, files)
+      : await redeployVercel(token, target.externalId, files);
 
   await db.deployment
     .create({
