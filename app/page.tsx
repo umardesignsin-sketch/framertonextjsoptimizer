@@ -562,11 +562,30 @@ function AboutSection() {
     <section className="mt-20 border-t border-border pt-12">
       <h2 className="text-2xl font-semibold tracking-tight">What is the Framer → Next.js Optimizer?</h2>
       <p className="mt-3 max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
-        The Framer → Next.js Optimizer is a free tool that converts any published Framer site into a
-        fast, deployable website. It captures your Framer pages, removes Framer&apos;s heavy JavaScript
-        runtime, self-hosts and re-encodes images to WebP, inlines fonts, and runs an SEO pass — then
-        gives you either an optimized static bundle or a real Next.js App Router project. The result
-        loads faster, scores higher on Lighthouse, and can be deployed anywhere.
+        The Framer → Next.js Optimizer is a free tool that converts any published{" "}
+        <a href="https://www.framer.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Framer</a>{" "}
+        site into a fast, deployable website. It captures your Framer pages, removes Framer&apos;s heavy
+        JavaScript runtime, self-hosts and re-encodes images to{" "}
+        <a href="https://developer.mozilla.org/en-US/docs/Web/Media/Formats/Image_types#webp_image" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">WebP</a>,
+        inlines fonts, and runs an SEO pass — then gives you either an optimized static bundle or a real{" "}
+        <a href="https://nextjs.org/docs/app" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Next.js App Router</a>{" "}
+        project. The result loads faster, scores higher on{" "}
+        <a href="https://developer.chrome.com/docs/lighthouse/overview" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Lighthouse</a>{" "}
+        and improves{" "}
+        <a href="https://web.dev/articles/vitals" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Core Web Vitals</a>, and can be deployed anywhere.
+      </p>
+      <p className="mt-4 max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
+        Not sure which output to choose? The{" "}
+        <Link href="/nextjs" className="text-foreground underline underline-offset-2">Pure Next.js export</Link>{" "}
+        gives you real, editable code that renders identically to the source, while the Hybrid converter on
+        this page strips the runtime for the highest scores. Either way, you can{" "}
+        <Link href="/speed" className="text-foreground underline underline-offset-2">compare the converted site against your original</Link>{" "}
+        with the PageSpeed checker, then deploy it to{" "}
+        <a href="https://www.netlify.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Netlify</a>{" "}or{" "}
+        <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Vercel</a>{" "}
+        in one click — or open a converted site in the{" "}
+        <Link href="/nextjs" className="text-foreground underline underline-offset-2">Next.js project export</Link>{" "}
+        and take the code with you.
       </p>
       <h3 className="mt-8 text-[15px] font-semibold">How it works</h3>
       <ol className="mt-3 grid gap-3 sm:grid-cols-2">
