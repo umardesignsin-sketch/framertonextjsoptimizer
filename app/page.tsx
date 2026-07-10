@@ -3,6 +3,8 @@
 import { useState, useRef, useCallback } from "react";
 import { SpeedCompare } from "@/components/SpeedCompare";
 import { AuthNavLink } from "@/components/AuthNavLink";
+import Link from "next/link";
+import { FAQ, faqJsonLd, jsonLdScript } from "@/lib/site-meta";
 
 type Stat = { label: string; before: number; after: number; unit: string };
 type PageRef = { route: string; sourceUrl: string };
@@ -130,7 +132,16 @@ export default function Home() {
             setDevice={setDevice}
           />
         )}
+
+        <AboutSection />
+        <FaqSection />
       </main>
+      <SiteFooter />
+      {/* FAQPage structured data for rich results + answer engines */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(faqJsonLd()) }}
+      />
     </div>
   );
 }
@@ -535,5 +546,84 @@ function DeployPanel({
         </div>
       )}
     </section>
+  );
+}
+
+// Crawlable, answer-engine-friendly explainer: a self-contained definition
+// plus a clear "how it works" that AI overviews can quote directly.
+function AboutSection() {
+  const steps = [
+    ["Paste a Framer URL", "Point the converter at any published Framer site — one page or hundreds."],
+    ["We optimize every page", "The Framer runtime is stripped, images become self-hosted WebP, fonts are inlined, and an SEO pass runs."],
+    ["Deploy or download", "Push it live to Netlify or Vercel in one click, or download a real Next.js project."],
+    ["Edit and publish", "Change text, links, and images in the visual editor and publish straight to your live site."],
+  ];
+  return (
+    <section className="mt-20 border-t border-border pt-12">
+      <h2 className="text-2xl font-semibold tracking-tight">What is the Framer → Next.js Optimizer?</h2>
+      <p className="mt-3 max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
+        The Framer → Next.js Optimizer is a free tool that converts any published Framer site into a
+        fast, deployable website. It captures your Framer pages, removes Framer&apos;s heavy JavaScript
+        runtime, self-hosts and re-encodes images to WebP, inlines fonts, and runs an SEO pass — then
+        gives you either an optimized static bundle or a real Next.js App Router project. The result
+        loads faster, scores higher on Lighthouse, and can be deployed anywhere.
+      </p>
+      <h3 className="mt-8 text-[15px] font-semibold">How it works</h3>
+      <ol className="mt-3 grid gap-3 sm:grid-cols-2">
+        {steps.map(([title, body], i) => (
+          <li key={title} className="rounded-xl border border-border bg-background p-4">
+            <div className="flex items-center gap-2 text-[13px] font-semibold">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-[11px] text-background">
+                {i + 1}
+              </span>
+              {title}
+            </div>
+            <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">{body}</p>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function FaqSection() {
+  return (
+    <section className="mt-16 border-t border-border pt-12">
+      <h2 className="text-2xl font-semibold tracking-tight">Frequently asked questions</h2>
+      <div className="mt-5 divide-y divide-border rounded-xl border border-border">
+        {FAQ.map((f, i) => (
+          <details key={f.q} className="group px-4" open={i === 0}>
+            <summary className="flex cursor-pointer list-none items-center justify-between py-4 text-[15px] font-medium marker:content-none">
+              <span>{f.q}</span>
+              <span className="ml-3 shrink-0 text-muted-foreground transition-transform group-open:rotate-45">
+                +
+              </span>
+            </summary>
+            <p className="pb-4 pr-6 text-[14px] leading-relaxed text-muted-foreground">{f.a}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SiteFooter() {
+  return (
+    <footer className="border-t border-border">
+      <div className="mx-auto flex max-w-5xl flex-col gap-4 px-5 py-8 text-[13px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-5 w-5 items-center justify-center rounded bg-foreground text-[11px] font-bold text-background">
+            F
+          </div>
+          <span>Framer → Next.js Optimizer</span>
+        </div>
+        <nav className="flex flex-wrap gap-x-5 gap-y-2">
+          <Link href="/" className="hover:text-foreground">Hybrid converter</Link>
+          <Link href="/nextjs" className="hover:text-foreground">Pure Next.js</Link>
+          <Link href="/speed" className="hover:text-foreground">PageSpeed checker</Link>
+          <a href="/llms.txt" className="hover:text-foreground">llms.txt</a>
+        </nav>
+      </div>
+    </footer>
   );
 }
