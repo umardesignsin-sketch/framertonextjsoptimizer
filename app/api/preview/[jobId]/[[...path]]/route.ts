@@ -33,6 +33,33 @@ function mimeFor(path: string): string {
   return MIME[ext] || "application/octet-stream";
 }
 
+/** True if the last path segment looks like a file (has an extension). */
+function lastSegmentHasExt(rawPath: string): boolean {
+  const seg = rawPath.replace(/\/+$/, "").split("/").pop() || "";
+  return seg.includes(".");
+}
+
+// Pure-Next.js route handlers embed the page HTML as a JSON string literal.
+const NEXTJS_HTML_RE = /const HTML = ("(?:[^"\\]|\\.)*");/;
+
+/** Extract a pure-Next.js page's HTML for the requested route, or null. */
+function extractRouteHtml(
+  fileIndex: Map<string, { content?: string }>,
+  rawPath: string
+): string | null {
+  const r = rawPath.replace(/^\/+/, "").replace(/\/+$/, "");
+  const routeFile = r ? `app/${r}/route.ts` : "app/route.ts";
+  const f = fileIndex.get(normalize(routeFile));
+  if (!f?.content) return null;
+  const m = f.content.match(NEXTJS_HTML_RE);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[1]) as string;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ jobId: string; path?: string[] }> }
@@ -45,7 +72,8 @@ export async function GET(
     });
   }
 
-  let rel = (path || []).join("/");
+  const rawPath = (path || []).join("/");
+  let rel = rawPath;
   if (!rel || rel.endsWith("/")) rel += "index.html";
   let file = job.fileIndex.get(normalize(rel));
   // directory-style route -> index.html
@@ -53,6 +81,23 @@ export async function GET(
   if (!file && !rel.includes(".")) {
     file = job.fileIndex.get(normalize(rel + "/index.html"));
   }
+
+  // Pure-Next.js export: pages have no static .html — each route is
+  // `app/<route>/route.ts` with the page HTML in a `const HTML = "..."`
+  // literal. If nothing static matched and this is a page route (its last
+  // segment has no file extension), serve that embedded HTML so the editor
+  // can preview and edit pure-Next.js sites exactly like hybrid ones.
+  if (!file && !lastSegmentHasExt(rawPath)) {
+    const html = extractRouteHtml(job.fileIndex, rawPath);
+    if (html != null) {
+      const out = rewriteForPreview(html, `/api/preview/${jobId}/`);
+      return new Response(out, {
+        status: 200,
+        headers: { "Content-Type": MIME.html, "Cache-Control": "no-store" },
+      });
+    }
+  }
+
   if (!file) {
     return new Response("Not found in bundle: " + rel, { status: 404 });
   }
