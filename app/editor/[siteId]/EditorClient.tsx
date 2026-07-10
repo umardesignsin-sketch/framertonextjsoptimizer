@@ -537,16 +537,28 @@ export function EditorClient({
       // a full-height artboard, staying invisible (blank hero). Reveal them:
       // opacity only — transforms stay untouched so layout can't break.
       const revealAppear = () => {
-        doc.querySelectorAll("[data-framer-appear-id]").forEach((el) => {
-          const cs = doc.defaultView!.getComputedStyle(el);
-          if (parseFloat(cs.opacity) < 0.5) (el as HTMLElement).style.setProperty("opacity", "1", "important");
-        });
-        // Per-letter/word text effects park each span at an inline start state
-        // (the `opacity:0.001` marker, often with a blur) without any appear-id.
-        doc.querySelectorAll('[style*="0.001"]').forEach((el) => {
-          const st = (el as HTMLElement).style;
-          if (parseFloat(st.opacity || "1") < 0.5) st.setProperty("opacity", "1", "important");
+        // Framer animation start-states — appear effects, scroll-reveals, and
+        // per-letter text effects — park an element at a low inline opacity
+        // with a transform (translate/scale) and/or blur, waiting for a scroll
+        // or timeline that never fires on a static artboard. Reveal every
+        // inline-hidden element to its resting state (opacity 1, no transform,
+        // no blur). Inline opacity < 1 is the reliable discriminator: elements
+        // that use transform purely for LAYOUT keep opacity 1, so they're left
+        // untouched and positioning can't break. This is exactly the final
+        // state Framer's own runtime animates these into.
+        doc.querySelectorAll<HTMLElement>('[style*="opacity"]').forEach((el) => {
+          const st = el.style;
+          if (!st.opacity || parseFloat(st.opacity) >= 0.5) return;
+          st.setProperty("opacity", "1", "important");
+          if (st.transform && st.transform !== "none") st.setProperty("transform", "none", "important");
           if ((st.filter || "").includes("blur")) st.setProperty("filter", "none", "important");
+          el.style.setProperty("will-change", "auto");
+        });
+        // A few appear elements carry the low opacity via a class/appear-id
+        // rather than inline — catch those by computed style.
+        doc.querySelectorAll<HTMLElement>("[data-framer-appear-id]").forEach((el) => {
+          if (parseFloat(doc.defaultView!.getComputedStyle(el).opacity) < 0.5)
+            el.style.setProperty("opacity", "1", "important");
         });
       };
       // Some bundles pin the page inside a fixed-height scroll wrapper
@@ -604,6 +616,43 @@ export function EditorClient({
       setTimeout(measure, 1200);
       setTimeout(measure, 3000);
       setTimeout(measure, 6000);
+
+      // Scroll-linked reveals recompute their hidden state on resize, so the
+      // live runtime re-hides them right after we change the artboard height.
+      // A guarded, throttled observer re-reveals; our own writes are ignored
+      // via the flag, and a round cap prevents any runaway fight.
+      let revealing = false;
+      let revealRounds = 0;
+      let revealTimer: ReturnType<typeof setTimeout> | null = null;
+      const reObserver = new MutationObserver((muts) => {
+        if (revealing || revealRounds > 60 || revealTimer) return;
+        let needs = false;
+        for (const m of muts) {
+          const el = m.target as HTMLElement;
+          if (el.nodeType === 1 && el.style && el.style.opacity && parseFloat(el.style.opacity) < 0.5) {
+            needs = true;
+            break;
+          }
+        }
+        if (!needs) return;
+        revealTimer = setTimeout(() => {
+          revealTimer = null;
+          revealing = true;
+          revealRounds++;
+          try {
+            revealAppear();
+          } catch {
+            /* ignore */
+          } finally {
+            revealing = false;
+          }
+        }, 200);
+      });
+      reObserver.observe(doc.documentElement, {
+        attributes: true,
+        attributeFilter: ["style"],
+        subtree: true,
+      });
     },
     [applyAll, beginTextEdit, editImage, editLink, uploadAndSwap]
   );
