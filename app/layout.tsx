@@ -32,6 +32,12 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/",
   },
+  // Site ownership verification (Bing Webmaster Tools).
+  verification: {
+    other: {
+      "msvalidate.01": "220C73AACB616F7640521CA6542E49AF",
+    },
+  },
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
     shortcut: "/icon.svg",
