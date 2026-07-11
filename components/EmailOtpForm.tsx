@@ -64,12 +64,12 @@ export function EmailOtpForm({ next, cta }: { next: string; cta: string }) {
         {info && <p className="text-[13px] text-muted-foreground">{info}</p>}
         <input
           value={code}
-          onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 10))}
           onKeyDown={(e) => e.key === "Enter" && verify()}
           inputMode="numeric"
           autoComplete="one-time-code"
-          placeholder="6-digit code"
-          className={`${input} text-center tracking-[0.4em]`}
+          placeholder="Code from your email"
+          className={`${input} text-center tracking-[0.3em]`}
           autoFocus
         />
         <button onClick={verify} disabled={busy || code.trim().length < 6} className={button}>

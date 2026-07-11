@@ -10,7 +10,10 @@ import { EmailOtpForm } from "@/components/EmailOtpForm";
 function SignupForm() {
   const params = useSearchParams();
   const next = params.get("next") || "/dashboard";
-  const [method, setMethod] = useState<"code" | "password">("code");
+  // OTP is enabled once a custom SMTP provider is configured (branded code
+  // email). Until then, password + Google are the working methods.
+  const otpEnabled = process.env.NEXT_PUBLIC_EMAIL_OTP === "1";
+  const [method, setMethod] = useState<"code" | "password">(otpEnabled ? "code" : "password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -96,12 +99,14 @@ function SignupForm() {
         </div>
       )}
 
-      <button
-        onClick={() => { setMethod((m) => (m === "code" ? "password" : "code")); setError(""); }}
-        className="mt-3 text-[13px] text-muted-foreground underline"
-      >
-        {method === "code" ? "Use a password instead" : "Verify with a one-time code instead"}
-      </button>
+      {otpEnabled && (
+        <button
+          onClick={() => { setMethod((m) => (m === "code" ? "password" : "code")); setError(""); }}
+          className="mt-3 text-[13px] text-muted-foreground underline"
+        >
+          {method === "code" ? "Use a password instead" : "Verify with a one-time code instead"}
+        </button>
+      )}
 
       <p className="mt-4 text-[13px] text-muted-foreground">
         Already have an account?{" "}
