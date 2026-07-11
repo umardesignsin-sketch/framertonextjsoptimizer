@@ -618,7 +618,9 @@ function AboutSection() {
         project. The result loads faster, scores higher on{" "}
         <a href="https://developer.chrome.com/docs/lighthouse/overview" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Lighthouse</a>{" "}
         and improves{" "}
-        <a href="https://web.dev/articles/vitals" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Core Web Vitals</a>, and can be deployed anywhere.
+        <a href="https://web.dev/articles/vitals" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Core Web Vitals</a>, and can be deployed anywhere. If your goal is plain static
+        files, see the step-by-step{" "}
+        <Link href="/framer-to-html" className="text-foreground underline underline-offset-2">Framer to HTML guide</Link>.
       </p>
       <p className="mt-4 max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
         Not sure which output to choose? The{" "}
@@ -684,6 +686,7 @@ function SiteFooter() {
         </div>
         <nav className="flex flex-wrap gap-x-5 gap-y-2">
           <Link href="/" className="hover:text-foreground">Hybrid converter</Link>
+          <Link href="/framer-to-html" className="hover:text-foreground">Framer to HTML</Link>
           <Link href="/nextjs" className="hover:text-foreground">Pure Next.js</Link>
           <Link href="/speed" className="hover:text-foreground">PageSpeed checker</Link>
           <Link href="/blog" className="hover:text-foreground">Blog</Link>
