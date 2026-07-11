@@ -11,9 +11,10 @@ function SignupForm() {
   const params = useSearchParams();
   const next = params.get("next") || "/dashboard";
   // OTP is enabled once a custom SMTP provider is configured (branded code
-  // email). Until then, password + Google are the working methods.
+  // email). When on, signup REQUIRES the emailed code or Google — no
+  // password bypass, so every account is verified by construction. The
+  // password path only exists as a fallback for when OTP isn't configured.
   const otpEnabled = process.env.NEXT_PUBLIC_EMAIL_OTP === "1";
-  const [method, setMethod] = useState<"code" | "password">(otpEnabled ? "code" : "password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -69,7 +70,9 @@ function SignupForm() {
         <span className="h-px flex-1 bg-border" />
       </div>
 
-      {method === "code" ? (
+      {otpEnabled ? (
+        // OTP mandatory: no password bypass on signup — every account is
+        // verified by construction (Google or a real emailed code).
         <EmailOtpForm next={next} cta="Email me a verification code" />
       ) : (
         <div className="space-y-2">
@@ -97,15 +100,6 @@ function SignupForm() {
           </button>
           {error && <p className="text-[13px] text-red-600">{error}</p>}
         </div>
-      )}
-
-      {otpEnabled && (
-        <button
-          onClick={() => { setMethod((m) => (m === "code" ? "password" : "code")); setError(""); }}
-          className="mt-3 text-[13px] text-muted-foreground underline"
-        >
-          {method === "code" ? "Use a password instead" : "Verify with a one-time code instead"}
-        </button>
       )}
 
       <p className="mt-4 text-[13px] text-muted-foreground">

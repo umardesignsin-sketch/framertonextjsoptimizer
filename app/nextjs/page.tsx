@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { AuthGateModal } from "@/components/AuthGateModal";
+import { useAuthUser } from "@/components/useAuthUser";
 
 type Status = "idle" | "converting" | "done" | "error";
 interface ManifestItem { path: string; bytes: number }
@@ -19,16 +22,24 @@ function human(n: number): string {
   return n + " B";
 }
 
-export default function NextJsConverter() {
-  const [url, setUrl] = useState("");
+function NextJsConverter() {
+  const searchParams = useSearchParams();
+  const authState = useAuthUser();
+  const [url, setUrl] = useState(() => searchParams.get("url") || "");
   const [status, setStatus] = useState<Status>("idle");
   const [lines, setLines] = useState<string[]>([]);
   const [jobId, setJobId] = useState<string | null>(null);
   const [report, setReport] = useState<DoneReport | null>(null);
   const [error, setError] = useState("");
+  const [showAuthGate, setShowAuthGate] = useState(false);
 
-  async function convert() {
-    if (!url.trim() || status === "converting") return;
+  async function convert(overrideUrl?: string) {
+    const targetUrl = overrideUrl ?? url;
+    if (!targetUrl.trim() || status === "converting") return;
+    if (authState !== "in") {
+      setShowAuthGate(true);
+      return;
+    }
     setStatus("converting");
     setLines([]);
     setJobId(null);
@@ -38,7 +49,7 @@ export default function NextJsConverter() {
       const res = await fetch("/api/convert-nextjs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim() }),
+        body: JSON.stringify({ url: targetUrl.trim() }),
       });
       if (!res.body) throw new Error("No response stream");
       const reader = res.body.getReader();
@@ -74,6 +85,23 @@ export default function NextJsConverter() {
       setStatus("error");
     }
   }
+
+  // After returning from login/signup with ?url=&autoconvert=1 (set by the
+  // auth gate), the pasted URL was already restored via the lazy useState
+  // initializer above. Once the session is confirmed, auto-run the
+  // conversion so signing in doesn't lose the user's input.
+  useEffect(() => {
+    if (authState !== "in") return;
+    if (searchParams.get("autoconvert") !== "1") return;
+    const prefill = searchParams.get("url");
+    if (!prefill || status !== "idle") return;
+    window.history.replaceState(null, "", "/nextjs");
+    // Deferred: convert() sets state synchronously at its start, which the
+    // set-state-in-effect rule flags if called directly from the effect body.
+    const t = setTimeout(() => void convert(prefill), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authState]);
 
   const busy = status === "converting";
 
@@ -139,7 +167,7 @@ export default function NextJsConverter() {
               className="h-11 flex-1 rounded-lg border border-border-strong bg-background px-3.5 text-[15px] outline-none placeholder:text-muted-foreground focus:border-foreground disabled:opacity-60"
             />
             <button
-              onClick={convert}
+              onClick={() => convert()}
               disabled={busy || !url.trim()}
               className="h-11 rounded-lg bg-foreground px-5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -202,7 +230,22 @@ export default function NextJsConverter() {
           </section>
         )}
       </main>
+
+      {showAuthGate && (
+        <AuthGateModal
+          next={`/nextjs?url=${encodeURIComponent(url)}&autoconvert=1`}
+          onClose={() => setShowAuthGate(false)}
+        />
+      )}
     </div>
+  );
+}
+
+export default function NextJsConverterPage() {
+  return (
+    <Suspense>
+      <NextJsConverter />
+    </Suspense>
   );
 }
 

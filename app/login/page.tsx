@@ -11,9 +11,11 @@ function LoginForm() {
   const params = useSearchParams();
   const next = params.get("next") || "/dashboard";
   // OTP is enabled once a custom SMTP provider is configured (branded code
-  // email). Until then, password + Google are the working methods.
+  // email). When on, login is via the emailed code or Google — no password
+  // bypass. Existing password accounts still work: OTP authenticates the
+  // same Supabase user by email. The password path only exists as a
+  // fallback for when OTP isn't configured.
   const otpEnabled = process.env.NEXT_PUBLIC_EMAIL_OTP === "1";
-  const [method, setMethod] = useState<"code" | "password">(otpEnabled ? "code" : "password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -52,7 +54,10 @@ function LoginForm() {
         <span className="h-px flex-1 bg-border" />
       </div>
 
-      {method === "code" ? (
+      {otpEnabled ? (
+        // OTP mandatory: no password bypass on login — same guarantee as
+        // signup. Existing password accounts still log in fine via OTP,
+        // since Supabase matches by email.
         <EmailOtpForm next={next} cta="Email me a login code" />
       ) : (
         <div className="space-y-2">
@@ -80,15 +85,6 @@ function LoginForm() {
           </button>
           {error && <p className="text-[13px] text-red-600">{error}</p>}
         </div>
-      )}
-
-      {otpEnabled && (
-        <button
-          onClick={() => { setMethod((m) => (m === "code" ? "password" : "code")); setError(""); }}
-          className="mt-3 text-[13px] text-muted-foreground underline"
-        >
-          {method === "code" ? "Use a password instead" : "Email me a one-time code instead"}
-        </button>
       )}
 
       <p className="mt-4 text-[13px] text-muted-foreground">

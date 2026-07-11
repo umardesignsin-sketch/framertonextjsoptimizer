@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { SpeedCompare } from "@/components/SpeedCompare";
 import { AuthNavLink } from "@/components/AuthNavLink";
+import { AuthGateModal } from "@/components/AuthGateModal";
+import { useAuthUser } from "@/components/useAuthUser";
 import Link from "next/link";
 import { FAQ, faqJsonLd, jsonLdScript } from "@/lib/site-meta";
 
@@ -26,14 +29,17 @@ function human(n: number): string {
   return n + " B";
 }
 
-export default function Home() {
-  const [url, setUrl] = useState("");
+function Home() {
+  const searchParams = useSearchParams();
+  const authState = useAuthUser();
+  const [url, setUrl] = useState(() => searchParams.get("url") || "");
   const [status, setStatus] = useState<Status>("idle");
   const [lines, setLines] = useState<string[]>([]);
   const [report, setReport] = useState<Report | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string>("");
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
+  const [showAuthGate, setShowAuthGate] = useState(false);
 
   // options — the live tool runs Hybrid only (full fidelity + optimized assets).
   const mode = "hybrid" as const;
@@ -47,8 +53,13 @@ export default function Home() {
     });
   }, []);
 
-  const convert = useCallback(async () => {
-    if (!url.trim() || status === "converting") return;
+  const convert = useCallback(async (overrideUrl?: string) => {
+    const targetUrl = overrideUrl ?? url;
+    if (!targetUrl.trim() || status === "converting") return;
+    if (authState !== "in") {
+      setShowAuthGate(true);
+      return;
+    }
     setStatus("converting");
     setLines([]);
     setReport(null);
@@ -60,7 +71,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          url: url.trim(),
+          url: targetUrl.trim(),
           options: { mode },
         }),
       });
@@ -105,7 +116,24 @@ export default function Home() {
       setError(e instanceof Error ? e.message : "Network error");
       setStatus("error");
     }
-  }, [url, status, pushLine]);
+  }, [url, status, pushLine, authState]);
+
+  // After returning from login/signup with ?url=&autoconvert=1 (set by the
+  // auth gate), the pasted URL was already restored via the lazy useState
+  // initializer above. Once the session is confirmed, auto-run the
+  // conversion so signing in doesn't lose the user's input.
+  useEffect(() => {
+    if (authState !== "in") return;
+    if (searchParams.get("autoconvert") !== "1") return;
+    const prefill = searchParams.get("url");
+    if (!prefill || status !== "idle") return;
+    window.history.replaceState(null, "", "/");
+    // Deferred: convert() sets state synchronously at its start, which the
+    // set-state-in-effect rule flags if called directly from the effect body.
+    const t = setTimeout(() => void convert(prefill), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authState]);
 
   return (
     <div className="min-h-screen w-full">
@@ -142,7 +170,22 @@ export default function Home() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: jsonLdScript(faqJsonLd()) }}
       />
+
+      {showAuthGate && (
+        <AuthGateModal
+          next={`/?url=${encodeURIComponent(url)}&autoconvert=1`}
+          onClose={() => setShowAuthGate(false)}
+        />
+      )}
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense>
+      <Home />
+    </Suspense>
   );
 }
 
@@ -210,7 +253,7 @@ function ConvertCard(props: {
   url: string;
   setUrl: (v: string) => void;
   status: Status;
-  convert: () => void;
+  convert: (overrideUrl?: string) => void;
 }) {
   const busy = props.status === "converting";
   return (
@@ -227,7 +270,7 @@ function ConvertCard(props: {
           className="h-11 flex-1 rounded-lg border border-border-strong bg-background px-3.5 text-[15px] outline-none placeholder:text-muted-foreground focus:border-foreground disabled:opacity-60"
         />
         <button
-          onClick={props.convert}
+          onClick={() => props.convert()}
           disabled={busy || !props.url.trim()}
           className="h-11 rounded-lg bg-foreground px-5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
