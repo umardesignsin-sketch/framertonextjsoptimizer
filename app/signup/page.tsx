@@ -5,10 +5,12 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createSupabaseBrowser } from "@/lib/supabase/client";
 import { GoogleAuthButton } from "@/components/GoogleAuthButton";
+import { EmailOtpForm } from "@/components/EmailOtpForm";
 
 function SignupForm() {
   const params = useSearchParams();
   const next = params.get("next") || "/dashboard";
+  const [method, setMethod] = useState<"code" | "password">("code");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -64,31 +66,43 @@ function SignupForm() {
         <span className="h-px flex-1 bg-border" />
       </div>
 
-      <div className="space-y-2">
-        <input
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          type="email"
-          placeholder="Email"
-          className="h-11 w-full rounded-lg border border-border-strong bg-background px-3.5 text-[15px] outline-none focus:border-foreground"
-        />
-        <input
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          type="password"
-          placeholder="Password (min. 6 characters)"
-          className="h-11 w-full rounded-lg border border-border-strong bg-background px-3.5 text-[15px] outline-none focus:border-foreground"
-        />
-        <button
-          onClick={submit}
-          disabled={busy || !email.trim() || password.length < 6}
-          className="h-11 w-full rounded-lg bg-foreground text-[15px] font-medium text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {busy ? "Creating…" : "Sign up"}
-        </button>
-      </div>
-      {error && <p className="mt-3 text-[13px] text-red-600">{error}</p>}
+      {method === "code" ? (
+        <EmailOtpForm next={next} cta="Email me a verification code" />
+      ) : (
+        <div className="space-y-2">
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            placeholder="Email"
+            className="h-11 w-full rounded-lg border border-border-strong bg-background px-3.5 text-[15px] outline-none focus:border-foreground"
+          />
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            type="password"
+            placeholder="Password (min. 6 characters)"
+            className="h-11 w-full rounded-lg border border-border-strong bg-background px-3.5 text-[15px] outline-none focus:border-foreground"
+          />
+          <button
+            onClick={submit}
+            disabled={busy || !email.trim() || password.length < 6}
+            className="h-11 w-full rounded-lg bg-foreground text-[15px] font-medium text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {busy ? "Creating…" : "Sign up"}
+          </button>
+          {error && <p className="text-[13px] text-red-600">{error}</p>}
+        </div>
+      )}
+
+      <button
+        onClick={() => { setMethod((m) => (m === "code" ? "password" : "code")); setError(""); }}
+        className="mt-3 text-[13px] text-muted-foreground underline"
+      >
+        {method === "code" ? "Use a password instead" : "Verify with a one-time code instead"}
+      </button>
+
       <p className="mt-4 text-[13px] text-muted-foreground">
         Already have an account?{" "}
         <Link href={`/login${params.get("next") ? `?next=${params.get("next")}` : ""}`} className="underline">

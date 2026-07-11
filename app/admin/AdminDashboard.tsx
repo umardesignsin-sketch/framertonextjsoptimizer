@@ -56,6 +56,12 @@ export function AdminDashboard({ jobs, baseUrl }: { jobs: JobMeta[]; baseUrl: st
         <h1 className="text-2xl font-semibold">Founders panel</h1>
         <div className="flex items-center gap-2.5">
           <a
+            href="/admin/users"
+            className="rounded-lg border border-border-strong px-3 py-1.5 text-[13px] font-medium hover:border-foreground"
+          >
+            ◎ Signups
+          </a>
+          <a
             href="/admin/blog"
             className="rounded-lg bg-foreground px-3 py-1.5 text-[13px] font-medium text-background hover:opacity-90"
           >
