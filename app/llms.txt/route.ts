@@ -24,6 +24,7 @@ visual editor to change text, links, and images and publish live.
 - [Home / Hybrid converter](${SITE.url}/): Convert a Framer site to an optimized static bundle with maximum Lighthouse scores.
 - [Pure Next.js converter](${SITE.url}/nextjs): Export a Framer site as a real, deployable Next.js App Router project.
 - [PageSpeed checker](${SITE.url}/speed): Compare Lighthouse scores before and after conversion.
+- [Blog](${SITE.url}/blog): Guides and updates on converting Framer sites to Next.js, performance, SEO, and deployment.
 
 ## What it does
 - Converts Framer sites to Next.js or an optimized static bundle

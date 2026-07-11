@@ -46,3 +46,48 @@ body {
 .thin-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Rendered Markdown for blog posts. */
+.blog-content {
+  font-size: 16.5px;
+  line-height: 1.75;
+  color: var(--foreground);
+}
+.blog-content > * + * { margin-top: 1.15em; }
+.blog-content h2 { font-size: 1.6em; font-weight: 650; letter-spacing: -0.01em; margin-top: 1.8em; line-height: 1.25; }
+.blog-content h3 { font-size: 1.3em; font-weight: 650; margin-top: 1.6em; line-height: 1.3; }
+.blog-content h4 { font-size: 1.1em; font-weight: 650; margin-top: 1.4em; }
+.blog-content p { color: var(--foreground); }
+.blog-content a { color: var(--foreground); text-decoration: underline; text-underline-offset: 2px; }
+.blog-content ul, .blog-content ol { padding-left: 1.4em; }
+.blog-content ul { list-style: disc; }
+.blog-content ol { list-style: decimal; }
+.blog-content li { margin-top: 0.4em; }
+.blog-content li > ul, .blog-content li > ol { margin-top: 0.4em; }
+.blog-content blockquote {
+  border-left: 3px solid var(--border-strong, #d4d4d4);
+  padding-left: 1em;
+  color: var(--muted-foreground, #666);
+  font-style: italic;
+}
+.blog-content img { border-radius: 12px; border: 1px solid var(--border, #eaeaea); max-width: 100%; height: auto; }
+.blog-content code {
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+  background: rgba(127,127,127,0.12);
+  padding: 0.15em 0.4em;
+  border-radius: 5px;
+}
+.blog-content pre {
+  background: #0b0b0c;
+  color: #e5e7eb;
+  border-radius: 12px;
+  padding: 1em 1.15em;
+  overflow-x: auto;
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+.blog-content pre code { background: transparent; padding: 0; font-size: inherit; color: inherit; }
+.blog-content hr { border: 0; border-top: 1px solid var(--border, #eaeaea); margin: 2em 0; }
+.blog-content table { width: 100%; border-collapse: collapse; font-size: 0.95em; }
+.blog-content th, .blog-content td { border: 1px solid var(--border, #eaeaea); padding: 0.5em 0.75em; text-align: left; }

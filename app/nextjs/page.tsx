@@ -92,6 +92,7 @@ export default function NextJsConverter() {
           <nav className="flex items-center gap-5 text-[13px]">
             <Link href="/" className="text-muted-foreground hover:text-foreground">Hybrid converter</Link>
             <Link href="/speed" className="text-muted-foreground hover:text-foreground">PageSpeed checker</Link>
+            <Link href="/blog" className="text-muted-foreground hover:text-foreground">Blog</Link>
           </nav>
         </div>
       </header>

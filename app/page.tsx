@@ -159,12 +159,15 @@ function Header() {
           </span>
         </div>
         <nav className="flex items-center gap-5 text-[13px]">
-          <a href="/nextjs" className="text-muted-foreground hover:text-foreground">
+          <Link href="/nextjs" className="text-muted-foreground hover:text-foreground">
             Pure Next.js
-          </a>
-          <a href="/speed" className="text-muted-foreground hover:text-foreground">
+          </Link>
+          <Link href="/speed" className="text-muted-foreground hover:text-foreground">
             PageSpeed checker
-          </a>
+          </Link>
+          <Link href="/blog" className="text-muted-foreground hover:text-foreground">
+            Blog
+          </Link>
           <a
             href="https://web.dev/articles/lighthouse-performance"
             target="_blank"
@@ -640,6 +643,7 @@ function SiteFooter() {
           <Link href="/" className="hover:text-foreground">Hybrid converter</Link>
           <Link href="/nextjs" className="hover:text-foreground">Pure Next.js</Link>
           <Link href="/speed" className="hover:text-foreground">PageSpeed checker</Link>
+          <Link href="/blog" className="hover:text-foreground">Blog</Link>
           <a href="/llms.txt" className="hover:text-foreground">llms.txt</a>
         </nav>
       </div>

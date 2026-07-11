@@ -71,6 +71,27 @@ model Site {
   @@index([status])
 }
 
+/// A blog post published on the marketing site (founders panel authors these).
+/// Content is Markdown, rendered to HTML at request time.
+model Post {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  excerpt     String?
+  /// Markdown body.
+  content     String
+  coverImage  String?
+  tags        String[]  @default([])
+  /// "draft" or "published".
+  status      String    @default("draft")
+  authorName  String?
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, publishedAt])
+}
+
 /// A deployment of a site to a host (Netlify first).
 model Deployment {
   id              String       @id @default(cuid())

@@ -53,13 +53,21 @@ export function AdminDashboard({ jobs, baseUrl }: { jobs: JobMeta[]; baseUrl: st
   return (
     <div className="mx-auto max-w-5xl px-5 py-10">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Admin</h1>
-        <button
-          onClick={logout}
-          className="rounded-lg border border-border-strong px-3 py-1.5 text-[13px] hover:border-foreground"
-        >
-          Log out
-        </button>
+        <h1 className="text-2xl font-semibold">Founders panel</h1>
+        <div className="flex items-center gap-2.5">
+          <a
+            href="/admin/blog"
+            className="rounded-lg bg-foreground px-3 py-1.5 text-[13px] font-medium text-background hover:opacity-90"
+          >
+            ✍ Blog
+          </a>
+          <button
+            onClick={logout}
+            className="rounded-lg border border-border-strong px-3 py-1.5 text-[13px] hover:border-foreground"
+          >
+            Log out
+          </button>
+        </div>
       </header>
 
       {/* Embed the converter */}
