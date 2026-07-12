@@ -76,10 +76,11 @@ export function seoPass($: Doc, meta: PageMeta, route: string): SeoResult {
     const rel = toRootRelative($(el).attr("content"));
     if (rel) $(el).attr("content", rel);
   });
-  $('link[rel="alternate"][hreflang]').each((_, el) => {
-    const rel = toRootRelative($(el).attr("href"));
-    if (rel) $(el).attr("href", rel);
-  });
+  // Framer's hreflang alternates point at the source origin. A relative
+  // hreflang is invalid (Google + Lighthouse require fully-qualified URLs),
+  // and a cross-origin one points back to Framer. For a single-locale export
+  // they're just noise — remove them so the hreflang audit stays clean.
+  $('link[rel="alternate"][hreflang]').remove();
   if (canonicalFixed) notes.push("pointed canonical at the deployed site (was Framer's URL)");
 
   // If the page had NO canonical at all, add a self-referencing one from the
