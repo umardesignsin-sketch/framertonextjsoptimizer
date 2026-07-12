@@ -58,9 +58,35 @@ export function seoPass($: Doc, meta: PageMeta, route: string): SeoResult {
     $("head").append('<meta property="og:type" content="website">');
   }
 
-  // canonical (keep original if present; it stays valid)
-  if (!$('link[rel="canonical"]').length && meta.canonical) {
-    $("head").append(`<link rel="canonical" href="${escapeAttr(meta.canonical)}">`);
+  // Canonical / og:url / hreflang: Framer hard-codes these to the SOURCE
+  // origin (e.g. https://your-site.framer.website/…). Left untouched, the
+  // converted-and-deployed copy would tell Google the "real" page still lives
+  // on Framer — cratering the deployed site's ranking AND failing Lighthouse's
+  // canonical audit (cross-origin canonical). Rewrite absolute references to
+  // ROOT-RELATIVE so they self-reference whatever domain serves the export.
+  let canonicalFixed = 0;
+  $('link[rel="canonical"]').each((_, el) => {
+    const rel = toRootRelative($(el).attr("href"));
+    if (rel) {
+      $(el).attr("href", rel);
+      canonicalFixed++;
+    }
+  });
+  $('meta[property="og:url"]').each((_, el) => {
+    const rel = toRootRelative($(el).attr("content"));
+    if (rel) $(el).attr("content", rel);
+  });
+  $('link[rel="alternate"][hreflang]').each((_, el) => {
+    const rel = toRootRelative($(el).attr("href"));
+    if (rel) $(el).attr("href", rel);
+  });
+  if (canonicalFixed) notes.push("pointed canonical at the deployed site (was Framer's URL)");
+
+  // If the page had NO canonical at all, add a self-referencing one from the
+  // route path (root-relative, so it works on any deploy domain).
+  if (!$('link[rel="canonical"]').length) {
+    const path = toRootRelative(meta.canonical) || (route && route.startsWith("/") ? route : "/");
+    $("head").append(`<link rel="canonical" href="${escapeAttr(path)}">`);
   }
 
   // image alt text
@@ -98,8 +124,25 @@ export function seoPass($: Doc, meta: PageMeta, route: string): SeoResult {
   });
   if (badgeRemoved) notes.push("removed Framer badge");
 
-  void route;
   return { altsAdded, badgeRemoved, notes };
+}
+
+/**
+ * Strip the scheme + host from an absolute URL, keeping a root-relative
+ * path (+query+hash). Relative or missing values are returned unchanged.
+ * Protocol-relative and non-http(s) values are left alone. Used to make
+ * canonical/og:url self-reference the deploy domain instead of Framer's.
+ */
+function toRootRelative(href: string | undefined): string | undefined {
+  if (!href) return href;
+  const h = href.trim();
+  if (!/^https?:\/\//i.test(h)) return h; // already relative — keep as-is
+  try {
+    const u = new URL(h);
+    return (u.pathname || "/") + u.search + u.hash;
+  } catch {
+    return h;
+  }
 }
 
 function escapeHtml(s: string): string {
