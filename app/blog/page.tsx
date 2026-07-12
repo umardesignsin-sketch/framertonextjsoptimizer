@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { dbConfigured } from "@/lib/db";
-import { listPublishedPosts, autoExcerpt, readingTime, blogJsonLd, DEFAULT_AUTHOR } from "@/lib/blog";
+import { listPublishedPosts, autoExcerpt, readingTime, blogJsonLd } from "@/lib/blog";
 import { jsonLdScript } from "@/lib/site-meta";
 
 export const dynamic = "force-dynamic";
@@ -29,59 +29,72 @@ export default async function BlogIndexPage() {
   const posts = dbConfigured() ? await listPublishedPosts() : [];
 
   return (
-    <div className="min-h-screen w-full">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-3.5 text-[13px]">
+    <div className="min-h-screen w-full bg-background px-4 py-4 sm:px-6 sm:py-6">
+      <div className="mx-auto max-w-3xl rounded-[20px] border border-border px-5 py-12 sm:px-12 sm:py-16">
+        <nav className="flex items-center justify-between text-[12.5px]">
           <Link href="/" className="flex items-center gap-2.5">
             <span className="flex h-6 w-6 items-center justify-center rounded bg-foreground text-[13px] font-bold text-background">F</span>
             <span className="font-semibold">Framer → Next.js Optimizer</span>
           </Link>
-          <Link href="/" className="text-muted-foreground hover:text-foreground">Converter</Link>
-        </div>
-      </header>
+          <Link href="/" className="text-muted-foreground hover:text-foreground">Converter ↗</Link>
+        </nav>
 
-      <main className="mx-auto max-w-3xl px-5 py-14">
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Blog</h1>
-        <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          Guides and updates on converting{" "}
-          <a href="https://www.framer.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Framer</a>{" "}
-          sites to{" "}
-          <a href="https://nextjs.org/docs/app" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Next.js</a>{" "}
-          — performance, SEO, deployment, and shipping fast. Try it on the{" "}
-          <Link href="/" className="text-foreground underline underline-offset-2">Hybrid converter</Link> or the{" "}
-          <Link href="/nextjs" className="text-foreground underline underline-offset-2">Pure Next.js export</Link>.
-        </p>
+        <header className="mt-12">
+          <h1 className="text-[38px] font-semibold leading-[1.05] tracking-tight sm:text-[52px]">Blog</h1>
+          <p className="mt-4 max-w-2xl text-[15.5px] leading-relaxed text-muted-foreground">
+            Guides and updates on converting{" "}
+            <a href="https://www.framer.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Framer</a>{" "}
+            sites to fast{" "}
+            <Link href="/framer-to-html" className="text-foreground underline underline-offset-2">HTML</Link>{" "}
+            and{" "}
+            <a href="https://nextjs.org/docs/app" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Next.js</a>{" "}
+            — performance, SEO, and deployment.
+          </p>
+        </header>
 
         {posts.length === 0 ? (
-          <p className="mt-12 rounded-xl border border-border bg-muted/30 px-5 py-10 text-center text-[14px] text-muted-foreground">
+          <p className="mt-14 border-t border-border pt-14 text-center text-[14px] text-muted-foreground">
             No posts yet — check back soon.
           </p>
         ) : (
-          <ul className="mt-10 space-y-8">
+          <ul className="mt-12 border-t border-border">
             {posts.map((p) => {
               const published = p.publishedAt || p.createdAt;
               return (
-                <li key={p.id} className="border-b border-border pb-8 last:border-0">
-                  <Link href={`/blog/${p.slug}`} className="group block">
-                    <h2 className="text-xl font-semibold tracking-tight group-hover:underline">{p.title}</h2>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted-foreground">
-                      <span>{p.authorName || DEFAULT_AUTHOR}</span>
-                      <span>·</span>
+                <li key={p.id} className="border-b border-border">
+                  <Link href={`/blog/${p.slug}`} className="group block py-8">
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
                       <time dateTime={published.toISOString()}>{fmtDate(published)}</time>
-                      <span>·</span>
-                      <span>{readingTime(p.content)} min read</span>
+                      <span className="mx-2">·</span>
+                      {readingTime(p.content)} min read
                     </div>
-                    <p className="mt-2 text-[14.5px] leading-relaxed text-muted-foreground">
+                    <h2 className="mt-2 text-[24px] font-semibold leading-tight tracking-tight sm:text-[28px] group-hover:underline">
+                      {p.title}
+                    </h2>
+                    <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
                       {p.excerpt || autoExcerpt(p.content)}
                     </p>
-                    <span className="mt-2 inline-block text-[13px] font-medium text-foreground">Read more →</span>
+                    <span className="mt-3 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-foreground">
+                      Read more
+                      <span className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">↗</span>
+                    </span>
                   </Link>
                 </li>
               );
             })}
           </ul>
         )}
-      </main>
+
+        <div className="mt-14 flex justify-center border-t border-border pt-10">
+          <Link
+            href="/"
+            className="group inline-flex items-center gap-1.5 text-[14px] font-medium text-muted-foreground hover:text-foreground"
+          >
+            Back to home
+            <span className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">↗</span>
+          </Link>
+        </div>
+      </div>
 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(blogJsonLd(posts)) }} />
     </div>

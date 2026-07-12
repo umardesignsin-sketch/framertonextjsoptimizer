@@ -55,59 +55,83 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
   const published = p.publishedAt || p.createdAt;
   const html = renderMarkdown(p.content);
 
-  return (
-    <div className="min-h-screen w-full">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-3.5 text-[13px]">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="flex h-6 w-6 items-center justify-center rounded bg-foreground text-[13px] font-bold text-background">F</span>
-            <span className="font-semibold">Framer → Next.js Optimizer</span>
-          </Link>
-          <Link href="/blog" className="text-muted-foreground hover:text-foreground">All posts</Link>
-        </div>
-      </header>
+  const meta = [
+    { label: "Published", value: fmtDate(published) },
+    { label: "Read time", value: `${readingTime(p.content)} min` },
+    { label: "Written by", value: p.authorName || DEFAULT_AUTHOR },
+  ];
 
-      <article className="mx-auto max-w-3xl px-5 py-12">
+  return (
+    <div className="min-h-screen w-full bg-background px-4 py-4 sm:px-6 sm:py-6">
+      {/* Thin framed editorial canvas */}
+      <div className="mx-auto max-w-3xl rounded-[20px] border border-border px-5 py-12 sm:px-12 sm:py-16">
         <nav className="text-[12.5px] text-muted-foreground">
-          <Link href="/" className="hover:text-foreground">Home</Link> ·{" "}
+          <Link href="/" className="hover:text-foreground">Home</Link>
+          <span className="mx-1.5">/</span>
           <Link href="/blog" className="hover:text-foreground">Blog</Link>
         </nav>
 
-        <h1 className="mt-4 text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">{p.title}</h1>
+        <article>
+          <h1 className="mt-6 text-[34px] font-semibold leading-[1.1] tracking-tight sm:text-[44px]">
+            {p.title}
+          </h1>
+          {(p.excerpt || autoExcerpt(p.content)) && (
+            <p className="mt-4 max-w-2xl text-[15.5px] leading-relaxed text-muted-foreground">
+              {p.excerpt || autoExcerpt(p.content)}
+            </p>
+          )}
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted-foreground">
-          <span>{p.authorName || DEFAULT_AUTHOR}</span>
-          <span>·</span>
-          <time dateTime={published.toISOString()}>{fmtDate(published)}</time>
-          <span>·</span>
-          <span>{readingTime(p.content)} min read</span>
-        </div>
-
-        {p.coverImage && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={p.coverImage} alt={p.title} className="mt-6 w-full rounded-xl border border-border object-cover" />
-        )}
-
-        <div className="blog-content mt-8" dangerouslySetInnerHTML={{ __html: html }} />
-
-        {p.tags.length > 0 && (
-          <div className="mt-10 flex flex-wrap gap-2">
-            {p.tags.map((t) => (
-              <span key={t} className="rounded-full border border-border px-2.5 py-1 text-[12px] text-muted-foreground">#{t}</span>
-            ))}
+          {/* Case-study-style metadata row */}
+          <div className="mt-10 flex flex-wrap items-end justify-between gap-y-6 border-t border-border pt-6">
+            <div className="grid grid-cols-2 gap-x-12 gap-y-6 sm:flex sm:gap-x-14">
+              {meta.map((m) => (
+                <div key={m.label}>
+                  <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{m.label}</div>
+                  <div className="mt-1 text-[14px] font-medium">{m.value}</div>
+                </div>
+              ))}
+            </div>
+            <Link
+              href="/framer-to-html"
+              className="group inline-flex items-center gap-1.5 border-b border-foreground pb-0.5 text-[14px] font-medium"
+            >
+              Try the converter
+              <span className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">↗</span>
+            </Link>
           </div>
-        )}
 
-        <div className="mt-12 rounded-xl border border-border bg-muted/40 p-5">
-          <p className="text-[15px] font-medium">Convert your Framer site next</p>
-          <p className="mt-1 text-[13.5px] text-muted-foreground">
-            Turn any published Framer site into a fast, deployable site with the{" "}
-            <Link href="/" className="underline">Hybrid converter</Link> or the{" "}
-            <Link href="/nextjs" className="underline">Pure Next.js export</Link>, then{" "}
-            <Link href="/speed" className="underline">compare the scores</Link>.
-          </p>
-        </div>
-      </article>
+          {p.coverImage && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={p.coverImage}
+              alt={p.title}
+              className="mt-10 aspect-[16/9] w-full rounded-2xl border border-border object-cover"
+            />
+          )}
+
+          <div className="blog-content mt-12" dangerouslySetInnerHTML={{ __html: html }} />
+
+          {p.tags.length > 0 && (
+            <div className="mt-12 flex flex-wrap gap-2 border-t border-border pt-8">
+              {p.tags.map((t) => (
+                <span key={t} className="rounded-full border border-border px-2.5 py-1 text-[12px] text-muted-foreground">
+                  #{t}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-14 flex justify-center border-t border-border pt-10">
+            <Link
+              href="/blog"
+              className="group inline-flex items-center gap-1.5 text-[14px] font-medium text-muted-foreground hover:text-foreground"
+            >
+              Back to blog
+              <span className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">↗</span>
+            </Link>
+          </div>
+        </article>
+      </div>
 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(postJsonLd(p)) }} />
       <script
