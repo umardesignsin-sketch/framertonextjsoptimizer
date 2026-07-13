@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { SITE, KEYWORDS, siteJsonLd, jsonLdScript } from "@/lib/site-meta";
 
@@ -87,7 +88,10 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: jsonLdScript(siteJsonLd()) }}
         />
       </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }
