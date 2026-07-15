@@ -58,6 +58,12 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
   const html = renderMarkdown(p.content);
   const nextPost = allPosts.find((x) => x.slug !== p.slug) || null;
 
+  const meta = [
+    { label: "Published", value: fmtDate(published) },
+    { label: "Read time", value: `${readingTime(p.content)} min` },
+    { label: "Written by", value: p.authorName || DEFAULT_AUTHOR },
+  ];
+
   return (
     <div className="min-h-screen w-full">
       <header className="border-b border-border">
@@ -70,93 +76,100 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
         </div>
       </header>
 
-      <article>
-        {/* Hero: real cover if set, otherwise a generated gradient — never a
-            blank strip. Title sits below, magazine-style. */}
-        {p.coverImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={p.coverImage} alt={p.title} className="h-56 w-full object-cover sm:h-80" />
-        ) : (
-          <PostCover seed={p.slug} className="h-40 w-full sm:h-56" />
+      {/* Case-study style: title + subtitle, a stacked meta list on the left
+          with a single link on the right, then the hero image below — no
+          boxed frame, no color accent, just clean black-on-white spacing. */}
+      <article className="mx-auto max-w-3xl px-5 pb-24 pt-14 sm:pt-16">
+        <h1 className="text-[34px] font-semibold leading-[1.1] tracking-tight sm:text-[44px]">
+          {p.title}
+        </h1>
+        {(p.excerpt || autoExcerpt(p.content)) && (
+          <p className="mt-3 max-w-xl text-[15.5px] leading-relaxed text-muted-foreground">
+            {p.excerpt || autoExcerpt(p.content)}
+          </p>
         )}
 
-        <div className="mx-auto max-w-3xl px-5 pb-24 pt-10">
-          <nav className="text-[12.5px] text-muted-foreground">
-            <Link href="/" className="hover:text-foreground">Home</Link>
-            <span className="mx-1.5">/</span>
-            <Link href="/blog" className="hover:text-foreground">Blog</Link>
-          </nav>
-
-          <h1 className="mt-5 text-[32px] font-semibold leading-[1.12] tracking-tight sm:text-[42px]">
-            {p.title}
-          </h1>
-
-          <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border pb-6 text-[13.5px] text-muted-foreground">
-            <span className="flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-foreground text-[10px] font-bold text-background">
-                {(p.authorName || DEFAULT_AUTHOR).trim().charAt(0)}
-              </span>
-              {p.authorName || DEFAULT_AUTHOR}
-            </span>
-            <span>·</span>
-            <time dateTime={published.toISOString()}>{fmtDate(published)}</time>
-            <span>·</span>
-            <span>{readingTime(p.content)} min read</span>
-          </div>
-
-          <div className="blog-content mt-10" dangerouslySetInnerHTML={{ __html: html }} />
-
-          {p.tags.length > 0 && (
-            <div className="mt-12 flex flex-wrap gap-2 border-t border-border pt-8">
-              {p.tags.map((t) => (
-                <span key={t} className="rounded-full border border-border px-2.5 py-1 text-[12px] text-muted-foreground">
-                  #{t}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Soft CTA — every post links to a money page */}
-          <div className="mt-10 flex flex-col items-start justify-between gap-4 rounded-2xl border border-border bg-muted/30 p-6 sm:flex-row sm:items-center">
-            <div>
-              <p className="text-[15px] font-semibold">Convert your Framer site next</p>
-              <p className="mt-1 text-[13.5px] text-muted-foreground">
-                Free, takes about a minute, and you can preview the result before deploying.
-              </p>
-            </div>
-            <Link
-              href="/"
-              className="shrink-0 rounded-lg bg-foreground px-5 py-2.5 text-[13.5px] font-medium text-background hover:opacity-90"
-            >
-              Convert free →
-            </Link>
-          </div>
-
-          {nextPost && (
-            <Link
-              href={`/blog/${nextPost.slug}`}
-              className="group mt-6 flex items-center gap-4 rounded-2xl border border-border p-4 transition-shadow hover:shadow-lg hover:shadow-black/5"
-            >
-              <PostCover seed={nextPost.slug} className="h-16 w-24 shrink-0 rounded-lg" />
-              <div className="min-w-0">
-                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Up next</div>
-                <div className="mt-0.5 truncate text-[15px] font-semibold group-hover:underline decoration-blue-600">
-                  {nextPost.title}
-                </div>
+        <div className="mt-10 flex flex-wrap items-start justify-between gap-y-8 sm:items-center">
+          <div className="flex flex-col gap-6 sm:flex-row sm:gap-14">
+            {meta.map((m) => (
+              <div key={m.label}>
+                <div className="text-[12px] text-muted-foreground">{m.label}</div>
+                <div className="mt-1 text-[14.5px] font-medium">{m.value}</div>
               </div>
-              <span className="ml-auto shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5">→</span>
-            </Link>
-          )}
-
-          <div className="mt-10 flex justify-center">
-            <Link
-              href="/blog"
-              className="group inline-flex items-center gap-1.5 text-[14px] font-medium text-muted-foreground hover:text-foreground"
-            >
-              Back to blog
-              <span className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">↗</span>
-            </Link>
+            ))}
           </div>
+          <Link
+            href="/blog"
+            className="group inline-flex shrink-0 items-center gap-1.5 border-b border-foreground pb-0.5 text-[13.5px] font-medium"
+          >
+            All posts
+            <span className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">↗</span>
+          </Link>
+        </div>
+
+        {p.coverImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={p.coverImage}
+            alt={p.title}
+            className="mt-10 aspect-[16/10] w-full rounded-lg object-cover"
+          />
+        ) : (
+          <PostCover seed={p.slug} className="mt-10 aspect-[16/10] w-full rounded-lg" />
+        )}
+
+        <div className="blog-content mt-12" dangerouslySetInnerHTML={{ __html: html }} />
+
+        {p.tags.length > 0 && (
+          <div className="mt-12 flex flex-wrap gap-2 border-t border-border pt-8">
+            {p.tags.map((t) => (
+              <span key={t} className="rounded-full border border-border px-2.5 py-1 text-[12px] text-muted-foreground">
+                #{t}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Soft CTA — every post links to a money page */}
+        <div className="mt-10 flex flex-col items-start justify-between gap-4 rounded-lg border border-border p-6 sm:flex-row sm:items-center">
+          <div>
+            <p className="text-[15px] font-semibold">Convert your Framer site next</p>
+            <p className="mt-1 text-[13.5px] text-muted-foreground">
+              Free, takes about a minute, and you can preview the result before deploying.
+            </p>
+          </div>
+          <Link
+            href="/"
+            className="shrink-0 rounded-lg bg-foreground px-5 py-2.5 text-[13.5px] font-medium text-background hover:opacity-90"
+          >
+            Convert free →
+          </Link>
+        </div>
+
+        {nextPost && (
+          <Link
+            href={`/blog/${nextPost.slug}`}
+            className="group mt-6 flex items-center gap-4 rounded-lg border border-border p-4 transition-colors hover:border-foreground"
+          >
+            <PostCover seed={nextPost.slug} className="h-16 w-24 shrink-0 rounded-md" />
+            <div className="min-w-0">
+              <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Up next</div>
+              <div className="mt-0.5 truncate text-[15px] font-semibold group-hover:underline">
+                {nextPost.title}
+              </div>
+            </div>
+            <span className="ml-auto shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5">→</span>
+          </Link>
+        )}
+
+        <div className="mt-14 flex justify-center">
+          <Link
+            href="/blog"
+            className="group inline-flex items-center gap-1.5 text-[14px] font-medium text-muted-foreground hover:text-foreground"
+          >
+            Back to blog
+            <span className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">↗</span>
+          </Link>
         </div>
       </article>
 

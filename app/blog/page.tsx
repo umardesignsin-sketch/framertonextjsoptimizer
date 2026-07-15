@@ -47,11 +47,11 @@ export default async function BlogIndexPage() {
           <h1 className="text-[42px] font-semibold leading-[1.05] tracking-tight sm:text-[56px]">Blog</h1>
           <p className="mt-4 max-w-2xl text-[16px] leading-relaxed text-muted-foreground">
             Guides and updates on converting{" "}
-            <a href="https://www.framer.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline decoration-blue-600 underline-offset-2">Framer</a>{" "}
+            <a href="https://www.framer.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Framer</a>{" "}
             sites to fast{" "}
-            <Link href="/framer-to-html" className="text-foreground underline decoration-blue-600 underline-offset-2">HTML</Link>{" "}
+            <Link href="/framer-to-html" className="text-foreground underline underline-offset-2">HTML</Link>{" "}
             and{" "}
-            <a href="https://nextjs.org/docs/app" target="_blank" rel="noopener noreferrer" className="text-foreground underline decoration-blue-600 underline-offset-2">Next.js</a>{" "}
+            <a href="https://nextjs.org/docs/app" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Next.js</a>{" "}
             — performance, SEO, and deployment.
           </p>
         </section>
@@ -65,14 +65,14 @@ export default async function BlogIndexPage() {
             {/* Featured post — the latest, big and unmissable */}
             <Link
               href={`/blog/${featured.slug}`}
-              className="group mt-8 grid gap-0 overflow-hidden rounded-2xl border border-border sm:grid-cols-2"
+              className="group mt-8 grid gap-0 overflow-hidden rounded-lg border border-border sm:grid-cols-2"
             >
               <PostCover seed={featured.slug} className="h-56 sm:h-full" />
               <div className="flex flex-col justify-center p-7 sm:p-9">
-                <span className="inline-flex w-fit items-center rounded-full bg-blue-600/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-blue-700">
+                <span className="inline-flex w-fit items-center rounded-full border border-border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Latest
                 </span>
-                <h2 className="mt-4 text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px] group-hover:underline decoration-blue-600">
+                <h2 className="mt-4 text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px] group-hover:underline">
                   {featured.title}
                 </h2>
                 <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
@@ -99,7 +99,7 @@ export default async function BlogIndexPage() {
                     <li key={p.id}>
                       <Link
                         href={`/blog/${p.slug}`}
-                        className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border transition-shadow hover:shadow-lg hover:shadow-black/5"
+                        className="group flex h-full flex-col overflow-hidden rounded-lg border border-border transition-colors hover:border-foreground"
                       >
                         <PostCover seed={p.slug} className="h-36" />
                         <div className="flex flex-1 flex-col p-5">
@@ -108,7 +108,7 @@ export default async function BlogIndexPage() {
                             <span className="mx-1.5">·</span>
                             {readingTime(p.content)} min
                           </div>
-                          <h2 className="mt-2 text-[16.5px] font-semibold leading-snug tracking-tight group-hover:underline decoration-blue-600">
+                          <h2 className="mt-2 text-[16.5px] font-semibold leading-snug tracking-tight group-hover:underline">
                             {p.title}
                           </h2>
                           <p className="mt-2 line-clamp-3 flex-1 text-[13.5px] leading-relaxed text-muted-foreground">

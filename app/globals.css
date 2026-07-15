@@ -49,10 +49,10 @@ body {
 
 /* Rendered Markdown for blog posts — editorial typography, not a Word doc:
    no default browser bullets/numbers, no full-grid tables, a real lead
-   paragraph, and a single accent color used sparingly (matches the editor's
-   selection blue) instead of flat black-on-white throughout. */
+   paragraph. Monochrome throughout (black/white/gray) to match the rest of
+   the site's minimal aesthetic — structure carries the hierarchy, not color. */
 .blog-content {
-  --blog-accent: #2563eb;
+  --blog-accent: var(--foreground);
   font-size: 17px;
   line-height: 1.8;
   color: var(--foreground);
@@ -84,7 +84,7 @@ body {
   bottom: 0.15em;
   width: 3px;
   border-radius: 2px;
-  background: var(--blog-accent);
+  background: var(--border-strong, #d4d4d4);
 }
 .blog-content h3 { margin-top: 1.9em; font-size: 1.22em; font-weight: 650; line-height: 1.35; letter-spacing: -0.01em; }
 .blog-content h4 { margin-top: 1.6em; font-size: 1.05em; font-weight: 650; }
@@ -95,12 +95,12 @@ body {
 .blog-content a {
   color: var(--foreground);
   text-decoration: underline;
-  text-decoration-color: var(--blog-accent);
+  text-decoration-color: var(--border-strong, #d4d4d4);
   text-decoration-thickness: 1.5px;
   text-underline-offset: 3px;
-  transition: color 0.15s;
+  transition: text-decoration-color 0.15s;
 }
-.blog-content a:hover { color: var(--blog-accent); }
+.blog-content a:hover { text-decoration-color: var(--foreground); }
 
 /* Custom markers instead of the browser's default disc/decimal — the
    single biggest thing that makes rendered markdown read as a Word doc. */
@@ -114,10 +114,10 @@ body {
   position: absolute;
   left: -1.3em;
   top: 0.72em;
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 999px;
-  background: var(--blog-accent);
+  background: var(--foreground);
 }
 .blog-content ol { counter-reset: blog-ol; }
 .blog-content ol > li { position: relative; counter-increment: blog-ol; }
@@ -129,7 +129,7 @@ body {
   width: 1.3em;
   font-size: 0.8em;
   font-weight: 700;
-  color: var(--blog-accent);
+  color: var(--muted-foreground, #666);
   text-align: right;
 }
 .blog-content li { margin-top: 0.55em; line-height: 1.7; }
@@ -139,7 +139,7 @@ body {
   position: relative;
   margin: 1.6em 0;
   padding: 0.2em 0 0.2em 1.3em;
-  border-left: 3px solid var(--blog-accent);
+  border-left: 3px solid var(--foreground);
   font-size: 1.08em;
   line-height: 1.65;
   color: var(--foreground);
@@ -147,41 +147,27 @@ body {
 .blog-content blockquote p { color: inherit; }
 
 .blog-content img {
-  border-radius: 14px;
-  border: 1px solid var(--border, #eaeaea);
+  border-radius: 10px;
   max-width: 100%;
   height: auto;
-  box-shadow: 0 12px 32px -16px rgba(0,0,0,0.18);
 }
 
 .blog-content code {
   font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.85em;
-  color: #1e3a8a;
-  background: rgba(37,99,235,0.08);
+  color: var(--foreground);
+  background: var(--muted, #f6f6f7);
   padding: 0.18em 0.42em;
   border-radius: 5px;
 }
 .blog-content pre {
-  position: relative;
   background: #0b0b0c;
   color: #e5e7eb;
-  border-radius: 14px;
-  padding: 2.1em 1.2em 1.2em;
+  border-radius: 10px;
+  padding: 1.1em 1.2em;
   overflow-x: auto;
   font-size: 0.85em;
   line-height: 1.65;
-}
-.blog-content pre::before {
-  content: "";
-  position: absolute;
-  top: 0.9em;
-  left: 1.1em;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: #ef4444;
-  box-shadow: 15px 0 0 #f59e0b, 30px 0 0 #22c55e;
 }
 .blog-content pre code { background: transparent; padding: 0; font-size: inherit; color: inherit; }
 
