@@ -689,6 +689,33 @@ export default function FramerToHtmlPage() {
           </div>
         </section>
 
+        {/* Guides & resources — hub-and-spoke internal linking to the
+            supporting content cluster targeting this same keyword. */}
+        <section className="mt-14">
+          <h2 className="text-2xl font-semibold tracking-tight">Guides &amp; resources</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {[
+              ["How do I convert Framer to HTML? Step-by-step", "/blog/how-do-i-convert-framer-to-html"],
+              ["Is there a free Framer to HTML converter?", "/blog/free-framer-to-html-converter"],
+              ["Framer to HTML conversion problems (and fixes)", "/blog/framer-to-html-conversion-problems"],
+              ["The Framer to HTML export checklist", "/blog/framer-to-html-checklist"],
+              ["Framer to HTML for agencies & freelancers", "/blog/framer-to-html-for-agencies"],
+              ["Framer to static site: why and how", "/blog/framer-to-static-site"],
+              ["Complete Framer to HTML guide", "/blog/framer-to-html-complete-guide"],
+              ["HTML export vs Next.js export", "/blog/html-export-vs-nextjs-export"],
+            ].map(([title, href]) => (
+              <Link
+                key={href}
+                href={href}
+                className="group flex items-center justify-between rounded-lg border border-border px-4 py-3 text-[14px] font-medium transition-colors hover:border-foreground"
+              >
+                {title}
+                <span className="ml-3 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5">→</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+
         {/* Bottom CTA */}
         <section className="mt-14 rounded-xl border border-border bg-muted/40 p-6 text-center">
           <h2 className="text-xl font-semibold tracking-tight">
