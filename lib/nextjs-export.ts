@@ -1,36 +1,226 @@
-// Convert a Framer URL into a real, deployable Next.js project — accurately.
+// Convert a Framer URL into a real, deployable, 100% pure Next.js project —
+// genuine React/JSX page components, no Framer runtime, no framerusercontent.com
+// dependency, assets self-hosted under /public.
 //
-// Each Framer page becomes a statically-prerendered Next.js Route Handler
-// (`app/<route>/route.ts`) that returns the page's ORIGINAL HTML verbatim,
-// Framer runtime intact. So the deployed Next.js site renders identically to
-// the original — full content, animations, interactivity — because Framer's own
-// runtime + CDN assets do the work. (A stripped/static render loses animations
-// and hides appear-animated content; the hybrid converter is the optimized path.)
-import { fetchText, normalizeUrl } from "./fetch";
-import { load, detectFramer, extractMeta } from "./parse";
-import { discoverPages, normalizeRoute } from "./discover";
-import type { ConvertReport, ConvertedFile } from "./types";
+// Reuses the exact same battle-tested pipeline as the "optimize" HTML export
+// (runtime stripped, images self-hosted + WebP, fonts self-hosted, appear/scroll
+// animations rebuilt as CSS + IntersectionObserver) — the only difference is the
+// final serialization step: instead of writing flat .html files, each page's
+// already-cleaned markup is converted into a real `app/<route>/page.tsx`
+// Server Component, with a small shared "use client" component reproducing the
+// handful of vanilla-JS behaviors (scroll-reveal, mobile menu toggle) as React.
+import { convertSite } from "./convert";
+import { load, extractMeta, type PageMeta } from "./parse";
+import { normalizeRoute } from "./discover";
+import { nodesToJsx } from "./html-to-jsx";
+import type { ConvertedFile, ConvertReport } from "./types";
 
 export type ProgressFn = (msg: string) => void;
 
-/** Route path -> `app/.../route.ts` file path. */
-function routeFilePath(route: string): string {
-  const r = normalizeRoute(route).replace(/^\/+/, "");
-  return r ? `app/${r}/route.ts` : "app/route.ts";
+/** "index.html" | "about/index.html" -> "/" | "/about" (mirrors convert.ts's routeToFilePath). */
+function filePathToRoute(path: string): string {
+  if (path === "index.html") return "/";
+  return "/" + path.replace(/\/index\.html$/, "");
 }
 
-/** A statically-prerendered route handler that returns the page HTML as-is. */
-function routeHandler(html: string): string {
-  return `// Auto-generated from the original Framer page. Served verbatim so the
-// Framer runtime + CDN assets render it identically to the source.
-export const dynamic = "force-static";
+function routeToPageDir(route: string): string {
+  const r = normalizeRoute(route).replace(/^\/+/, "");
+  return r ? `app/${r}` : "app";
+}
 
-const HTML = ${JSON.stringify(html)};
+function pageComponentName(route: string): string {
+  const r = normalizeRoute(route).replace(/^\/+/, "").replace(/\/$/, "");
+  if (!r) return "HomePage";
+  const parts = r.split("/").filter(Boolean).map((seg) =>
+    seg.replace(/[^a-zA-Z0-9]+(.)?/g, (_, c: string | undefined) => (c ? c.toUpperCase() : ""))
+  );
+  return parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join("") + "Page";
+}
 
-export function GET() {
-  return new Response(HTML, {
-    headers: { "content-type": "text/html; charset=utf-8" },
+function metadataObject(meta: PageMeta, route: string): string {
+  const r = normalizeRoute(route);
+  const fields: string[] = [];
+  if (meta.title) fields.push(`title: ${JSON.stringify(meta.title)}`);
+  if (meta.description) fields.push(`description: ${JSON.stringify(meta.description)}`);
+  fields.push(`alternates: { canonical: ${JSON.stringify(r)} }`);
+  const og: string[] = [`type: "website"`, `url: ${JSON.stringify(r)}`];
+  if (meta.ogTitle || meta.title) og.push(`title: ${JSON.stringify(meta.ogTitle || meta.title)}`);
+  if (meta.ogDescription || meta.description)
+    og.push(`description: ${JSON.stringify(meta.ogDescription || meta.description)}`);
+  if (meta.ogImage) og.push(`images: [${JSON.stringify(meta.ogImage)}]`);
+  fields.push(`openGraph: { ${og.join(", ")} }`);
+  return `{\n  ${fields.join(",\n  ")},\n}`;
+}
+
+/** Pull every JSON-LD structured-data script's raw text out of a document. */
+function collectJsonLd($: ReturnType<typeof load>): string[] {
+  const out: string[] = [];
+  $('script[type="application/ld+json"]').each((_, el) => {
+    const txt = $(el).html();
+    if (txt && txt.trim()) out.push(txt);
   });
+  return out;
+}
+
+const FRAMER_RUNTIME_TSX = `"use client";
+// Reproduces the handful of vanilla-JS behaviors the Framer runtime used to
+// provide (scroll-reveal animation trigger, mobile menu toggle) as a small
+// React effect — no Framer runtime, no Framer CDN dependency.
+import { useEffect } from "react";
+
+export default function FramerRuntime() {
+  useEffect(() => {
+    document.documentElement.classList.add("framer-anim");
+
+    // --- scroll-reveal (appear animations, driven by the CSS in globals.css) ---
+    const els = Array.from(document.querySelectorAll("[data-framer-appear-id]"));
+    if (els.length) {
+      const show = (el: Element) => el.classList.add("framer-appeared");
+      const showAll = () => els.forEach(show);
+      const reduced =
+        window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (!("IntersectionObserver" in window) || reduced) {
+        showAll();
+      } else {
+        const io = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (entry.isIntersecting) {
+                show(entry.target);
+                io.unobserve(entry.target);
+              }
+            }
+          },
+          { threshold: 0, rootMargin: "0px 0px -8% 0px" }
+        );
+        els.forEach((el) => io.observe(el));
+
+        let ticking = false;
+        const sweep = () => {
+          ticking = false;
+          const vh = window.innerHeight || 0;
+          let remaining = false;
+          for (const el of els) {
+            if (el.classList.contains("framer-appeared")) continue;
+            if (el.getBoundingClientRect().top < vh) {
+              show(el);
+              io.unobserve(el);
+            } else {
+              remaining = true;
+            }
+          }
+          if (!remaining) {
+            window.removeEventListener("scroll", onScroll);
+            window.removeEventListener("resize", onScroll);
+          }
+        };
+        const onScroll = () => {
+          if (!ticking) {
+            ticking = true;
+            requestAnimationFrame(sweep);
+          }
+        };
+        window.addEventListener("scroll", onScroll, { passive: true });
+        window.addEventListener("resize", onScroll);
+        if (document.readyState === "complete") setTimeout(sweep, 300);
+        else window.addEventListener("load", () => setTimeout(sweep, 300));
+
+        return () => {
+          window.removeEventListener("scroll", onScroll);
+          window.removeEventListener("resize", onScroll);
+        };
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    // --- mobile menu toggle (best-effort match on common Framer nav naming) ---
+    const vis = (el: Element | null, on: boolean) => {
+      if (!el) return;
+      const style = (el as HTMLElement).style;
+      style.display = on ? "" : "none";
+      style.opacity = on ? "1" : "";
+      style.pointerEvents = on ? "auto" : "";
+    };
+    const match = (re: RegExp) =>
+      Array.from(document.querySelectorAll("[data-framer-name]")).filter((n) =>
+        re.test(n.getAttribute("data-framer-name") || "")
+      );
+    const triggers = match(/menu|hamburger|burger|nav.?(open|toggle|icon)/i);
+    const overlays = match(/menu.?(overlay|open|panel)|nav.?(overlay|panel)|mobile.?menu|overlay/i);
+    if (!triggers.length || !overlays.length) return;
+
+    let open = false;
+    const setAll = (on: boolean) => {
+      overlays.forEach((o) => vis(o, on));
+      open = on;
+    };
+    setAll(false);
+
+    const onClick = (e: Event) => {
+      e.preventDefault();
+      setAll(!open);
+    };
+    triggers.forEach((t) => {
+      (t as HTMLElement).style.cursor = "pointer";
+      t.addEventListener("click", onClick);
+    });
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAll(false);
+    };
+    document.addEventListener("keydown", onKeydown);
+
+    return () => {
+      triggers.forEach((t) => t.removeEventListener("click", onClick));
+      document.removeEventListener("keydown", onKeydown);
+    };
+  }, []);
+
+  return null;
+}
+`;
+
+function layoutTsx(siteTitle: string): string {
+  return `import type { Metadata } from "next";
+import "./globals.css";
+import FramerRuntime from "./framer-runtime";
+
+export const metadata: Metadata = {
+  title: ${JSON.stringify(siteTitle || "Site")},
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        <FramerRuntime />
+      </body>
+    </html>
+  );
+}
+`;
+}
+
+function pageTsx(componentName: string, route: string, meta: PageMeta, bodyJsx: string, jsonLd: string[]): string {
+  const ldScripts = jsonLd
+    .map(
+      (json, i) =>
+        `      <script key="ld-${i}" type="application/ld+json" dangerouslySetInnerHTML={{ __html: ${JSON.stringify(json)} }} />`
+    )
+    .join("\n");
+  return `import type { Metadata } from "next";
+import type { CSSProperties } from "react";
+
+export const metadata: Metadata = ${metadataObject(meta, route)};
+
+export default function ${componentName}() {
+  return (
+    <>
+${bodyJsx ? "      " + bodyJsx : ""}
+${ldScripts}
+    </>
+  );
 }
 `;
 }
@@ -74,9 +264,10 @@ const TSCONFIG = JSON.stringify(
       resolveJsonModule: true,
       isolatedModules: true,
       incremental: true,
+      jsx: "preserve",
       plugins: [{ name: "next" }],
     },
-    include: ["next-env.d.ts", "**/*.ts", ".next/types/**/*.ts"],
+    include: ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
     exclude: ["node_modules"],
   },
   null,
@@ -94,7 +285,7 @@ next-env.d.ts
 function readme(sourceUrl: string, pageCount: number): string {
   return `# Next.js project (converted from Framer)
 
-Generated from ${sourceUrl}. ${pageCount} page(s), one App Router route each.
+Generated from ${sourceUrl}. ${pageCount} page(s), each a real React Server Component.
 
 ## Run
 
@@ -106,74 +297,82 @@ npm run build && npm start
 
 ## How it works
 
-Each page is a statically-prerendered Next.js **route handler**
-(\`app/<route>/route.ts\`) that returns the original Framer HTML verbatim, with
-Framer's runtime intact. So the site renders **identically to the original** —
-full content, animations, interactivity — with assets loading from Framer's CDN.
+Every page is a genuine \`app/<route>/page.tsx\` React component — real JSX, not
+a wrapped HTML string. There is no Framer runtime and no dependency on
+framerusercontent.com: images and fonts are self-hosted under \`/public\`, and
+the handful of vanilla-JS behaviors Framer's runtime used to provide
+(scroll-reveal animation, mobile menu toggle) are reproduced as a small
+"use client" React component (\`app/framer-runtime.tsx\`).
 
 Deploy to Vercel/Netlify like any Next.js app.
 `;
-}
-
-/** Simple bounded-concurrency map. */
-async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let i = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      while (i < items.length) {
-        const idx = i++;
-        out[idx] = await fn(items[idx]);
-      }
-    })
-  );
-  return out;
 }
 
 export async function convertToNextJs(
   inputUrl: string,
   onProgress: ProgressFn = () => {}
 ): Promise<ConvertReport> {
-  const start = normalizeUrl(inputUrl);
+  const report = await convertSite(inputUrl, { mode: "optimize" }, onProgress);
 
-  onProgress(`Fetching ${start.toString()}`);
-  const first = await fetchText(start.toString());
-  if (first.status >= 400) throw new Error(`Source returned HTTP ${first.status}`);
-  const $first = load(first.text);
-  const detection = detectFramer($first);
-  if (!detection.isFramer) {
-    throw new Error(
-      "This does not look like a Framer-published site. Signals: " +
-        (detection.reasons.join(", ") || "none")
-    );
-  }
-  const siteMeta = extractMeta($first);
+  onProgress("Converting pages into React components…");
 
-  onProgress("Discovering pages…");
-  const pages = await discoverPages(first.url, first.text, siteMeta.searchIndexUrl, 20);
-  onProgress(`Found ${pages.length} page(s)`);
+  const htmlFiles = report.files.filter((f) => f.path.endsWith(".html") && f.content != null);
+  const assetFiles = report.files.filter((f) => !f.path.endsWith(".html") && f.path !== "vercel.json" && f.path !== "_headers");
 
-  const pageHtml = new Map<string, string>();
-  pageHtml.set(normalizeRoute(new URL(first.url).pathname), first.text);
-  await mapLimit(pages, 5, async (p) => {
-    if (pageHtml.has(p.route)) return;
-    try {
-      const r = await fetchText(p.url);
-      if (r.status < 400) pageHtml.set(p.route, r.text);
-    } catch {
-      /* skip */
-    }
-  });
-
-  onProgress("Generating Next.js project…");
   const files: ConvertedFile[] = [];
-  for (const [route, html] of pageHtml.entries()) {
-    files.push({ path: routeFilePath(route), content: routeHandler(html) });
+  const globalCss = new Set<string>();
+  let siteTitle = "";
+
+  for (const hf of htmlFiles) {
+    const html = hf.content as string;
+    const $ = load(html);
+    const meta = extractMeta($);
+    if (!siteTitle && meta.title) siteTitle = meta.title;
+    const route = filePathToRoute(hf.path);
+
+    // Pull every <style> block into the shared global stylesheet (dedup exact
+    // duplicates — Framer's boilerplate/reset CSS repeats byte-for-byte across
+    // pages of the same site).
+    $("style").each((_, el) => {
+      const text = $(el).html();
+      if (text && text.trim()) globalCss.add(text.trim());
+    });
+
+    const jsonLd = collectJsonLd($);
+
+    // Strip everything that's now handled elsewhere: <style> (-> globals.css),
+    // our own injected behavior scripts (-> framer-runtime.tsx), and JSON-LD
+    // (re-emitted explicitly below).
+    $("style").remove();
+    $('script[data-framer-optimizer]').remove();
+    $('script[type="application/ld+json"]').remove();
+    $("script:not([src])").each((_, el) => {
+      // Any remaining inline script (post strip-js) is either dead weight or a
+      // genuine custom embed we can't safely execute as JSX text — drop rather
+      // than risk broken markup; the vanilla-JS equivalents are already covered
+      // by framer-runtime.tsx.
+      $(el).remove();
+    });
+
+    const bodyChildren = $("body").get(0)?.children ?? [];
+    const bodyJsx = nodesToJsx($, bodyChildren);
+
+    const componentName = pageComponentName(route);
+    const dir = routeToPageDir(route);
+    files.push({ path: `${dir}/page.tsx`, content: pageTsx(componentName, route, meta, bodyJsx, jsonLd) });
+  }
+
+  files.push({ path: "app/layout.tsx", content: layoutTsx(siteTitle) });
+  files.push({ path: "app/framer-runtime.tsx", content: FRAMER_RUNTIME_TSX });
+  files.push({ path: "app/globals.css", content: [...globalCss].join("\n\n") });
+
+  for (const af of assetFiles) {
+    files.push({ path: `public/${af.path.replace(/^\/+/, "")}`, content: af.content, binary: af.binary });
   }
 
   const host = (() => {
     try {
-      return new URL(start.toString()).hostname.replace(/^www\./, "").replace(/\./g, "-");
+      return new URL(report.sourceUrl).hostname.replace(/^www\./, "").replace(/\./g, "-");
     } catch {
       return "site";
     }
@@ -183,20 +382,17 @@ export async function convertToNextJs(
   files.push({ path: "next.config.js", content: NEXT_CONFIG });
   files.push({ path: "tsconfig.json", content: TSCONFIG });
   files.push({ path: ".gitignore", content: GITIGNORE });
-  files.push({ path: "README.md", content: readme(start.toString(), pageHtml.size) });
+  files.push({ path: "README.md", content: readme(report.sourceUrl, htmlFiles.length) });
 
-  const pageCount = pageHtml.size;
   return {
-    sourceUrl: start.toString(),
-    pages: [...pageHtml.keys()].map((route) => ({
-      route,
-      sourceUrl: pages.find((p) => p.route === route)?.url || start.toString(),
-    })),
-    stats: [{ label: "Next.js routes", before: pageCount, after: pageCount, unit: "count" }],
+    sourceUrl: report.sourceUrl,
+    pages: report.pages,
+    stats: [{ label: "React page components", before: htmlFiles.length, after: htmlFiles.length, unit: "count" }, ...report.stats],
     notes: [
-      "pure Next.js App Router project — one statically-prerendered route per Framer page",
-      "renders identically to the original (Framer runtime kept, assets on CDN)",
+      "100% pure Next.js App Router project — every page is a real React/JSX Server Component",
+      "no Framer runtime, no framerusercontent.com dependency — images/fonts self-hosted under /public",
       "run: npm install && npm run build",
+      ...report.notes,
     ],
     files,
   };
