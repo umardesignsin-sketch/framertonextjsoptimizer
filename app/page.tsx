@@ -181,9 +181,57 @@ function Home() {
   );
 }
 
+// useSearchParams() suspends — without a fallback the initial HTML is empty for
+// crawlers. This shell ships H1 + FAQ + about so Google indexes real content.
+function HomeSeoShell() {
+  return (
+    <div className="min-h-screen w-full">
+      <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3.5">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-6 w-6 items-center justify-center rounded bg-foreground text-[13px] font-bold text-background">
+              F
+            </div>
+            <span className="text-[15px] font-semibold tracking-tight">
+              Framer <span className="text-muted-foreground">→</span> Next.js Optimizer
+            </span>
+          </div>
+          <nav className="flex items-center gap-5 text-[13px]">
+            <Link href="/framer-to-html" className="font-medium text-foreground">Framer to HTML Converter</Link>
+            <Link href="/nextjs" className="text-muted-foreground hover:text-foreground">Pure Next.js</Link>
+            <Link href="/speed" className="text-muted-foreground hover:text-foreground">PageSpeed checker</Link>
+            <Link href="/blog" className="text-muted-foreground hover:text-foreground">Blog</Link>
+          </nav>
+        </div>
+      </header>
+      <main className="mx-auto max-w-5xl px-5 pb-24">
+        <section className="pt-14 pb-8">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            Convert Framer Websites to Next.js &amp; HTML
+          </h1>
+          <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+            Paste a published Framer URL and get a production-ready export: optimized static HTML
+            or a real Next.js App Router project — strip Framer lock-in, boost Lighthouse &amp; SEO,
+            host anywhere.
+          </p>
+        </section>
+        <section className="rounded-xl border border-border bg-muted/40 p-5 text-[14px] text-muted-foreground">
+          Loading converter…
+        </section>
+        <AboutSection />
+        <FaqSection />
+      </main>
+      <SiteFooter />
+      {/* No FAQ JSON-LD here — the resolved <Home/> emits it; duplicating it
+          in the Suspense fallback would leave two identical FAQPage blocks
+          in the DOM. */}
+    </div>
+  );
+}
+
 export default function HomePage() {
   return (
-    <Suspense>
+    <Suspense fallback={<HomeSeoShell />}>
       <Home />
     </Suspense>
   );
@@ -202,6 +250,9 @@ function Header() {
           </span>
         </div>
         <nav className="flex items-center gap-5 text-[13px]">
+          <Link href="/framer-to-html" className="font-medium text-foreground">
+            Framer to HTML Converter
+          </Link>
           <Link href="/nextjs" className="text-muted-foreground hover:text-foreground">
             Pure Next.js
           </Link>
@@ -211,14 +262,6 @@ function Header() {
           <Link href="/blog" className="text-muted-foreground hover:text-foreground">
             Blog
           </Link>
-          <a
-            href="https://web.dev/articles/lighthouse-performance"
-            target="_blank"
-            rel="noreferrer"
-            className="text-muted-foreground hover:text-foreground"
-          >
-            About Lighthouse ↗
-          </a>
           <AuthNavLink />
         </nav>
       </div>
@@ -230,13 +273,16 @@ function Hero() {
   return (
     <section className="pt-14 pb-8">
       <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-        Snapshot &amp; optimize your Framer site
+        Convert Framer Websites to Next.js &amp; HTML
       </h1>
       <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-        Paste a published Framer URL. This captures the server-rendered HTML, strips
-        Framer&apos;s JS runtime, self-hosts &amp; re-encodes images to WebP, inlines
-        fonts, and runs an SEO pass — then hands you a deployable static bundle built
-        for maximum Lighthouse scores.
+        Paste a published Framer URL and get a production-ready export: this captures the
+        server-rendered HTML, strips Framer&apos;s JS runtime, self-hosts &amp; re-encodes
+        images to WebP, inlines fonts, and runs an SEO pass — a deployable static bundle
+        built for maximum Lighthouse scores. Prefer a dedicated{" "}
+        <Link href="/framer-to-html" className="text-foreground underline underline-offset-2">Framer to HTML converter</Link>
+        {" "}or a{" "}
+        <Link href="/nextjs" className="text-foreground underline underline-offset-2">real Next.js project</Link>.
       </p>
       <div className="mt-4 rounded-lg border border-border bg-muted px-4 py-3 text-[13px] leading-relaxed text-muted-foreground">
         <span className="font-medium text-foreground">Honest expectations:</span>{" "}
@@ -686,9 +732,14 @@ function SiteFooter() {
         </div>
         <nav className="flex flex-wrap gap-x-5 gap-y-2">
           <Link href="/" className="hover:text-foreground">Hybrid converter</Link>
-          <Link href="/framer-to-html" className="hover:text-foreground">Framer to HTML</Link>
+          <Link href="/framer-to-html" className="hover:text-foreground">Framer to HTML Converter</Link>
+          <Link href="/export-framer-site" className="hover:text-foreground">Export Framer site</Link>
           <Link href="/nextjs" className="hover:text-foreground">Pure Next.js</Link>
           <Link href="/speed" className="hover:text-foreground">PageSpeed checker</Link>
+          <Link href="/pricing" className="hover:text-foreground">Pricing</Link>
+          <Link href="/vs/nocodexport" className="hover:text-foreground">vs NoCodeXport</Link>
+          <Link href="/guides/self-host-framer" className="hover:text-foreground">Self-host Framer</Link>
+          <Link href="/guides/remove-made-in-framer-badge" className="hover:text-foreground">Remove Framer badge</Link>
           <Link href="/blog" className="hover:text-foreground">Blog</Link>
           <a href="/llms.txt" className="hover:text-foreground">llms.txt</a>
         </nav>

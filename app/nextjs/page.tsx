@@ -5,8 +5,90 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AuthGateModal } from "@/components/AuthGateModal";
 import { useAuthUser } from "@/components/useAuthUser";
+import { jsonLdScript, SITE } from "@/lib/site-meta";
 
 type Status = "idle" | "converting" | "done" | "error";
+
+// Page-specific FAQ — rendered visibly AND as FAQPage JSON-LD (must match).
+const NEXTJS_FAQ: { q: string; a: string }[] = [
+  {
+    q: "Does Framer officially support Next.js export?",
+    a: "No. Framer has no built-in code export — published sites stay on Framer's hosting. This converter fills that gap: it turns your published Framer site into a real Next.js App Router project you own and can deploy anywhere.",
+  },
+  {
+    q: "What exactly do I get from the Next.js export?",
+    a: "A complete, deployable Next.js project: one statically-prerendered App Router route per Framer page, plus package.json, tsconfig, and config. Run npm install && npm run build and it deploys like any Next.js app.",
+  },
+  {
+    q: "Do my Framer animations and interactions still work?",
+    a: "Yes. The Next.js export keeps Framer's runtime intact, so animations, hover states, and interactions render exactly like the original — pixel-identical fidelity is the whole point of this mode.",
+  },
+  {
+    q: "Do I need my Framer login or an API key?",
+    a: "No. Only the public published URL is needed. No Framer account access, no API key, nothing to install.",
+  },
+  {
+    q: "Are SEO meta tags, Open Graph, and canonicals preserved?",
+    a: "Yes. Each exported page keeps its title, description, and Open Graph tags. The Hybrid (HTML) mode additionally rewrites canonicals to your new domain and runs a full SEO pass.",
+  },
+  {
+    q: "Can I host the export on Vercel, Netlify, or Cloudflare?",
+    a: "Yes. It's a standard Next.js project, so it deploys to Vercel or Netlify in one click from this tool (or anywhere Next.js runs, including Cloudflare). You can also download the .zip and use your own pipeline.",
+  },
+  {
+    q: "Next.js export vs HTML export — which should I choose?",
+    a: "Choose Next.js when you want real code and exact fidelity (runtime kept). Choose the HTML export when you want maximum speed — runtime stripped, images optimized to WebP, typically 90–100 Lighthouse. You can run both and compare.",
+  },
+  {
+    q: "Is exporting my Framer site legal?",
+    a: "Yes, for your own site. The converter only works with public published URLs, and you should only convert sites you own or have permission to export. It never bypasses logins or accesses private drafts.",
+  },
+  {
+    q: "How long does the conversion take?",
+    a: "Usually under a minute. Multi-page sites are discovered and converted automatically; larger sites can take a few minutes.",
+  },
+  {
+    q: "Is it free?",
+    a: "Yes — converting, previewing, and downloading the project are free. Deploying uses your own free Netlify or Vercel account, and there are no per-site fees.",
+  },
+];
+
+const NEXTJS_STEPS = [
+  { name: "Publish your Framer site", text: "Make sure the site is live on a public URL, like https://your-site.framer.website or a custom domain." },
+  { name: "Paste the URL and convert", text: "The converter discovers every page and generates one prerendered Next.js route per page — no plugin or code needed." },
+  { name: "Download the project", text: "Get a complete Next.js App Router project as a .zip: run npm install && npm run build and it's ready." },
+  { name: "Deploy anywhere", text: "Push it live to Vercel or Netlify in one click, or deploy through your own pipeline like any Next.js app." },
+];
+
+function nextjsJsonLd() {
+  return [
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: NEXTJS_FAQ.map((f) => ({
+        "@type": "Question",
+        name: f.q,
+        acceptedAnswer: { "@type": "Answer", text: f.a },
+      })),
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "HowTo",
+      name: "How to convert a Framer site to Next.js",
+      description: "Convert any published Framer website into a deployable Next.js App Router project in four steps.",
+      totalTime: "PT2M",
+      step: NEXTJS_STEPS.map((s, i) => ({ "@type": "HowToStep", position: i + 1, name: s.name, text: s.text })),
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: SITE.url },
+        { "@type": "ListItem", position: 2, name: "Convert Framer to Next.js", item: `${SITE.url}/nextjs` },
+      ],
+    },
+  ];
+}
 interface ManifestItem { path: string; bytes: number }
 interface DoneReport {
   sourceUrl?: string;
@@ -128,7 +210,7 @@ function NextJsConverter() {
       <main className="mx-auto max-w-5xl px-5 pb-24">
         <section className="pt-14 pb-8">
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Convert to a pure Next.js project
+            Convert Framer to Next.js
           </h1>
           <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             Paste a published{" "}
@@ -229,7 +311,52 @@ function NextJsConverter() {
             </div>
           </section>
         )}
+
+        {/* How it works — matches the HowTo schema below */}
+        <section className="mt-20 border-t border-border pt-12">
+          <h2 className="text-2xl font-semibold tracking-tight">How to convert Framer to Next.js</h2>
+          <ol className="mt-4 grid gap-3 sm:grid-cols-2">
+            {NEXTJS_STEPS.map((s, i) => (
+              <li key={s.name} className="rounded-xl border border-border bg-background p-4">
+                <div className="flex items-center gap-2 text-[13px] font-semibold">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-[11px] text-background">
+                    {i + 1}
+                  </span>
+                  {s.name}
+                </div>
+                <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">{s.text}</p>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-4 text-[14px] leading-relaxed text-muted-foreground">
+            Prefer plain static files instead of a codebase? Use the{" "}
+            <Link href="/framer-to-html" className="text-foreground underline underline-offset-2">Framer to HTML export</Link>{" "}
+            — and read the{" "}
+            <Link href="/guides/self-host-framer" className="text-foreground underline underline-offset-2">self-hosting guide</Link>{" "}
+            for where to put it.
+          </p>
+        </section>
+
+        {/* FAQ — matches the FAQPage schema below */}
+        <section className="mt-16 border-t border-border pt-12">
+          <h2 className="text-2xl font-semibold tracking-tight">Convert Framer to Next.js — FAQ</h2>
+          <div className="mt-5 divide-y divide-border rounded-xl border border-border">
+            {NEXTJS_FAQ.map((f, i) => (
+              <details key={f.q} className="group px-4" open={i === 0}>
+                <summary className="flex cursor-pointer list-none items-center justify-between py-4 text-[15px] font-medium marker:content-none">
+                  <span>{f.q}</span>
+                  <span className="ml-3 shrink-0 text-muted-foreground transition-transform group-open:rotate-45">+</span>
+                </summary>
+                <p className="pb-4 pr-6 text-[14px] leading-relaxed text-muted-foreground">{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
       </main>
+
+      {nextjsJsonLd().map((obj, i) => (
+        <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(obj) }} />
+      ))}
 
       {showAuthGate && (
         <AuthGateModal
@@ -241,9 +368,81 @@ function NextJsConverter() {
   );
 }
 
+// useSearchParams() suspends — fallback ships H1 + FAQ for crawlers/SSR.
+function NextjsSeoShell() {
+  return (
+    <div className="min-h-screen w-full">
+      <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3.5">
+          <Link href="/" className="flex items-center gap-2.5">
+            <div className="flex h-6 w-6 items-center justify-center rounded bg-foreground text-[13px] font-bold text-background">
+              F
+            </div>
+            <span className="text-[15px] font-semibold tracking-tight">
+              Framer <span className="text-muted-foreground">→</span> Next.js Optimizer
+            </span>
+          </Link>
+          <nav className="flex items-center gap-5 text-[13px]">
+            <Link href="/" className="text-muted-foreground hover:text-foreground">Hybrid converter</Link>
+            <Link href="/framer-to-html" className="text-muted-foreground hover:text-foreground">Framer to HTML</Link>
+            <Link href="/blog" className="text-muted-foreground hover:text-foreground">Blog</Link>
+          </nav>
+        </div>
+      </header>
+      <main className="mx-auto max-w-5xl px-5 pb-24">
+        <section className="pt-14 pb-8">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            Convert Framer to Next.js
+          </h1>
+          <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+            Paste a published Framer URL and get a real, deployable Next.js App Router project —
+            one statically-prerendered route per page that renders identically to the original.
+          </p>
+        </section>
+        <section className="rounded-xl border border-border bg-muted/40 p-5 text-[14px] text-muted-foreground">
+          Loading converter…
+        </section>
+        <section className="mt-20 border-t border-border pt-12">
+          <h2 className="text-2xl font-semibold tracking-tight">How to convert Framer to Next.js</h2>
+          <ol className="mt-4 grid gap-3 sm:grid-cols-2">
+            {NEXTJS_STEPS.map((s, i) => (
+              <li key={s.name} className="rounded-xl border border-border bg-background p-4">
+                <div className="flex items-center gap-2 text-[13px] font-semibold">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-[11px] text-background">
+                    {i + 1}
+                  </span>
+                  {s.name}
+                </div>
+                <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">{s.text}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+        <section className="mt-16 border-t border-border pt-12">
+          <h2 className="text-2xl font-semibold tracking-tight">Convert Framer to Next.js — FAQ</h2>
+          <div className="mt-5 divide-y divide-border rounded-xl border border-border">
+            {NEXTJS_FAQ.map((f, i) => (
+              <details key={f.q} className="group px-4" open={i === 0}>
+                <summary className="flex cursor-pointer list-none items-center justify-between py-4 text-[15px] font-medium marker:content-none">
+                  <span>{f.q}</span>
+                  <span className="ml-3 shrink-0 text-muted-foreground transition-transform group-open:rotate-45">+</span>
+                </summary>
+                <p className="pb-4 pr-6 text-[14px] leading-relaxed text-muted-foreground">{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+      </main>
+      {nextjsJsonLd().map((obj, i) => (
+        <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(obj) }} />
+      ))}
+    </div>
+  );
+}
+
 export default function NextJsConverterPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<NextjsSeoShell />}>
       <NextJsConverter />
     </Suspense>
   );

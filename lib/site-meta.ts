@@ -16,6 +16,11 @@ export const KEYWORDS = [
   "Framer to Next.js",
   "convert Framer to Next.js",
   "Framer to Next.js converter",
+  "Framer to HTML converter",
+  "Framer to HTML",
+  "export Framer to HTML",
+  "convert Framer to HTML",
+  "free Framer to HTML converter",
   "export Framer site",
   "Framer Next.js export",
   "optimize Framer site",
@@ -23,8 +28,11 @@ export const KEYWORDS = [
   "Framer SEO",
   "static site from Framer",
   "Framer to React",
+  "self host Framer",
   "deploy Framer to Vercel",
   "deploy Framer to Netlify",
+  "best Framer export tool",
+  "NoCodeXport alternative",
 ];
 
 /** Q&A pairs — rendered as a visible FAQ and as FAQPage JSON-LD. */
@@ -64,6 +72,22 @@ export const FAQ: { q: string; a: string }[] = [
   {
     q: "Is it free and do I need to know how to code?",
     a: "You can convert and preview for free, and no coding is required — paste a URL and get an optimized site. Deploying live uses your own free Netlify or Vercel account.",
+  },
+  {
+    q: "Is the 'Made in Framer' badge removed?",
+    a: "Yes. The optimizer removes the 'Made in Framer' badge automatically during conversion, along with the runtime that re-injects it — your exported site ships clean.",
+  },
+  {
+    q: "Do I need my Framer login or an API key?",
+    a: "No. The converter works from your site's public published URL only — no Framer account access, login, or API key is ever requested. If a page is public, it can be converted.",
+  },
+  {
+    q: "Will my Google rankings drop after migrating off Framer?",
+    a: "No — done right, they improve. The converter preserves your titles, descriptions, and URL structure, points canonicals at your new domain, and typically raises Lighthouse SEO and performance scores. Keep the same paths (the converter does this automatically) and add 301 redirects only if you change domains.",
+  },
+  {
+    q: "How long does a conversion take, and what if a page fails?",
+    a: "Most sites convert in under a minute; large multi-page sites can take a few minutes. If a page fails to fetch, the rest of the site still converts — you can re-run the conversion at any time for free.",
   },
 ];
 

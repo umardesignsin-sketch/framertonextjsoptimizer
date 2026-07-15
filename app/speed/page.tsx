@@ -2,9 +2,9 @@ import Link from "next/link";
 import { SpeedCompare } from "@/components/SpeedCompare";
 
 export const metadata = {
-  title: "PageSpeed checker — Framer vs converted",
+  title: { absolute: "Framer PageSpeed Checker | Compare Lighthouse Scores" },
   description:
-    "Compare Lighthouse and PageSpeed scores for a published Framer site against its optimized conversion, side by side.",
+    "Compare real Lighthouse / PageSpeed scores: original Framer site vs converted HTML or Next.js — desktop and mobile side by side.",
   // Self-canonicalize to the query-less path so the ?original/?converted variants
   // don't fragment indexing.
   alternates: {
@@ -13,9 +13,15 @@ export const metadata = {
   openGraph: {
     type: "website",
     url: "/speed",
-    title: "PageSpeed checker — Framer vs converted",
+    title: "Framer PageSpeed Checker | Compare Lighthouse Scores",
     description:
-      "Compare Lighthouse and PageSpeed scores for a published Framer site against its optimized conversion, side by side.",
+      "Compare real Lighthouse / PageSpeed scores: original Framer site vs converted HTML or Next.js — desktop and mobile side by side.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Framer PageSpeed Checker | Compare Lighthouse Scores",
+    description:
+      "Compare real Lighthouse / PageSpeed scores: original Framer site vs converted HTML or Next.js — desktop and mobile side by side.",
   },
 };
 
@@ -27,7 +33,9 @@ export default async function SpeedPage({
   const sp = await searchParams;
   return (
     <main className="mx-auto max-w-3xl px-5 py-12">
-      <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">PageSpeed checker</h1>
+      <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+        Framer vs Converted — PageSpeed Comparison
+      </h1>
       <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
         Compare a Framer site against its{" "}
         <Link href="/nextjs" className="text-foreground underline underline-offset-2">converted version</Link>{" "}
