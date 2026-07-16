@@ -1,6 +1,6 @@
 // Orchestrator: URL -> optimized static bundle (snapshot + optimize pipeline).
 import { fetchText, fetchBinary, normalizeUrl } from "./fetch";
-import { load, detectFramer, extractMeta, collectStyleText } from "./parse";
+import { load, detectFramer, extractMeta, collectStyleText, type Doc } from "./parse";
 import { discoverPages, normalizeRoute } from "./discover";
 import {
   collectImageUrls,
@@ -63,7 +63,15 @@ export type ProgressFn = (msg: string) => void;
 export async function convertSite(
   inputUrl: string,
   options: Partial<ConvertOptions> = {},
-  onProgress: ProgressFn = () => {}
+  onProgress: ProgressFn = () => {},
+  // Called once per page with the pristine, not-yet-mutated cheerio doc,
+  // right before any stripping/rewriting happens — lets a caller (the Pure
+  // Next.js exporter) read data from framer/appear <script> tags (removed a
+  // few lines later by stripRuntime) from the *exact same* fetched HTML the
+  // rest of the pipeline uses, rather than fetching the page a second time
+  // and risking the two fetches returning content whose appear-id hashes
+  // don't line up.
+  onRawPage?: (route: string, $: Doc) => void
 ): Promise<ConvertReport> {
   const opts: ConvertOptions = { ...DEFAULT_OPTIONS, ...options };
 
@@ -253,6 +261,7 @@ export async function convertSite(
 
   for (const [route, html] of pageHtml.entries()) {
     const $ = load(html);
+    onRawPage?.(route, $);
     const pmeta = extractMeta($);
 
     // rewrite asset references (images + fonts) using the combined map

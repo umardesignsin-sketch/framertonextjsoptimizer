@@ -12,8 +12,11 @@
 // Appear/scroll-reveal animations are reproduced as real Framer Motion
 // (motion.*) components using Framer's own authored animation values
 // (initial/animate/transition — including real spring physics, not a CSS
-// cubic-bezier approximation), extracted from each page's raw
-// `framer/appear` script data before the runtime-stripping pass removes it.
+// cubic-bezier approximation), extracted from each page's `framer/appear`
+// script data via convertSite's onRawPage hook — the exact same fetch used
+// for everything else, read before the runtime-stripping pass removes that
+// script (not a second, independent fetch, which risks the two responses'
+// appear-id hashes not lining up).
 // Hover, tap, parallax, scroll-linked transforms, sticky effects, and
 // mouse-follow interactions are NOT reproduced: that data lives inside
 // Framer's proprietary, minified runtime bundle, not in a parseable static
@@ -24,7 +27,7 @@ import { convertSite } from "./convert";
 import { load, extractMeta, type PageMeta } from "./parse";
 import { normalizeRoute } from "./discover";
 import { extractSections, type ExtractedSection } from "./html-to-jsx";
-import { fetchBinary, fetchText } from "./fetch";
+import { fetchBinary } from "./fetch";
 import { isOptimizableImage, optimizeToWebp, copyAsset } from "./images";
 import { extractAppearMap, type MotionAppearSpec } from "./appear";
 import type { ConvertedFile, ConvertReport } from "./types";
@@ -402,11 +405,27 @@ export async function convertToNextJs(
   inputUrl: string,
   onProgress: ProgressFn = () => {}
 ): Promise<ConvertReport> {
+  // Framer's real appear/scroll-reveal animation data (framer/appear script
+  // JSON), read straight out of the exact same fetch convertSite uses for
+  // everything else — via the onRawPage hook, called before stripRuntime
+  // removes that script. Deliberately NOT a second, separate fetch of each
+  // page: two independent requests aren't guaranteed to return HTML whose
+  // appear-id hashes line up (CDN variance, timing, etc.), and a mismatch
+  // there would silently produce zero working animations.
+  const motionMap = new Map<string, MotionAppearSpec>();
+
   // "100% local assets" is the whole point of this export mode, so — unlike
   // the HTML export's conservative default — don't cap how many images get
   // self-hosted; a capped run leaves the tail of a large site's <img> tags
   // pointing straight at framerusercontent.com.
-  const report = await convertSite(inputUrl, { mode: "optimize", maxImages: 100_000 }, onProgress);
+  const report = await convertSite(
+    inputUrl,
+    { mode: "optimize", maxImages: 100_000 },
+    onProgress,
+    (_route, $raw) => {
+      for (const [id, spec] of extractAppearMap($raw)) motionMap.set(id, spec);
+    }
+  );
 
   onProgress("Converting pages into React components…");
 
@@ -443,36 +462,6 @@ export async function convertToNextJs(
   // Framer's CSS targets, and renaming thousands of them is exactly the kind
   // of change most likely to introduce a subtle visual regression for no
   // real benefit.
-
-  // Fetch each page's RAW HTML (parallel, capped) purely to extract Framer's
-  // real appear/scroll-reveal animation data — framer/appear scripts are
-  // stripped by the runtime-removal pass inside convertSite, so that data
-  // has to be pulled out separately, before stripping, from an unprocessed
-  // copy. IDs are content hashes and effectively unique site-wide, so every
-  // page's map merges into one.
-  onProgress("Extracting animation data…");
-  const motionMap = new Map<string, MotionAppearSpec>();
-  {
-    const pageUrls = [...new Set(report.pages.map((p) => p.sourceUrl))];
-    let i = 0;
-    await Promise.all(
-      Array.from({ length: Math.min(5, pageUrls.length) }, async () => {
-        while (i < pageUrls.length) {
-          const url = pageUrls[i++];
-          try {
-            const r = await fetchText(url);
-            if (r.status < 400) {
-              for (const [id, spec] of extractAppearMap(load(r.text))) motionMap.set(id, spec);
-            }
-          } catch {
-            /* best-effort — that page's animations just won't be reproduced */
-          }
-        }
-      })
-    );
-  }
-
-  onProgress("Converting pages into React components…");
 
   for (const hf of htmlFiles) {
     const html = hf.content as string;
