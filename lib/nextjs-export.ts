@@ -12,7 +12,7 @@
 import { convertSite } from "./convert";
 import { load, extractMeta, type PageMeta } from "./parse";
 import { normalizeRoute } from "./discover";
-import { nodesToJsx } from "./html-to-jsx";
+import { extractSections, type ExtractedSection } from "./html-to-jsx";
 import type { ConvertedFile, ConvertReport } from "./types";
 
 export type ProgressFn = (msg: string) => void;
@@ -26,6 +26,21 @@ function filePathToRoute(path: string): string {
 function routeToPageDir(route: string): string {
   const r = normalizeRoute(route).replace(/^\/+/, "");
   return r ? `app/${r}` : "app";
+}
+
+/** Relative import path from `app/<route>/page.tsx` back to `app/_components`. */
+function relativeComponentsPath(route: string): string {
+  const depth = normalizeRoute(route).replace(/^\/+/, "").split("/").filter(Boolean).length;
+  return depth === 0 ? "./_components" : "../".repeat(depth) + "_components";
+}
+
+function componentFileTsx(section: ExtractedSection): string {
+  return `import type { CSSProperties } from "react";
+
+export default function ${section.name}() {
+  return ${section.jsx};
+}
+`;
 }
 
 function pageComponentName(route: string): string {
@@ -202,16 +217,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 `;
 }
 
-function pageTsx(componentName: string, route: string, meta: PageMeta, bodyJsx: string, jsonLd: string[]): string {
+function pageTsx(
+  componentName: string,
+  route: string,
+  meta: PageMeta,
+  bodyJsx: string,
+  jsonLd: string[],
+  usedComponents: string[]
+): string {
   const ldScripts = jsonLd
     .map(
       (json, i) =>
         `      <script key="ld-${i}" type="application/ld+json" dangerouslySetInnerHTML={{ __html: ${JSON.stringify(json)} }} />`
     )
     .join("\n");
+  const componentsBase = relativeComponentsPath(route);
+  const componentImports = usedComponents
+    .map((name) => `import ${name} from "${componentsBase}/${name}";`)
+    .join("\n");
   return `import type { Metadata } from "next";
 import type { CSSProperties } from "react";
-
+${componentImports ? componentImports + "\n" : ""}
 export const metadata: Metadata = ${metadataObject(meta, route)};
 
 export default function ${componentName}() {
@@ -298,11 +324,17 @@ npm run build && npm start
 ## How it works
 
 Every page is a genuine \`app/<route>/page.tsx\` React component — real JSX, not
-a wrapped HTML string. There is no Framer runtime and no dependency on
-framerusercontent.com: images and fonts are self-hosted under \`/public\`, and
-the handful of vanilla-JS behaviors Framer's runtime used to provide
-(scroll-reveal animation, mobile menu toggle) are reproduced as a small
-"use client" React component (\`app/framer-runtime.tsx\`).
+a wrapped HTML string. Named sections (nav, hero, footer, etc. — taken from
+Framer's own layer names) are split out into reusable components under
+\`app/_components/\`, deduplicated so an identical section repeated across
+pages (like a site-wide nav or footer) resolves to a single shared file
+imported wherever it's used, instead of being duplicated per page.
+
+There is no Framer runtime and no dependency on framerusercontent.com: images
+and fonts are self-hosted under \`/public\`, and the handful of vanilla-JS
+behaviors Framer's runtime used to provide (scroll-reveal animation, mobile
+menu toggle) are reproduced as a small "use client" React component
+(\`app/framer-runtime.tsx\`).
 
 Deploy to Vercel/Netlify like any Next.js app.
 `;
@@ -322,6 +354,12 @@ export async function convertToNextJs(
   const files: ConvertedFile[] = [];
   const globalCss = new Set<string>();
   let siteTitle = "";
+
+  // Shared across every page so identical sections (the same nav/footer
+  // repeated site-wide) dedupe into one reusable component instead of being
+  // inlined separately on each page.
+  const componentRegistry = new Map<string, ExtractedSection>();
+  const usedComponentNames = new Map<string, string>();
 
   for (const hf of htmlFiles) {
     const html = hf.content as string;
@@ -355,16 +393,24 @@ export async function convertToNextJs(
     });
 
     const bodyChildren = $("body").get(0)?.children ?? [];
-    const bodyJsx = nodesToJsx($, bodyChildren);
+    const pageRefs = new Set<string>();
+    const bodyJsx = extractSections($, bodyChildren, componentRegistry, usedComponentNames, pageRefs);
 
     const componentName = pageComponentName(route);
     const dir = routeToPageDir(route);
-    files.push({ path: `${dir}/page.tsx`, content: pageTsx(componentName, route, meta, bodyJsx, jsonLd) });
+    files.push({
+      path: `${dir}/page.tsx`,
+      content: pageTsx(componentName, route, meta, bodyJsx, jsonLd, [...pageRefs]),
+    });
   }
 
   files.push({ path: "app/layout.tsx", content: layoutTsx(siteTitle) });
   files.push({ path: "app/framer-runtime.tsx", content: FRAMER_RUNTIME_TSX });
   files.push({ path: "app/globals.css", content: [...globalCss].join("\n\n") });
+
+  for (const section of componentRegistry.values()) {
+    files.push({ path: `app/_components/${section.name}.tsx`, content: componentFileTsx(section) });
+  }
 
   for (const af of assetFiles) {
     files.push({ path: `public/${af.path.replace(/^\/+/, "")}`, content: af.content, binary: af.binary });
@@ -390,6 +436,7 @@ export async function convertToNextJs(
     stats: [{ label: "React page components", before: htmlFiles.length, after: htmlFiles.length, unit: "count" }, ...report.stats],
     notes: [
       "100% pure Next.js App Router project — every page is a real React/JSX Server Component",
+      `split into ${componentRegistry.size} reusable component(s) under app/_components (deduplicated across pages)`,
       "no Framer runtime, no framerusercontent.com dependency — images/fonts self-hosted under /public",
       "run: npm install && npm run build",
       ...report.notes,

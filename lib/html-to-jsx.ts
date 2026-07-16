@@ -322,3 +322,105 @@ function nodeToJsx($: Doc, node: AnyNode): string {
 export function nodesToJsx($: Doc, nodes: AnyNode[]): string {
   return nodes.map((n) => nodeToJsx($, n)).join("");
 }
+
+export interface ExtractedSection {
+  name: string;
+  jsx: string;
+}
+
+function pascalName(raw: string, fallbackIndex: number): string {
+  const words = raw.replace(/[^a-zA-Z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean);
+  const pascal = words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join("");
+  return pascal && /^[A-Za-z]/.test(pascal) ? pascal : `Section${fallbackIndex}${pascal}`;
+}
+
+/** Cheap non-cryptographic hash, good enough for exact-content dedup within one site. */
+function contentHash(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+  return h.toString(36) + ":" + s.length;
+}
+
+/**
+ * Serialize `nodes` into JSX, but split off a real component instead of
+ * inlining wherever a Framer-named boundary (`data-framer-name`, e.g. "Hero",
+ * "Footer", "Desktop Nav") is found — mirroring how a human would break a
+ * page into Header/Hero/Footer files rather than one flat blob. Unnamed
+ * wrapper divs (layout containers with no Framer name) stay inline so their
+ * flex/grid positioning of the named children is preserved. Extraction goes
+ * exactly one level deep: content inside an extracted section is serialized
+ * plainly (via nodeToJsx), not further split, to avoid fragmenting into
+ * hundreds of tiny files.
+ *
+ * `registry`/`usedNames` are shared across an entire site's pages so
+ * identical sections (the same nav/footer repeated on every page) resolve to
+ * one deduplicated component instead of being duplicated per page.
+ */
+// How many levels of unnamed wrapper we'll descend through hunting for a
+// named boundary before giving up and inlining the rest. Real top-level page
+// sections (Hero, Footer, Sidebar) sit within a few hops of the body/#main
+// root; without this cap, deeply-nested content (e.g. named sub-layers of an
+// imported SVG illustration — "M7", "Gradient", "Pattern") gets mistaken for
+// page sections and fragmented into dozens of meaningless component files.
+const MAX_SEARCH_DEPTH = 4;
+
+export function extractSections(
+  $: Doc,
+  nodes: AnyNode[],
+  registry: Map<string, ExtractedSection>,
+  usedNames: Map<string, string>,
+  pageRefs: Set<string>,
+  depth = 0
+): string {
+  return nodes.map((node) => extractNode($, node, registry, usedNames, pageRefs, depth)).join("");
+}
+
+function extractNode(
+  $: Doc,
+  node: AnyNode,
+  registry: Map<string, ExtractedSection>,
+  usedNames: Map<string, string>,
+  pageRefs: Set<string>,
+  depth: number
+): string {
+  if (node.type === "text") return escapeJsxText((node as Text).data);
+  if (node.type === "comment") return "";
+  if (node.type !== "tag" && node.type !== "script" && node.type !== "style") return "";
+  const el = node as Element;
+  if (VOID_LIKE_NO_TEXT.has(el.tagName)) return rawTextElement($, el);
+
+  // SVG internals (paths, masks, gradient defs, named illustration layers)
+  // are one visual unit — never split them into separate "components".
+  if (el.tagName === "svg") return nodeToJsx($, node);
+
+  // Past the search depth, stop hunting for boundaries and inline whatever's
+  // left as-is (no more fragmenting).
+  if (depth > MAX_SEARCH_DEPTH) return nodeToJsx($, node);
+
+  const framerName = el.attribs?.["data-framer-name"];
+  if (framerName && framerName.trim()) {
+    const fullJsx = nodeToJsx($, node);
+    const hash = contentHash(fullJsx);
+    let section = registry.get(hash);
+    if (!section) {
+      let name = pascalName(framerName, registry.size + 1);
+      let suffix = 2;
+      while (usedNames.has(name) && usedNames.get(name) !== hash) {
+        name = `${pascalName(framerName, registry.size + 1)}${suffix++}`;
+      }
+      usedNames.set(name, hash);
+      section = { name, jsx: fullJsx };
+      registry.set(hash, section);
+    }
+    pageRefs.add(section.name);
+    return `<${section.name} />`;
+  }
+
+  // Unnamed wrapper (no Framer layer name) — keep inline to preserve its own
+  // layout styling, and look for named boundaries among its children.
+  const attrs = attrsToJsx(el);
+  const children = el.children || [];
+  if (children.length === 0) return `<${el.tagName}${attrs} />`;
+  const inner = extractSections($, children, registry, usedNames, pageRefs, depth + 1);
+  return `<${el.tagName}${attrs}>${inner}</${el.tagName}>`;
+}
