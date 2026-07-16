@@ -170,44 +170,139 @@ import { useEffect } from "react";
 export default function SiteInteractions() {
   useEffect(() => {
     // --- mobile menu toggle (best-effort match on common Framer nav naming) ---
-    const vis = (el: Element | null, on: boolean) => {
-      if (!el) return;
-      const style = (el as HTMLElement).style;
-      style.display = on ? "" : "none";
-      style.opacity = on ? "1" : "";
-      style.pointerEvents = on ? "auto" : "";
+    // Framer's own "open" state for a mobile nav is a separate component
+    // variant that its runtime builds client-side on click — that markup
+    // never exists in the static SSR HTML we start from, so there's nothing
+    // to reveal. Instead we build our own minimal full-screen overlay at
+    // runtime from the real nav links (present in the static markup, just
+    // hidden by a CSS breakpoint at narrow widths) and toggle that.
+    const isVisible = (el: Element) => {
+      const r = (el as HTMLElement).getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && getComputedStyle(el as HTMLElement).display !== "none";
     };
     const match = (re: RegExp) =>
       Array.from(document.querySelectorAll("[data-section-name]")).filter((n) =>
         re.test(n.getAttribute("data-section-name") || "")
       );
-    const triggers = match(/menu|hamburger|burger|nav.?(open|toggle|icon)/i);
-    const overlays = match(/menu.?(overlay|open|panel)|nav.?(overlay|panel)|mobile.?menu|overlay/i);
-    if (!triggers.length || !overlays.length) return;
+    // Framer often names the hamburger's clickable container after a visual
+    // state ("Dark closed", "Light opened") rather than "menu"/"hamburger" —
+    // that name varies per site and per breakpoint variant, so a name match
+    // alone misses it more often than not. Its two-or-three icon bars are
+    // consistently named "Line" though, so fall back to finding a small,
+    // currently-visible container holding exactly that many of them.
+    const findByLinePairs = (): Element[] => {
+      const byParent = new Map<Element, Element[]>();
+      document.querySelectorAll('[data-section-name="Line"]').forEach((line) => {
+        const parent = line.parentElement;
+        if (!parent) return;
+        (byParent.get(parent) ?? byParent.set(parent, []).get(parent)!).push(line);
+      });
+      const out: Element[] = [];
+      byParent.forEach((lines, parent) => {
+        if (lines.length < 2 || lines.length > 3 || !isVisible(parent)) return;
+        const r = (parent as HTMLElement).getBoundingClientRect();
+        if (r.width > 80 || r.height > 80 || r.top > 200) return;
+        out.push(parent);
+      });
+      return out;
+    };
+    const named = match(/menu|hamburger|burger|nav.?(open|toggle|icon)/i).filter(isVisible);
+    const triggers = named.length ? named : findByLinePairs();
+    if (!triggers.length) return;
+
+    const navRoot =
+      triggers[0].closest('[data-section-name="Navbar"]') ||
+      triggers[0].closest("nav") ||
+      document.body;
+    const seen = new Set<string>();
+    const links: { href: string; label: string }[] = [];
+    navRoot.querySelectorAll("a[href]").forEach((a) => {
+      const href = a.getAttribute("href") || "";
+      // Framer link components commonly stack a "Main link" and a "Hover
+      // link" copy of the same text (for a hover color-swap effect) as two
+      // separate children — textContent would concatenate both ("HomeHome").
+      // Prefer the main copy alone when that structure is present.
+      const mainCopy = a.querySelector('[data-section-name="Main link"]');
+      const label = ((mainCopy ?? a).textContent || "").trim();
+      if (!href || !label || seen.has(href)) return;
+      seen.add(href);
+      links.push({ href, label });
+    });
+    if (!links.length) return;
+
+    const overlay = document.createElement("div");
+    overlay.setAttribute("data-site-interactions-menu", "");
+    Object.assign(overlay.style, {
+      position: "fixed",
+      inset: "0",
+      zIndex: "2147483647",
+      display: "none",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: "1.5rem",
+      background: "rgba(10, 10, 10, 0.97)",
+      backdropFilter: "blur(6px)",
+    } as CSSStyleDeclaration);
+    const closeBtn = document.createElement("button");
+    closeBtn.textContent = "✕";
+    closeBtn.setAttribute("aria-label", "Close menu");
+    Object.assign(closeBtn.style, {
+      position: "absolute",
+      top: "1.5rem",
+      right: "1.5rem",
+      background: "none",
+      border: "none",
+      color: "#fff",
+      fontSize: "1.75rem",
+      cursor: "pointer",
+      lineHeight: "1",
+    } as CSSStyleDeclaration);
+    overlay.appendChild(closeBtn);
+    links.forEach(({ href, label }) => {
+      const a = document.createElement("a");
+      a.href = href;
+      a.textContent = label;
+      Object.assign(a.style, {
+        color: "#fff",
+        fontSize: "1.75rem",
+        fontFamily: "inherit",
+        textDecoration: "none",
+      } as CSSStyleDeclaration);
+      overlay.appendChild(a);
+    });
+    document.body.appendChild(overlay);
 
     let open = false;
-    const setAll = (on: boolean) => {
-      overlays.forEach((o) => vis(o, on));
+    const setOpen = (on: boolean) => {
+      overlay.style.display = on ? "flex" : "none";
+      document.body.style.overflow = on ? "hidden" : "";
       open = on;
     };
-    setAll(false);
+
+    const onOverlayClick = (e: Event) => {
+      if (e.target === overlay || e.target === closeBtn) setOpen(false);
+    };
+    overlay.addEventListener("click", onOverlayClick);
 
     const onClick = (e: Event) => {
       e.preventDefault();
-      setAll(!open);
+      setOpen(!open);
     };
     triggers.forEach((t) => {
       (t as HTMLElement).style.cursor = "pointer";
       t.addEventListener("click", onClick);
     });
     const onKeydown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setAll(false);
+      if (e.key === "Escape") setOpen(false);
     };
     document.addEventListener("keydown", onKeydown);
 
     return () => {
       triggers.forEach((t) => t.removeEventListener("click", onClick));
       document.removeEventListener("keydown", onKeydown);
+      overlay.removeEventListener("click", onOverlayClick);
+      overlay.remove();
     };
   }, []);
 
@@ -478,6 +573,27 @@ export async function convertToNextJs(
     $("[data-framer-name]").each((_, el) => {
       $(el).attr("data-section-name", $(el).attr("data-framer-name") || "");
       $(el).removeAttr("data-framer-name");
+    });
+
+    // Framer "code component" plugins (marketplace widgets like text-stagger,
+    // typewriter, etc.) render their real text into a JS-driven container at
+    // runtime. Their SSR markup ships the actual text in a visibility:hidden
+    // aria-hidden node purely for accessibility/SEO, sitting next to an empty
+    // sibling the plugin's own script would normally fill with animated spans.
+    // We strip that script, so without this the text silently vanishes from
+    // the page. Recover it as plain static text (no stagger animation, but
+    // the content survives) by copying the hidden node's text into its empty
+    // sibling.
+    $("[data-code-component-plugin-id] .ssr-variant").each((_, el) => {
+      const $variant = $(el);
+      const children = $variant.children();
+      if (children.length !== 2) return;
+      const hidden = children.eq(0);
+      const target = children.eq(1);
+      if (hidden.attr("aria-hidden") !== "true") return;
+      const text = hidden.text().trim();
+      if (!text || target.text().trim() || target.children().length) return;
+      target.text(text);
     });
 
     // Pull every <style> block into the shared global stylesheet (dedup exact
