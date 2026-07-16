@@ -194,6 +194,8 @@ const NUMERIC_ATTRS = new Set([
   "aria-rowspan",
 ]);
 
+const UNCONTROLLED_VALUE_TAGS = new Set(["input", "textarea", "select"]);
+
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
@@ -205,8 +207,13 @@ function kebabToCamel(s: string): string {
 function cssPropToJs(prop: string): string {
   const p = prop.trim();
   if (p.startsWith("--")) return JSON.stringify(p);
-  if (p.startsWith("-ms-")) return JSON.stringify("ms" + capitalize(kebabToCamel(p.slice(4))));
-  if (p.startsWith("-")) return JSON.stringify(capitalize(kebabToCamel(p.slice(1))));
+  // Tolerate vendor prefixes with or without the leading dash — some
+  // Framer-authored inline styles carry properties like "webkit-user-drag"
+  // (no leading "-"), which would otherwise camelCase to a lowercase
+  // "webkitUserDrag" that React doesn't recognize as the vendor property.
+  const stripped = p.replace(/^-/, "");
+  if (/^ms-/i.test(stripped)) return JSON.stringify("ms" + capitalize(kebabToCamel(stripped.slice(3))));
+  if (/^(webkit|moz|o)-/i.test(stripped)) return JSON.stringify(capitalize(kebabToCamel(stripped)));
   return JSON.stringify(kebabToCamel(p));
 }
 
@@ -259,6 +266,18 @@ function attrsToJsx(el: Element): string {
       // type-checked JSX instead of loosening to `any`.
       if (rawValue.trim())
         out.push(`style={${styleAttrToJsxObject(rawValue)} as CSSProperties}`);
+      continue;
+    }
+    // Static output has no onChange handler — `value`/`checked` on a form
+    // field makes React treat it as controlled, read-only (and warn). Use
+    // the "default" variants instead so it behaves like the plain HTML it
+    // came from.
+    if (lower === "value" && UNCONTROLLED_VALUE_TAGS.has(el.tagName.toLowerCase())) {
+      out.push(`defaultValue={${JSON.stringify(rawValue)}}`);
+      continue;
+    }
+    if (lower === "checked" && el.tagName.toLowerCase() === "input") {
+      out.push(`defaultChecked`);
       continue;
     }
     const name = jsxAttrName(rawName, el.tagName);
