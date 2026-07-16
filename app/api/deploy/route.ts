@@ -44,7 +44,7 @@ export async function POST(request: Request) {
   try {
     // Pure-Next.js reports render to static HTML here so both hosts deploy
     // them with no build, identical to the hybrid path.
-    const files = toDeployableFiles(job.report.files);
+    const files = toDeployableFiles(job.report.files, job.report.previewFiles);
     const result =
       provider === "netlify"
         ? await deployNetlify(token, files, name)

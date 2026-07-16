@@ -21,7 +21,7 @@ const NEXTJS_FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Do my Framer animations and interactions still work?",
-    a: "Yes. The Next.js export keeps Framer's runtime intact, so animations, hover states, and interactions render exactly like the original — pixel-identical fidelity is the whole point of this mode.",
+    a: "Yes — reproduced as real code, not Framer's runtime. Scroll/appear reveal animations are rebuilt as CSS + IntersectionObserver, and menu toggles as a small React component. There's no Framer runtime and no dependency on framerusercontent.com anywhere in the output.",
   },
   {
     q: "Do I need my Framer login or an API key?",
@@ -37,7 +37,7 @@ const NEXTJS_FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Next.js export vs HTML export — which should I choose?",
-    a: "Choose Next.js when you want real code and exact fidelity (runtime kept). Choose the HTML export when you want maximum speed — runtime stripped, images optimized to WebP, typically 90–100 Lighthouse. You can run both and compare.",
+    a: "Choose Next.js when you want a real React/App Router codebase to keep building on — components, TypeScript, npm install && npm run build. Choose the HTML export when you want plain static files with zero framework. Both strip Framer's runtime and self-host every asset; you can run both and compare.",
   },
   {
     q: "Is exporting my Framer site legal?",
@@ -225,14 +225,16 @@ function NextJsConverter() {
             <Link href="/speed" className="text-foreground underline underline-offset-2">PageSpeed checker</Link>.
           </p>
           <div className="mt-4 rounded-lg border border-border bg-muted px-4 py-3 text-[13px] leading-relaxed text-muted-foreground">
-            <span className="font-medium text-foreground">Note:</span> this prioritizes accuracy
-            and real Next.js code over the{" "}
-            <a href="https://developer.chrome.com/docs/lighthouse/overview" target="_blank" rel="noopener noreferrer" className="underline">Lighthouse</a>{" "}
-            score. Framer&apos;s runtime is kept, so all content, animations, and interactivity render
-            exactly like the source. For the highest score instead, use the{" "}
+            <span className="font-medium text-foreground">Note:</span> every page is a genuine
+            React Server Component — real JSX, split into reusable components under{" "}
+            <code>app/_components/</code>, no Framer runtime and no dependency on{" "}
+            <code>framerusercontent.com</code> anywhere. Prefer plain static files with zero
+            framework instead? Use the{" "}
             <Link href="/" className="underline">Hybrid converter</Link>, or{" "}
             <Link href="/speed" className="underline">compare both against your original</Link>{" "}
-            with the PageSpeed checker.
+            with the{" "}
+            <a href="https://developer.chrome.com/docs/lighthouse/overview" target="_blank" rel="noopener noreferrer" className="underline">Lighthouse</a>{" "}
+            PageSpeed checker.
           </div>
         </section>
 
