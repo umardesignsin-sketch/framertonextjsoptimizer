@@ -13,7 +13,10 @@ import { convertSite } from "./convert";
 import { load, extractMeta, type PageMeta } from "./parse";
 import { normalizeRoute } from "./discover";
 import { extractSections, type ExtractedSection } from "./html-to-jsx";
+import { fetchBinary } from "./fetch";
+import { isOptimizableImage, optimizeToWebp, copyAsset } from "./images";
 import type { ConvertedFile, ConvertReport } from "./types";
+import type { AnyNode, Element } from "domhandler";
 
 export type ProgressFn = (msg: string) => void;
 
@@ -52,24 +55,17 @@ function pageComponentName(route: string): string {
   return parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join("") + "Page";
 }
 
-// Framer editor/hydration bookkeeping — meaningful only to Framer's own
-// runtime (route/breakpoint hydration data, in-editor selection/layout
-// flags). Once the runtime is gone these are inert, so we drop them entirely
-// rather than ship dead attributes in the output markup.
-const DEAD_FRAMER_ATTRS = [
-  "data-framer-hydrate-v2",
-  "data-framer-generated-page",
-  "data-framer-ssr-released-at",
-  "data-framer-page-optimized-at",
-  "data-layout-template",
-  "data-selection",
-  "data-border",
-  "data-framer-component-type",
-  "data-reset",
-];
-const DEAD_FRAMER_ATTR_SELECTOR = DEAD_FRAMER_ATTRS.map((a) => `[${a}]`).join(", ");
+// Framer editor/hydration bookkeeping that doesn't happen to be namespaced
+// data-framer-* (caught separately, generically, below) — meaningful only to
+// Framer's own runtime and in-editor selection. Inert once the runtime is
+// gone, so dropped rather than shipped as dead attributes.
+const DEAD_NON_NAMESPACED_ATTRS = ["data-layout-template", "data-selection", "data-border", "data-reset"];
+const DEAD_NON_NAMESPACED_SELECTOR = DEAD_NON_NAMESPACED_ATTRS.map((a) => `[${a}]`).join(", ");
+// Kept, renamed elsewhere: data-framer-name -> data-section-name,
+// data-framer-appear-id -> data-anim-id.
+const KEPT_FRAMER_ATTRS = new Set(["data-framer-name", "data-framer-appear-id"]);
 
-function metadataObject(meta: PageMeta, route: string): string {
+function metadataObject(meta: PageMeta, route: string, ogImageLocal?: string): string {
   const r = normalizeRoute(route);
   const fields: string[] = [];
   if (meta.title) fields.push(`title: ${JSON.stringify(meta.title)}`);
@@ -79,9 +75,57 @@ function metadataObject(meta: PageMeta, route: string): string {
   if (meta.ogTitle || meta.title) og.push(`title: ${JSON.stringify(meta.ogTitle || meta.title)}`);
   if (meta.ogDescription || meta.description)
     og.push(`description: ${JSON.stringify(meta.ogDescription || meta.description)}`);
-  if (meta.ogImage) og.push(`images: [${JSON.stringify(meta.ogImage)}]`);
+  const ogImage = ogImageLocal || meta.ogImage;
+  if (ogImage) og.push(`images: [${JSON.stringify(ogImage)}]`);
   fields.push(`openGraph: { ${og.join(", ")} }`);
   return `{\n  ${fields.join(",\n  ")},\n}`;
+}
+
+/** Fetch + self-host a single CDN image (og:image, a JSON-LD "image" field, etc). */
+async function hostCdnImage(url: string): Promise<{ localPath: string; file: ConvertedFile } | null> {
+  try {
+    const bin = await fetchBinary(url);
+    if (bin.status >= 400 || bin.buffer.length === 0) return null;
+    const result =
+      isOptimizableImage(url) && !/image\/svg/i.test(bin.contentType)
+        ? await optimizeToWebp(url, bin.buffer)
+        : copyAsset(url, bin.buffer);
+    if (!result) return null;
+    return {
+      localPath: result.localPath,
+      file: { path: result.localPath.replace(/^\//, ""), binary: result.buffer },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Self-host every framerusercontent.com URL still embedded as plain text in
+ * `text` (JSON-LD structured data isn't touched by the DOM-based image
+ * pipeline, since it's just a string, not <img>/<source>/CSS) and rewrite
+ * them to their local paths. `cache` is shared across the whole export run
+ * so a repeated URL (e.g. the same Organization logo on every page) is only
+ * fetched once.
+ */
+async function localizeCdnUrls(
+  text: string,
+  cache: Map<string, string | null>,
+  files: ConvertedFile[]
+): Promise<string> {
+  const urls = [...new Set(text.match(/https:\/\/framerusercontent\.com\/[^\s"\\]+/g) || [])];
+  for (const url of urls) {
+    if (cache.has(url)) continue;
+    const hosted = await hostCdnImage(url);
+    if (hosted) files.push(hosted.file);
+    cache.set(url, hosted?.localPath ?? null);
+  }
+  let result = text;
+  for (const url of urls) {
+    const local = cache.get(url);
+    if (local) result = result.split(url).join(local);
+  }
+  return result;
 }
 
 /** Pull every JSON-LD structured-data script's raw text out of a document. */
@@ -240,7 +284,8 @@ function pageTsx(
   meta: PageMeta,
   bodyJsx: string,
   jsonLd: string[],
-  usedComponents: string[]
+  usedComponents: string[],
+  ogImageLocal?: string
 ): string {
   const ldScripts = jsonLd
     .map(
@@ -255,7 +300,7 @@ function pageTsx(
   return `import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 ${componentImports ? componentImports + "\n" : ""}
-export const metadata: Metadata = ${metadataObject(meta, route)};
+export const metadata: Metadata = ${metadataObject(meta, route, ogImageLocal)};
 
 export default function ${componentName}() {
   return (
@@ -361,12 +406,27 @@ export async function convertToNextJs(
   inputUrl: string,
   onProgress: ProgressFn = () => {}
 ): Promise<ConvertReport> {
-  const report = await convertSite(inputUrl, { mode: "optimize" }, onProgress);
+  // "100% local assets" is the whole point of this export mode, so — unlike
+  // the HTML export's conservative default — don't cap how many images get
+  // self-hosted; a capped run leaves the tail of a large site's <img> tags
+  // pointing straight at framerusercontent.com.
+  const report = await convertSite(inputUrl, { mode: "optimize", maxImages: 100_000 }, onProgress);
 
   onProgress("Converting pages into React components…");
 
   const htmlFiles = report.files.filter((f) => f.path.endsWith(".html") && f.content != null);
   const assetFiles = report.files.filter((f) => !f.path.endsWith(".html") && f.path !== "vercel.json" && f.path !== "_headers");
+
+  // Preview-only: the exact same optimized, runtime-free static HTML per
+  // route that the JSX below is derived from — captured before any of the
+  // per-page mutations, so it renders identically to the shipped project's
+  // actual DOM (including working appear/scroll-reveal). Namespaced under
+  // .next-preview/ and returned separately from `files` so it never ends up
+  // in the user's downloaded project.
+  const previewFiles: ConvertedFile[] = htmlFiles.map((hf) => ({
+    path: `.next-preview/${hf.path}`,
+    content: hf.content,
+  }));
 
   const files: ConvertedFile[] = [];
   const globalCss = new Set<string>();
@@ -377,21 +437,45 @@ export async function convertToNextJs(
   // inlined separately on each page.
   const componentRegistry = new Map<string, ExtractedSection>();
   const usedComponentNames = new Map<string, string>();
+  // og:image / JSON-LD image fields are typically shared across most/all
+  // pages — cache so a given CDN URL is only ever fetched once.
+  const cdnImageCache = new Map<string, string | null>();
 
   // Pre-scan every page for class tokens and build one site-wide rename map
-  // (framer-9PFEJ, breakpoint-hash classes like hidden-sv03hi, etc. -> plain
-  // sequential names) so no page or its CSS carries Framer's generated class
+  // (framer-9PFEJ, breakpoint-hash classes like hidden-sv03hi, etc. -> a
+  // semantic name) so no page or its CSS carries Framer's generated class
   // names — applied consistently across all pages and their stylesheets.
-  const classTokens = new Set<string>();
+  // Each class's new name is derived from the nearest enclosing Framer layer
+  // name (e.g. everything under a "Hero" section becomes hero, hero-2, ...)
+  // rather than a flat, meaningless counter — the first page/position a
+  // class is seen at decides its context.
+  const classContext = new Map<string, string>(); // original class token -> context slug
+  const slugify = (s: string): string => {
+    const cleaned = s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return cleaned || "layout";
+  };
+  const walkForClassContext = (node: AnyNode, nearestSlug: string): void => {
+    if (node.type !== "tag") return;
+    const el = node as Element;
+    const name = el.attribs?.["data-framer-name"];
+    const slug = name && name.trim() ? slugify(name) : nearestSlug;
+    (el.attribs?.class || "").split(/\s+/).filter(Boolean).forEach((c) => {
+      if (!classContext.has(c)) classContext.set(c, slug);
+    });
+    (el.children || []).forEach((child) => walkForClassContext(child, slug));
+  };
   for (const hf of htmlFiles) {
     const $scan = load(hf.content as string);
-    $scan("[class]").each((_, el) => {
-      ($scan(el).attr("class") || "").split(/\s+/).filter(Boolean).forEach((c) => classTokens.add(c));
-    });
+    const body = $scan("body").get(0);
+    if (body) walkForClassContext(body, "layout");
   }
+  const slugCounters = new Map<string, number>();
   const classMap = new Map<string, string>();
-  let classCounter = 1;
-  for (const token of classTokens) classMap.set(token, `c${classCounter++}`);
+  for (const [token, slug] of classContext.entries()) {
+    const n = (slugCounters.get(slug) || 0) + 1;
+    slugCounters.set(slug, n);
+    classMap.set(token, n === 1 ? slug : `${slug}-${n}`);
+  }
   const classCssRegexSource = [...classMap.keys()]
     .sort((a, b) => b.length - a.length)
     .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
@@ -460,22 +544,57 @@ export async function convertToNextJs(
 
     // Drop dead Framer editor/hydration bookkeeping attributes — nothing
     // reads these once the runtime is gone (they existed only for Framer's
-    // own hydration and in-editor selection). data-section-name/data-anim-id
-    // (renamed above) are kept: site-interactions.tsx and globals.css still
-    // key off those at runtime.
-    $(DEAD_FRAMER_ATTR_SELECTOR).each((_, el) => {
-      DEAD_FRAMER_ATTRS.forEach((a) => $(el).removeAttr(a));
+    // own hydration and in-editor selection). Generic data-framer-* sweep
+    // catches every variant (hydrate-v2, generated-page, ssr-released-at,
+    // component-type, and any other Framer emits) rather than an enumerated
+    // list that inevitably misses one. data-section-name/data-anim-id
+    // (renamed above, no longer data-framer-* prefixed) survive untouched.
+    if (DEAD_NON_NAMESPACED_SELECTOR) {
+      $(DEAD_NON_NAMESPACED_SELECTOR).each((_, el) => {
+        DEAD_NON_NAMESPACED_ATTRS.forEach((a) => $(el).removeAttr(a));
+      });
+    }
+    $("*").each((_, el) => {
+      const $el = $(el);
+      for (const key of Object.keys($el.attr() || {})) {
+        if (/^data-framer-/i.test(key) && !KEPT_FRAMER_ATTRS.has(key)) {
+          $el.removeAttr(key);
+        }
+      }
     });
 
     const bodyChildren = $("body").get(0)?.children ?? [];
     const pageRefs = new Set<string>();
     const bodyJsx = extractSections($, bodyChildren, componentRegistry, usedComponentNames, pageRefs);
 
+    // Self-host og:image (not covered by the general image pipeline, which
+    // only rewrites <img>/<source>/CSS url() references) so metadata doesn't
+    // keep pointing at framerusercontent.com either.
+    let ogImageLocal: string | undefined;
+    if (meta.ogImage && /framerusercontent\.com/i.test(meta.ogImage)) {
+      if (cdnImageCache.has(meta.ogImage)) {
+        ogImageLocal = cdnImageCache.get(meta.ogImage) || undefined;
+      } else {
+        const hosted = await hostCdnImage(meta.ogImage);
+        if (hosted) {
+          files.push(hosted.file);
+          ogImageLocal = hosted.localPath;
+        }
+        cdnImageCache.set(meta.ogImage, hosted?.localPath ?? null);
+      }
+    }
+    // JSON-LD structured data isn't touched by the DOM image pipeline (it's
+    // just a string) — self-host and rewrite any CDN image URLs in it too,
+    // independent of og:image (JSON-LD "image" is often a different asset,
+    // e.g. the Organization logo).
+    const jsonLdLocal: string[] = [];
+    for (const j of jsonLd) jsonLdLocal.push(await localizeCdnUrls(j, cdnImageCache, files));
+
     const componentName = pageComponentName(route);
     const dir = routeToPageDir(route);
     files.push({
       path: `${dir}/page.tsx`,
-      content: pageTsx(componentName, route, meta, bodyJsx, jsonLd, [...pageRefs]),
+      content: pageTsx(componentName, route, meta, bodyJsx, jsonLdLocal, [...pageRefs], ogImageLocal),
     });
   }
 
@@ -517,5 +636,6 @@ export async function convertToNextJs(
       ...report.notes,
     ],
     files,
+    previewFiles,
   };
 }
