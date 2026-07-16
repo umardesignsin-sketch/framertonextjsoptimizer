@@ -1,22 +1,23 @@
-// Convert a Framer URL into a real, deployable, 100% pure Next.js project —
-// genuine React/JSX page components, no Framer runtime, no framerusercontent.com
-// dependency, assets self-hosted under /public.
+// Convert a Framer URL into a real, deployable Next.js project, prioritizing
+// 100% visual/behavioral accuracy over "pure" JSX. Framer's own runtime
+// renders every page, so animations, hover states, scroll-linked transforms,
+// and interactions are pixel-identical to the source — not an approximation
+// reproduced in our own code, which necessarily can't perfectly replicate
+// every effect Framer's proprietary Motion-based engine can produce.
 //
-// Reuses the exact same battle-tested pipeline as the "optimize" HTML export
-// (runtime stripped, images self-hosted + WebP, fonts self-hosted, appear/scroll
-// animations rebuilt as CSS + IntersectionObserver) — the only difference is the
-// final serialization step: instead of writing flat .html files, each page's
-// already-cleaned markup is converted into a real `app/<route>/page.tsx`
-// Server Component, with a small shared "use client" component reproducing the
-// handful of vanilla-JS behaviors (scroll-reveal, mobile menu toggle) as React.
+// Reuses the same "hybrid" pipeline as the Hybrid HTML export (runtime kept;
+// trackers removed; images self-hosted + WebP) — each page becomes an
+// `app/<route>/route.ts` Route Handler that serves that page's HTML
+// verbatim. This is still a genuine, deployable Next.js App Router project
+// (npm install && npm run build && npm start, deploys to Vercel/Netlify like
+// any Next.js app) — the trade-off is that pages are Route Handlers, not
+// React/JSX components, and Framer's runtime bundle + fonts still load from
+// framerusercontent.com (self-hosting Framer's own versioned/hashed runtime
+// bundle risks breaking it, since it may reference other CDN resources
+// internally).
 import { convertSite } from "./convert";
-import { load, extractMeta, type PageMeta } from "./parse";
 import { normalizeRoute } from "./discover";
-import { extractSections, type ExtractedSection } from "./html-to-jsx";
-import { fetchBinary } from "./fetch";
-import { isOptimizableImage, optimizeToWebp, copyAsset } from "./images";
 import type { ConvertedFile, ConvertReport } from "./types";
-import type { AnyNode, Element } from "domhandler";
 
 export type ProgressFn = (msg: string) => void;
 
@@ -26,289 +27,25 @@ function filePathToRoute(path: string): string {
   return "/" + path.replace(/\/index\.html$/, "");
 }
 
-function routeToPageDir(route: string): string {
+/** Route path -> `app/.../route.ts` file path. */
+function routeFilePath(route: string): string {
   const r = normalizeRoute(route).replace(/^\/+/, "");
-  return r ? `app/${r}` : "app";
+  return r ? `app/${r}/route.ts` : "app/route.ts";
 }
 
-/** Relative import path from `app/<route>/page.tsx` back to `app/_components`. */
-function relativeComponentsPath(route: string): string {
-  const depth = normalizeRoute(route).replace(/^\/+/, "").split("/").filter(Boolean).length;
-  return depth === 0 ? "./_components" : "../".repeat(depth) + "_components";
-}
+/** A statically-prerendered route handler that returns the page HTML as-is. */
+function routeHandler(html: string): string {
+  return `// Auto-generated from the original Framer page. Served verbatim so
+// Framer's runtime + CDN assets render every animation and interaction
+// exactly like the source.
+export const dynamic = "force-static";
 
-function componentFileTsx(section: ExtractedSection): string {
-  return `import type { CSSProperties } from "react";
+const HTML = ${JSON.stringify(html)};
 
-export default function ${section.name}() {
-  return ${section.jsx};
-}
-`;
-}
-
-function pageComponentName(route: string): string {
-  const r = normalizeRoute(route).replace(/^\/+/, "").replace(/\/$/, "");
-  if (!r) return "HomePage";
-  const parts = r.split("/").filter(Boolean).map((seg) =>
-    seg.replace(/[^a-zA-Z0-9]+(.)?/g, (_, c: string | undefined) => (c ? c.toUpperCase() : ""))
-  );
-  return parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join("") + "Page";
-}
-
-// Framer editor/hydration bookkeeping that doesn't happen to be namespaced
-// data-framer-* (caught separately, generically, below) — meaningful only to
-// Framer's own runtime and in-editor selection. Inert once the runtime is
-// gone, so dropped rather than shipped as dead attributes.
-const DEAD_NON_NAMESPACED_ATTRS = ["data-layout-template", "data-selection", "data-border", "data-reset"];
-const DEAD_NON_NAMESPACED_SELECTOR = DEAD_NON_NAMESPACED_ATTRS.map((a) => `[${a}]`).join(", ");
-// Kept, renamed elsewhere: data-framer-name -> data-section-name,
-// data-framer-appear-id -> data-anim-id.
-const KEPT_FRAMER_ATTRS = new Set(["data-framer-name", "data-framer-appear-id"]);
-
-function metadataObject(meta: PageMeta, route: string, ogImageLocal?: string): string {
-  const r = normalizeRoute(route);
-  const fields: string[] = [];
-  if (meta.title) fields.push(`title: ${JSON.stringify(meta.title)}`);
-  if (meta.description) fields.push(`description: ${JSON.stringify(meta.description)}`);
-  fields.push(`alternates: { canonical: ${JSON.stringify(r)} }`);
-  const og: string[] = [`type: "website"`, `url: ${JSON.stringify(r)}`];
-  if (meta.ogTitle || meta.title) og.push(`title: ${JSON.stringify(meta.ogTitle || meta.title)}`);
-  if (meta.ogDescription || meta.description)
-    og.push(`description: ${JSON.stringify(meta.ogDescription || meta.description)}`);
-  const ogImage = ogImageLocal || meta.ogImage;
-  if (ogImage) og.push(`images: [${JSON.stringify(ogImage)}]`);
-  fields.push(`openGraph: { ${og.join(", ")} }`);
-  return `{\n  ${fields.join(",\n  ")},\n}`;
-}
-
-/** Fetch + self-host a single CDN image (og:image, a JSON-LD "image" field, etc). */
-async function hostCdnImage(url: string): Promise<{ localPath: string; file: ConvertedFile } | null> {
-  try {
-    const bin = await fetchBinary(url);
-    if (bin.status >= 400 || bin.buffer.length === 0) return null;
-    const result =
-      isOptimizableImage(url) && !/image\/svg/i.test(bin.contentType)
-        ? await optimizeToWebp(url, bin.buffer)
-        : copyAsset(url, bin.buffer);
-    if (!result) return null;
-    return {
-      localPath: result.localPath,
-      file: { path: result.localPath.replace(/^\//, ""), binary: result.buffer },
-    };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Self-host every framerusercontent.com URL still embedded as plain text in
- * `text` (JSON-LD structured data isn't touched by the DOM-based image
- * pipeline, since it's just a string, not <img>/<source>/CSS) and rewrite
- * them to their local paths. `cache` is shared across the whole export run
- * so a repeated URL (e.g. the same Organization logo on every page) is only
- * fetched once.
- */
-async function localizeCdnUrls(
-  text: string,
-  cache: Map<string, string | null>,
-  files: ConvertedFile[]
-): Promise<string> {
-  const urls = [...new Set(text.match(/https:\/\/framerusercontent\.com\/[^\s"\\]+/g) || [])];
-  for (const url of urls) {
-    if (cache.has(url)) continue;
-    const hosted = await hostCdnImage(url);
-    if (hosted) files.push(hosted.file);
-    cache.set(url, hosted?.localPath ?? null);
-  }
-  let result = text;
-  for (const url of urls) {
-    const local = cache.get(url);
-    if (local) result = result.split(url).join(local);
-  }
-  return result;
-}
-
-/** Pull every JSON-LD structured-data script's raw text out of a document. */
-function collectJsonLd($: ReturnType<typeof load>): string[] {
-  const out: string[] = [];
-  $('script[type="application/ld+json"]').each((_, el) => {
-    const txt = $(el).html();
-    if (txt && txt.trim()) out.push(txt);
+export function GET() {
+  return new Response(HTML, {
+    headers: { "content-type": "text/html; charset=utf-8" },
   });
-  return out;
-}
-
-const SITE_INTERACTIONS_TSX = `"use client";
-// Reproduces the handful of vanilla-JS behaviors the Framer runtime used to
-// provide (scroll-reveal animation trigger, mobile menu toggle) as a small
-// React effect — no Framer runtime, no Framer CDN dependency.
-import { useEffect } from "react";
-
-export default function SiteInteractions() {
-  useEffect(() => {
-    document.documentElement.classList.add("js-anim");
-
-    // --- scroll-reveal (appear animations, driven by the CSS in globals.css) ---
-    const els = Array.from(document.querySelectorAll("[data-anim-id]"));
-    if (els.length) {
-      const show = (el: Element) => el.classList.add("is-visible");
-      const showAll = () => els.forEach(show);
-      const reduced =
-        window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (!("IntersectionObserver" in window) || reduced) {
-        showAll();
-      } else {
-        const io = new IntersectionObserver(
-          (entries) => {
-            for (const entry of entries) {
-              if (entry.isIntersecting) {
-                show(entry.target);
-                io.unobserve(entry.target);
-              }
-            }
-          },
-          { threshold: 0, rootMargin: "0px 0px -8% 0px" }
-        );
-        els.forEach((el) => io.observe(el));
-
-        let ticking = false;
-        const sweep = () => {
-          ticking = false;
-          const vh = window.innerHeight || 0;
-          let remaining = false;
-          for (const el of els) {
-            if (el.classList.contains("is-visible")) continue;
-            if (el.getBoundingClientRect().top < vh) {
-              show(el);
-              io.unobserve(el);
-            } else {
-              remaining = true;
-            }
-          }
-          if (!remaining) {
-            window.removeEventListener("scroll", onScroll);
-            window.removeEventListener("resize", onScroll);
-          }
-        };
-        const onScroll = () => {
-          if (!ticking) {
-            ticking = true;
-            requestAnimationFrame(sweep);
-          }
-        };
-        window.addEventListener("scroll", onScroll, { passive: true });
-        window.addEventListener("resize", onScroll);
-        if (document.readyState === "complete") setTimeout(sweep, 300);
-        else window.addEventListener("load", () => setTimeout(sweep, 300));
-
-        return () => {
-          window.removeEventListener("scroll", onScroll);
-          window.removeEventListener("resize", onScroll);
-        };
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    // --- mobile menu toggle (best-effort match on common Framer nav naming) ---
-    const vis = (el: Element | null, on: boolean) => {
-      if (!el) return;
-      const style = (el as HTMLElement).style;
-      style.display = on ? "" : "none";
-      style.opacity = on ? "1" : "";
-      style.pointerEvents = on ? "auto" : "";
-    };
-    const match = (re: RegExp) =>
-      Array.from(document.querySelectorAll("[data-section-name]")).filter((n) =>
-        re.test(n.getAttribute("data-section-name") || "")
-      );
-    const triggers = match(/menu|hamburger|burger|nav.?(open|toggle|icon)/i);
-    const overlays = match(/menu.?(overlay|open|panel)|nav.?(overlay|panel)|mobile.?menu|overlay/i);
-    if (!triggers.length || !overlays.length) return;
-
-    let open = false;
-    const setAll = (on: boolean) => {
-      overlays.forEach((o) => vis(o, on));
-      open = on;
-    };
-    setAll(false);
-
-    const onClick = (e: Event) => {
-      e.preventDefault();
-      setAll(!open);
-    };
-    triggers.forEach((t) => {
-      (t as HTMLElement).style.cursor = "pointer";
-      t.addEventListener("click", onClick);
-    });
-    const onKeydown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setAll(false);
-    };
-    document.addEventListener("keydown", onKeydown);
-
-    return () => {
-      triggers.forEach((t) => t.removeEventListener("click", onClick));
-      document.removeEventListener("keydown", onKeydown);
-    };
-  }, []);
-
-  return null;
-}
-`;
-
-function layoutTsx(siteTitle: string): string {
-  return `import type { Metadata } from "next";
-import "./globals.css";
-import SiteInteractions from "./site-interactions";
-
-export const metadata: Metadata = {
-  title: ${JSON.stringify(siteTitle || "Site")},
-};
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en">
-      <body>
-        {children}
-        <SiteInteractions />
-      </body>
-    </html>
-  );
-}
-`;
-}
-
-function pageTsx(
-  componentName: string,
-  route: string,
-  meta: PageMeta,
-  bodyJsx: string,
-  jsonLd: string[],
-  usedComponents: string[],
-  ogImageLocal?: string
-): string {
-  const ldScripts = jsonLd
-    .map(
-      (json, i) =>
-        `      <script key="ld-${i}" type="application/ld+json" dangerouslySetInnerHTML={{ __html: ${JSON.stringify(json)} }} />`
-    )
-    .join("\n");
-  const componentsBase = relativeComponentsPath(route);
-  const componentImports = usedComponents
-    .map((name) => `import ${name} from "${componentsBase}/${name}";`)
-    .join("\n");
-  return `import type { Metadata } from "next";
-import type { CSSProperties } from "react";
-${componentImports ? componentImports + "\n" : ""}
-export const metadata: Metadata = ${metadataObject(meta, route, ogImageLocal)};
-
-export default function ${componentName}() {
-  return (
-    <>
-${bodyJsx ? "      " + bodyJsx : ""}
-${ldScripts}
-    </>
-  );
 }
 `;
 }
@@ -352,10 +89,9 @@ const TSCONFIG = JSON.stringify(
       resolveJsonModule: true,
       isolatedModules: true,
       incremental: true,
-      jsx: "preserve",
       plugins: [{ name: "next" }],
     },
-    include: ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+    include: ["next-env.d.ts", "**/*.ts", ".next/types/**/*.ts"],
     exclude: ["node_modules"],
   },
   null,
@@ -373,7 +109,7 @@ next-env.d.ts
 function readme(sourceUrl: string, pageCount: number): string {
   return `# Next.js project (converted from Framer)
 
-Generated from ${sourceUrl}. ${pageCount} page(s), each a real React Server Component.
+Generated from ${sourceUrl}. ${pageCount} page(s), one App Router route each.
 
 ## Run
 
@@ -385,18 +121,14 @@ npm run build && npm start
 
 ## How it works
 
-Every page is a genuine \`app/<route>/page.tsx\` React component — real JSX, not
-a wrapped HTML string. Named sections (nav, hero, footer, etc. — taken from
-Framer's own layer names) are split out into reusable components under
-\`app/_components/\`, deduplicated so an identical section repeated across
-pages (like a site-wide nav or footer) resolves to a single shared file
-imported wherever it's used, instead of being duplicated per page.
-
-There is no Framer runtime and no dependency on framerusercontent.com: images
-and fonts are self-hosted under \`/public\`, and the handful of vanilla-JS
-behaviors Framer's runtime used to provide (scroll-reveal animation, mobile
-menu toggle) are reproduced as a small "use client" React component
-(\`app/site-interactions.tsx\`).
+Each page is a statically-prerendered Next.js **route handler**
+(\`app/<route>/route.ts\`) that returns the original Framer page's HTML
+verbatim, with Framer's runtime intact. The site renders and behaves
+**identically to the original** — every animation, hover state, and
+scroll-linked effect, because Framer's own runtime is what's driving them,
+not a reimplementation. Images are self-hosted and optimized to WebP;
+Framer's runtime bundle and fonts still load from framerusercontent.com
+(self-hosting the runtime itself risks breaking it).
 
 Deploy to Vercel/Netlify like any Next.js app.
 `;
@@ -406,205 +138,27 @@ export async function convertToNextJs(
   inputUrl: string,
   onProgress: ProgressFn = () => {}
 ): Promise<ConvertReport> {
-  // "100% local assets" is the whole point of this export mode, so — unlike
-  // the HTML export's conservative default — don't cap how many images get
-  // self-hosted; a capped run leaves the tail of a large site's <img> tags
-  // pointing straight at framerusercontent.com.
-  const report = await convertSite(inputUrl, { mode: "optimize", maxImages: 100_000 }, onProgress);
+  const report = await convertSite(inputUrl, { mode: "hybrid" }, onProgress);
 
-  onProgress("Converting pages into React components…");
+  onProgress("Generating Next.js project…");
 
   const htmlFiles = report.files.filter((f) => f.path.endsWith(".html") && f.content != null);
   const assetFiles = report.files.filter((f) => !f.path.endsWith(".html") && f.path !== "vercel.json" && f.path !== "_headers");
 
-  // Preview-only: the exact same optimized, runtime-free static HTML per
-  // route that the JSX below is derived from — captured before any of the
-  // per-page mutations, so it renders identically to the shipped project's
-  // actual DOM (including working appear/scroll-reveal). Namespaced under
-  // .next-preview/ and returned separately from `files` so it never ends up
-  // in the user's downloaded project.
+  const files: ConvertedFile[] = [];
+  for (const hf of htmlFiles) {
+    const route = filePathToRoute(hf.path);
+    files.push({ path: routeFilePath(route), content: routeHandler(hf.content as string) });
+  }
+
+  // Preview-only copy under the same paths the download uses, kept separate
+  // from `files` so the live preview/no-build deploy paths (which need
+  // plain HTML, not a route handler) have something to serve without ending
+  // up in the user's downloaded project.
   const previewFiles: ConvertedFile[] = htmlFiles.map((hf) => ({
     path: `.next-preview/${hf.path}`,
     content: hf.content,
   }));
-
-  const files: ConvertedFile[] = [];
-  const globalCss = new Set<string>();
-  let siteTitle = "";
-
-  // Shared across every page so identical sections (the same nav/footer
-  // repeated site-wide) dedupe into one reusable component instead of being
-  // inlined separately on each page.
-  const componentRegistry = new Map<string, ExtractedSection>();
-  const usedComponentNames = new Map<string, string>();
-  // og:image / JSON-LD image fields are typically shared across most/all
-  // pages — cache so a given CDN URL is only ever fetched once.
-  const cdnImageCache = new Map<string, string | null>();
-
-  // Pre-scan every page for class tokens and build one site-wide rename map
-  // (framer-9PFEJ, breakpoint-hash classes like hidden-sv03hi, etc. -> a
-  // semantic name) so no page or its CSS carries Framer's generated class
-  // names — applied consistently across all pages and their stylesheets.
-  // Each class's new name is derived from the nearest enclosing Framer layer
-  // name (e.g. everything under a "Hero" section becomes hero, hero-2, ...)
-  // rather than a flat, meaningless counter — the first page/position a
-  // class is seen at decides its context.
-  const classContext = new Map<string, string>(); // original class token -> context slug
-  const slugify = (s: string): string => {
-    const cleaned = s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-    return cleaned || "layout";
-  };
-  const walkForClassContext = (node: AnyNode, nearestSlug: string): void => {
-    if (node.type !== "tag") return;
-    const el = node as Element;
-    const name = el.attribs?.["data-framer-name"];
-    const slug = name && name.trim() ? slugify(name) : nearestSlug;
-    (el.attribs?.class || "").split(/\s+/).filter(Boolean).forEach((c) => {
-      if (!classContext.has(c)) classContext.set(c, slug);
-    });
-    (el.children || []).forEach((child) => walkForClassContext(child, slug));
-  };
-  for (const hf of htmlFiles) {
-    const $scan = load(hf.content as string);
-    const body = $scan("body").get(0);
-    if (body) walkForClassContext(body, "layout");
-  }
-  const slugCounters = new Map<string, number>();
-  const classMap = new Map<string, string>();
-  for (const [token, slug] of classContext.entries()) {
-    const n = (slugCounters.get(slug) || 0) + 1;
-    slugCounters.set(slug, n);
-    classMap.set(token, n === 1 ? slug : `${slug}-${n}`);
-  }
-  const classCssRegexSource = [...classMap.keys()]
-    .sort((a, b) => b.length - a.length)
-    .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("|");
-  const classCssRegex = classCssRegexSource ? new RegExp(`\\.(${classCssRegexSource})(?![\\w-])`, "g") : null;
-
-  const renameClassAttr = (cls: string) =>
-    cls.split(/\s+/).filter(Boolean).map((c) => classMap.get(c) || c).join(" ");
-
-  // Rename the two markers our own runtime toggles at runtime (Framer's
-  // naming, not ours) to neutral names, in both markup-facing CSS text and
-  // the runtime component below.
-  const renameMarkerTokens = (s: string) =>
-    s.replace(/framer-appeared/g, "is-visible").replace(/framer-anim/g, "js-anim");
-
-  for (const hf of htmlFiles) {
-    const html = hf.content as string;
-    const $ = load(html);
-    const meta = extractMeta($);
-    if (!siteTitle && meta.title) siteTitle = meta.title;
-    const route = filePathToRoute(hf.path);
-
-    // Anonymize class names and the two data-framer-* attributes our own
-    // runtime still relies on, before anything else reads them.
-    $("[class]").each((_, el) => {
-      $(el).attr("class", renameClassAttr($(el).attr("class") || ""));
-    });
-    $("[data-framer-name]").each((_, el) => {
-      $(el).attr("data-section-name", $(el).attr("data-framer-name") || "");
-      $(el).removeAttr("data-framer-name");
-    });
-    $("[data-framer-appear-id]").each((_, el) => {
-      $(el).attr("data-anim-id", $(el).attr("data-framer-appear-id") || "");
-      $(el).removeAttr("data-framer-appear-id");
-    });
-
-    // Pull every <style> block into the shared global stylesheet (dedup exact
-    // duplicates — Framer's boilerplate/reset CSS repeats byte-for-byte across
-    // pages of the same site).
-    $("style").each((_, el) => {
-      let text = $(el).html();
-      if (text && text.trim()) {
-        if (classCssRegex) text = text.replace(classCssRegex, (_, cls: string) => "." + (classMap.get(cls) || cls));
-        text = text.replace(/data-framer-appear-id/g, "data-anim-id");
-        text = text.replace(/data-framer-name/g, "data-section-name");
-        text = renameMarkerTokens(text);
-        globalCss.add(text.trim());
-      }
-    });
-
-    const jsonLd = collectJsonLd($);
-
-    // Strip everything that's now handled elsewhere: <style> (-> globals.css),
-    // our own injected behavior scripts (-> site-interactions.tsx), and JSON-LD
-    // (re-emitted explicitly below).
-    $("style").remove();
-    $('script[data-framer-optimizer]').remove();
-    $('script[type="application/ld+json"]').remove();
-    $("script:not([src])").each((_, el) => {
-      // Any remaining inline script (post strip-js) is either dead weight or a
-      // genuine custom embed we can't safely execute as JSX text — drop rather
-      // than risk broken markup; the vanilla-JS equivalents are already covered
-      // by site-interactions.tsx.
-      $(el).remove();
-    });
-
-    // Drop dead Framer editor/hydration bookkeeping attributes — nothing
-    // reads these once the runtime is gone (they existed only for Framer's
-    // own hydration and in-editor selection). Generic data-framer-* sweep
-    // catches every variant (hydrate-v2, generated-page, ssr-released-at,
-    // component-type, and any other Framer emits) rather than an enumerated
-    // list that inevitably misses one. data-section-name/data-anim-id
-    // (renamed above, no longer data-framer-* prefixed) survive untouched.
-    if (DEAD_NON_NAMESPACED_SELECTOR) {
-      $(DEAD_NON_NAMESPACED_SELECTOR).each((_, el) => {
-        DEAD_NON_NAMESPACED_ATTRS.forEach((a) => $(el).removeAttr(a));
-      });
-    }
-    $("*").each((_, el) => {
-      const $el = $(el);
-      for (const key of Object.keys($el.attr() || {})) {
-        if (/^data-framer-/i.test(key) && !KEPT_FRAMER_ATTRS.has(key)) {
-          $el.removeAttr(key);
-        }
-      }
-    });
-
-    const bodyChildren = $("body").get(0)?.children ?? [];
-    const pageRefs = new Set<string>();
-    const bodyJsx = extractSections($, bodyChildren, componentRegistry, usedComponentNames, pageRefs);
-
-    // Self-host og:image (not covered by the general image pipeline, which
-    // only rewrites <img>/<source>/CSS url() references) so metadata doesn't
-    // keep pointing at framerusercontent.com either.
-    let ogImageLocal: string | undefined;
-    if (meta.ogImage && /framerusercontent\.com/i.test(meta.ogImage)) {
-      if (cdnImageCache.has(meta.ogImage)) {
-        ogImageLocal = cdnImageCache.get(meta.ogImage) || undefined;
-      } else {
-        const hosted = await hostCdnImage(meta.ogImage);
-        if (hosted) {
-          files.push(hosted.file);
-          ogImageLocal = hosted.localPath;
-        }
-        cdnImageCache.set(meta.ogImage, hosted?.localPath ?? null);
-      }
-    }
-    // JSON-LD structured data isn't touched by the DOM image pipeline (it's
-    // just a string) — self-host and rewrite any CDN image URLs in it too,
-    // independent of og:image (JSON-LD "image" is often a different asset,
-    // e.g. the Organization logo).
-    const jsonLdLocal: string[] = [];
-    for (const j of jsonLd) jsonLdLocal.push(await localizeCdnUrls(j, cdnImageCache, files));
-
-    const componentName = pageComponentName(route);
-    const dir = routeToPageDir(route);
-    files.push({
-      path: `${dir}/page.tsx`,
-      content: pageTsx(componentName, route, meta, bodyJsx, jsonLdLocal, [...pageRefs], ogImageLocal),
-    });
-  }
-
-  files.push({ path: "app/layout.tsx", content: layoutTsx(siteTitle) });
-  files.push({ path: "app/site-interactions.tsx", content: SITE_INTERACTIONS_TSX });
-  files.push({ path: "app/globals.css", content: [...globalCss].join("\n\n") });
-
-  for (const section of componentRegistry.values()) {
-    files.push({ path: `app/_components/${section.name}.tsx`, content: componentFileTsx(section) });
-  }
 
   for (const af of assetFiles) {
     files.push({ path: `public/${af.path.replace(/^\/+/, "")}`, content: af.content, binary: af.binary });
@@ -624,14 +178,15 @@ export async function convertToNextJs(
   files.push({ path: ".gitignore", content: GITIGNORE });
   files.push({ path: "README.md", content: readme(report.sourceUrl, htmlFiles.length) });
 
+  const pageCount = htmlFiles.length;
   return {
     sourceUrl: report.sourceUrl,
     pages: report.pages,
-    stats: [{ label: "React page components", before: htmlFiles.length, after: htmlFiles.length, unit: "count" }, ...report.stats],
+    stats: [{ label: "Next.js routes", before: pageCount, after: pageCount, unit: "count" }, ...report.stats],
     notes: [
-      "100% pure Next.js App Router project — every page is a real React/JSX Server Component",
-      `split into ${componentRegistry.size} reusable component(s) under app/_components (deduplicated across pages)`,
-      "no Framer runtime, no framerusercontent.com dependency — images/fonts self-hosted under /public",
+      "real, deployable Next.js App Router project — one statically-prerendered route per Framer page",
+      "renders identically to the original — Framer's runtime is kept, so every animation/interaction is pixel-accurate",
+      "images self-hosted + optimized to WebP; Framer's runtime bundle and fonts stay on framerusercontent.com",
       "run: npm install && npm run build",
       ...report.notes,
     ],
