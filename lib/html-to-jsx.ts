@@ -3,6 +3,7 @@
 // not raw HTML strings served through a route handler.
 import type { AnyNode, Element, Text } from "domhandler";
 import type { Doc } from "./parse";
+import type { MotionAppearSpec } from "./appear";
 
 // The only DOM attributes React requires camelCased. Everything else —
 // including data-*, aria-*, and hyphenated SVG presentation attributes like
@@ -254,18 +255,61 @@ function jsxAttrName(name: string, tag: string): string {
   return `data-${lower.replace(/^_+/, "")}`;
 }
 
-function attrsToJsx(el: Element): string {
+function dropOpacityTransform(styleStr: string): string {
+  return styleStr
+    .split(";")
+    .map((d) => d.trim())
+    .filter((d) => d && !/^(opacity|transform)\s*:/i.test(d))
+    .join(";");
+}
+
+/**
+ * Drop opacity/transform declarations from a Framer element's SSR'd inline
+ * style — its deliberately-hidden pre-animation state, e.g.
+ * "opacity:0.001;transform:translateY(170px)". Two callers:
+ *
+ * (1) `force: true` — a Motion-matched element. Motion owns opacity/transform
+ * unconditionally via initial/whileInView once matched, regardless of the
+ * exact original value; leaving the old inline value in place would fight
+ * Motion for control of the same style.
+ *
+ * (2) `force: false` (the default/safety-net path) — only strips when the
+ * style shows Framer's specific "opacity:0.001" marker (a deliberately
+ * near-zero value no legitimate design would use by coincidence). Covers two
+ * cases where nothing else would ever reveal the element: an appear element
+ * whose data *wasn't* found in motionMap (extraction is a best-effort
+ * separate raw fetch — it can legitimately miss a page), and elements hidden
+ * by an entirely different Framer mechanism with no data-framer-appear-id at
+ * all — e.g. per-word/character text-stagger spans. Conservative on purpose:
+ * an unrelated element with a real, intentional opacity/transform for
+ * non-animation reasons is left alone.
+ *
+ * Either way, dropping the two properties falls back to the CSS default
+ * (visible, untransformed) — no reveal animation for that element, but never
+ * left stuck invisible.
+ */
+function stripAppearHiddenState(styleStr: string, force: boolean): string {
+  if (force || /opacity:\s*0\.001\b/i.test(styleStr)) return dropOpacityTransform(styleStr);
+  return styleStr;
+}
+
+function attrsToJsx(el: Element, hasMotionSpec = false): string {
   const out: string[] = [];
   for (const [rawName, rawValue] of Object.entries(el.attribs || {})) {
     if (rawName.startsWith("on")) continue; // no inline handlers in static output
     const lower = rawName.toLowerCase();
+    // Consumed by nodeToJsx below to look up the element's Framer Motion
+    // spec (see motionMap) — never itself rendered, whether or not a match
+    // was found (unmatched ones are just dead Framer bookkeeping too).
+    if (lower === "data-framer-appear-id") continue;
     if (lower === "style") {
       // `as CSSProperties`: Framer emits CSS custom properties (--token-...)
       // inline, which the DOM/React handle fine at runtime but aren't part of
       // React's built-in CSSProperties type — the cast keeps this real,
       // type-checked JSX instead of loosening to `any`.
-      if (rawValue.trim())
-        out.push(`style={${styleAttrToJsxObject(rawValue)} as CSSProperties}`);
+      const value = stripAppearHiddenState(rawValue, hasMotionSpec);
+      if (value.trim())
+        out.push(`style={${styleAttrToJsxObject(value)} as CSSProperties}`);
       continue;
     }
     // Static output has no onChange handler — `value`/`checked` on a form
@@ -313,7 +357,38 @@ function rawTextElement($: Doc, el: Element): string {
   return `<${el.tagName}${attrs} dangerouslySetInnerHTML={{ __html: ${JSON.stringify(text)} }} />`;
 }
 
-function nodeToJsx($: Doc, node: AnyNode): string {
+/** `initial`/`whileInView`/`viewport`/`transition` props for a matched appear spec. */
+function motionPropsJsx(spec: MotionAppearSpec): string {
+  const t = spec.transition;
+  const transitionFields: string[] = [];
+  if (t.type) transitionFields.push(`type:${JSON.stringify(t.type)}`);
+  if (t.duration != null) transitionFields.push(`duration:${t.duration}`);
+  if (t.delay) transitionFields.push(`delay:${t.delay}`);
+  if (t.bounce != null) transitionFields.push(`bounce:${t.bounce}`);
+  if (t.ease) transitionFields.push(`ease:${JSON.stringify(t.ease)}`);
+  return (
+    ` initial={${JSON.stringify(spec.initial)}}` +
+    ` whileInView={${JSON.stringify(spec.animate)}}` +
+    ` viewport={{ once: true, amount: 0.2 }}` +
+    ` transition={{${transitionFields.join(",")}}}`
+  );
+}
+
+/**
+ * Serialize a node to JSX. When `motionMap` is given and the node carries a
+ * data-framer-appear-id matching an entry, it's emitted as a real
+ * `motion.<tag>` component with Framer's actual authored initial/animate/
+ * transition values (via Framer Motion) instead of a plain tag — real
+ * scroll-reveal animation, not a runtime or CSS approximation. `usedMotion`,
+ * if given, gets a "motion" entry added whenever this happens, so the caller
+ * knows to import it.
+ */
+function nodeToJsx(
+  $: Doc,
+  node: AnyNode,
+  motionMap?: Map<string, MotionAppearSpec>,
+  usedMotion?: Set<string>
+): string {
   if (node.type === "text") {
     return escapeJsxText((node as Text).data);
   }
@@ -328,23 +403,35 @@ function nodeToJsx($: Doc, node: AnyNode): string {
   if (VOID_LIKE_NO_TEXT.has(tag)) {
     return rawTextElement($, el);
   }
-  const attrs = attrsToJsx(el);
+
+  const animId = el.attribs?.["data-framer-appear-id"];
+  const spec = animId && motionMap ? motionMap.get(animId) : undefined;
+  const effectiveTag = spec ? `motion.${tag}` : tag;
+  if (spec) usedMotion?.add("motion");
+
+  const attrs = attrsToJsx(el, !!spec) + (spec ? motionPropsJsx(spec) : "");
   const children = el.children || [];
   if (children.length === 0) {
-    return `<${tag}${attrs} />`;
+    return `<${effectiveTag}${attrs} />`;
   }
-  const inner = children.map((c) => nodeToJsx($, c)).join("");
-  return `<${tag}${attrs}>${inner}</${tag}>`;
+  const inner = children.map((c) => nodeToJsx($, c, motionMap, usedMotion)).join("");
+  return `<${effectiveTag}${attrs}>${inner}</${effectiveTag}>`;
 }
 
 /** Convert every child node of `el` (or the root) into a single JSX fragment string. */
-export function nodesToJsx($: Doc, nodes: AnyNode[]): string {
-  return nodes.map((n) => nodeToJsx($, n)).join("");
+export function nodesToJsx(
+  $: Doc,
+  nodes: AnyNode[],
+  motionMap?: Map<string, MotionAppearSpec>,
+  usedMotion?: Set<string>
+): string {
+  return nodes.map((n) => nodeToJsx($, n, motionMap, usedMotion)).join("");
 }
 
 export interface ExtractedSection {
   name: string;
   jsx: string;
+  usesMotion: boolean;
 }
 
 function pascalName(raw: string, fallbackIndex: number): string {
@@ -390,9 +477,13 @@ export function extractSections(
   registry: Map<string, ExtractedSection>,
   usedNames: Map<string, string>,
   pageRefs: Set<string>,
+  motionMap?: Map<string, MotionAppearSpec>,
+  pageMotion?: Set<string>,
   depth = 0
 ): string {
-  return nodes.map((node) => extractNode($, node, registry, usedNames, pageRefs, depth)).join("");
+  return nodes
+    .map((node) => extractNode($, node, registry, usedNames, pageRefs, motionMap, pageMotion, depth))
+    .join("");
 }
 
 function extractNode(
@@ -401,6 +492,8 @@ function extractNode(
   registry: Map<string, ExtractedSection>,
   usedNames: Map<string, string>,
   pageRefs: Set<string>,
+  motionMap: Map<string, MotionAppearSpec> | undefined,
+  pageMotion: Set<string> | undefined,
   depth: number
 ): string {
   if (node.type === "text") return escapeJsxText((node as Text).data);
@@ -409,41 +502,57 @@ function extractNode(
   const el = node as Element;
   if (VOID_LIKE_NO_TEXT.has(el.tagName)) return rawTextElement($, el);
 
-  // SVG internals (paths, masks, gradient defs, named illustration layers)
-  // are one visual unit — never split them into separate "components".
-  if (el.tagName === "svg") return nodeToJsx($, node);
-
-  // Past the search depth, stop hunting for boundaries and inline whatever's
-  // left as-is (no more fragmenting).
-  if (depth > MAX_SEARCH_DEPTH) return nodeToJsx($, node);
-
   // The Pure Next.js exporter renames Framer's data-framer-name attribute to
   // data-section-name before calling this (see nextjs-export.ts) — read the
   // renamed key.
   const framerName = el.attribs?.["data-section-name"];
-  if (framerName && framerName.trim()) {
-    const fullJsx = nodeToJsx($, node);
+  const animId = el.attribs?.["data-framer-appear-id"];
+  const hasMotionSpec = !!(animId && motionMap?.has(animId));
+
+  // SVG internals (paths, masks, gradient defs, named illustration layers)
+  // are one visual unit — never split THEM into separate components — unless
+  // the <svg> root itself carries its own motion spec, in which case it
+  // needs the same client-component extraction as anything else below.
+  if (el.tagName === "svg" && !hasMotionSpec) return nodeToJsx($, node, motionMap, pageMotion);
+
+  // A named Framer boundary extracts (bounded by search depth, so unnamed
+  // wrapper chains don't fragment forever); an element with its own Framer
+  // Motion animation ALWAYS extracts regardless of depth — motion.* is a
+  // client component, which needs its own "use client" file. Inlining it
+  // straight into a Server Component (the page, or an unnamed wrapper's own
+  // extracted section) breaks Next.js's RSC bundling, and page.tsx itself
+  // can't be marked "use client" without losing its `metadata` export.
+  const namedBoundary = !!(framerName && framerName.trim() && depth <= MAX_SEARCH_DEPTH);
+  if (namedBoundary || hasMotionSpec) {
+    const label = namedBoundary ? framerName! : "Animated";
+    const sectionMotion = new Set<string>();
+    const fullJsx = nodeToJsx($, node, motionMap, sectionMotion);
     const hash = contentHash(fullJsx);
     let section = registry.get(hash);
     if (!section) {
-      let name = pascalName(framerName, registry.size + 1);
+      let name = pascalName(label, registry.size + 1);
       let suffix = 2;
       while (usedNames.has(name) && usedNames.get(name) !== hash) {
-        name = `${pascalName(framerName, registry.size + 1)}${suffix++}`;
+        name = `${pascalName(label, registry.size + 1)}${suffix++}`;
       }
       usedNames.set(name, hash);
-      section = { name, jsx: fullJsx };
+      section = { name, jsx: fullJsx, usesMotion: sectionMotion.size > 0 };
       registry.set(hash, section);
     }
     pageRefs.add(section.name);
     return `<${section.name} />`;
   }
 
-  // Unnamed wrapper (no Framer layer name) — keep inline to preserve its own
-  // layout styling, and look for named boundaries among its children.
+  // Unnamed wrapper (no Framer layer name, no motion spec of its own) — keep
+  // inline to preserve its own layout styling, and keep looking through its
+  // children. Recursion continues past MAX_SEARCH_DEPTH (only *named*-boundary
+  // extraction is capped, via the `namedBoundary` depth check above) — a
+  // motion-matched descendant must still get its own client-component file no
+  // matter how deep it sits, since inlining it here would leak a client
+  // component into whatever Server Component contains this wrapper.
   const attrs = attrsToJsx(el);
   const children = el.children || [];
   if (children.length === 0) return `<${el.tagName}${attrs} />`;
-  const inner = extractSections($, children, registry, usedNames, pageRefs, depth + 1);
+  const inner = extractSections($, children, registry, usedNames, pageRefs, motionMap, pageMotion, depth + 1);
   return `<${el.tagName}${attrs}>${inner}</${el.tagName}>`;
 }

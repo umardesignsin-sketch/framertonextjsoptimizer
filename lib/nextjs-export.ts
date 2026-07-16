@@ -3,19 +3,33 @@
 // dependency, assets self-hosted under /public.
 //
 // Reuses the exact same battle-tested pipeline as the "optimize" HTML export
-// (runtime stripped, images self-hosted + WebP, fonts self-hosted, appear/scroll
-// animations rebuilt as CSS + IntersectionObserver) — the only difference is the
-// final serialization step: instead of writing flat .html files, each page's
-// already-cleaned markup is converted into a real `app/<route>/page.tsx`
-// Server Component, with a small shared "use client" component reproducing the
-// handful of vanilla-JS behaviors (scroll-reveal, mobile menu toggle) as React.
+// (runtime stripped, images self-hosted + WebP, fonts self-hosted) — the
+// difference is the final serialization step: instead of writing flat .html
+// files, each page's already-cleaned markup is converted into a real
+// `app/<route>/page.tsx` Server Component, with a small shared "use client"
+// component reproducing the mobile menu toggle as React.
+//
+// Appear/scroll-reveal animations are reproduced as real Framer Motion
+// (motion.*) components using Framer's own authored animation values
+// (initial/animate/transition — including real spring physics, not a CSS
+// cubic-bezier approximation), extracted from each page's raw
+// `framer/appear` script data before the runtime-stripping pass removes it.
+// Hover, tap, parallax, scroll-linked transforms, sticky effects, and
+// mouse-follow interactions are NOT reproduced: that data lives inside
+// Framer's proprietary, minified runtime bundle, not in a parseable static
+// format, so there's nothing reliable to extract them from — fabricating
+// plausible-looking values for those would risk shipping motion that
+// doesn't match the original at all, which is worse than omitting it.
 import { convertSite } from "./convert";
 import { load, extractMeta, type PageMeta } from "./parse";
 import { normalizeRoute } from "./discover";
 import { extractSections, type ExtractedSection } from "./html-to-jsx";
-import { fetchBinary } from "./fetch";
+import { fetchBinary, fetchText } from "./fetch";
 import { isOptimizableImage, optimizeToWebp, copyAsset } from "./images";
+import { extractAppearMap, type MotionAppearSpec } from "./appear";
 import type { ConvertedFile, ConvertReport } from "./types";
+
+const MOTION_IMPORT = `import { motion } from "motion/react";\n`;
 
 export type ProgressFn = (msg: string) => void;
 
@@ -37,7 +51,10 @@ function relativeComponentsPath(route: string): string {
 }
 
 function componentFileTsx(section: ExtractedSection): string {
-  return `import type { CSSProperties } from "react";
+  // motion.* is a client component (whileInView needs an IntersectionObserver
+  // in the browser) — without this directive, rendering it from a Server
+  // Component page.tsx fails RSC bundling.
+  return `${section.usesMotion ? '"use client";\n' + MOTION_IMPORT : ""}import type { CSSProperties } from "react";
 
 export default function ${section.name}() {
   return ${section.jsx};
@@ -138,76 +155,16 @@ function collectJsonLd($: ReturnType<typeof load>): string[] {
 }
 
 const SITE_INTERACTIONS_TSX = `"use client";
-// Reproduces the handful of vanilla-JS behaviors the Framer runtime used to
-// provide (scroll-reveal animation trigger, mobile menu toggle) as a small
-// React effect — no Framer runtime, no Framer CDN dependency.
+// Reproduces the one vanilla-JS behavior the Framer runtime used to provide
+// that Framer Motion doesn't cover on its own (mobile menu toggle) as a
+// small React effect — no Framer runtime, no Framer CDN dependency. Appear/
+// scroll-reveal animations are handled per-element by Framer Motion
+// (motion.* components with initial/whileInView, see app/_components/ and
+// each page's page.tsx) using Framer's own authored animation values, not a
+// runtime or a CSS approximation.
 import { useEffect } from "react";
 
 export default function SiteInteractions() {
-  useEffect(() => {
-    document.documentElement.classList.add("js-anim");
-
-    // --- scroll-reveal (appear animations, driven by the CSS in globals.css) ---
-    const els = Array.from(document.querySelectorAll("[data-anim-id]"));
-    if (els.length) {
-      const show = (el: Element) => el.classList.add("is-visible");
-      const showAll = () => els.forEach(show);
-      const reduced =
-        window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (!("IntersectionObserver" in window) || reduced) {
-        showAll();
-      } else {
-        const io = new IntersectionObserver(
-          (entries) => {
-            for (const entry of entries) {
-              if (entry.isIntersecting) {
-                show(entry.target);
-                io.unobserve(entry.target);
-              }
-            }
-          },
-          { threshold: 0, rootMargin: "0px 0px -8% 0px" }
-        );
-        els.forEach((el) => io.observe(el));
-
-        let ticking = false;
-        const sweep = () => {
-          ticking = false;
-          const vh = window.innerHeight || 0;
-          let remaining = false;
-          for (const el of els) {
-            if (el.classList.contains("is-visible")) continue;
-            if (el.getBoundingClientRect().top < vh) {
-              show(el);
-              io.unobserve(el);
-            } else {
-              remaining = true;
-            }
-          }
-          if (!remaining) {
-            window.removeEventListener("scroll", onScroll);
-            window.removeEventListener("resize", onScroll);
-          }
-        };
-        const onScroll = () => {
-          if (!ticking) {
-            ticking = true;
-            requestAnimationFrame(sweep);
-          }
-        };
-        window.addEventListener("scroll", onScroll, { passive: true });
-        window.addEventListener("resize", onScroll);
-        if (document.readyState === "complete") setTimeout(sweep, 300);
-        else window.addEventListener("load", () => setTimeout(sweep, 300));
-
-        return () => {
-          window.removeEventListener("scroll", onScroll);
-          window.removeEventListener("resize", onScroll);
-        };
-      }
-    }
-  }, []);
-
   useEffect(() => {
     // --- mobile menu toggle (best-effort match on common Framer nav naming) ---
     const vis = (el: Element | null, on: boolean) => {
@@ -251,6 +208,39 @@ export default function SiteInteractions() {
     };
   }, []);
 
+  useEffect(() => {
+    // --- last-resort visibility safety net ---
+    // Framer Motion's whileInView (per-element, see app/_components/) is the
+    // real animation and handles the vast majority of reveals correctly. This
+    // is only a backstop for edge cases it can legitimately miss — e.g. an
+    // element inside a position:sticky panel, where IntersectionObserver's
+    // relationship with the pinned ancestor doesn't always fire the way a
+    // plain scrolling element would. Never touches anything Motion already
+    // revealed; only steps in if something is still stuck long after it
+    // should plausibly have appeared.
+    const sweep = () => {
+      const vh = window.innerHeight || 0;
+      document.querySelectorAll<HTMLElement>('[style*="opacity"]').forEach((el) => {
+        const op = parseFloat(getComputedStyle(el).opacity);
+        if (!(op < 0.05)) return;
+        const rect = el.getBoundingClientRect();
+        if (rect.top < vh && rect.bottom > -vh) {
+          el.style.opacity = "1";
+          el.style.transform = "none";
+        }
+      });
+    };
+    const t1 = setTimeout(sweep, 1800);
+    const onScroll = () => sweep();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      clearTimeout(t1);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, []);
+
   return null;
 }
 `;
@@ -284,6 +274,7 @@ function pageTsx(
   bodyJsx: string,
   jsonLd: string[],
   usedComponents: string[],
+  usesMotion: boolean,
   ogImageLocal?: string
 ): string {
   const ldScripts = jsonLd
@@ -296,7 +287,7 @@ function pageTsx(
   const componentImports = usedComponents
     .map((name) => `import ${name} from "${componentsBase}/${name}";`)
     .join("\n");
-  return `import type { Metadata } from "next";
+  return `${usesMotion ? MOTION_IMPORT : ""}import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 ${componentImports ? componentImports + "\n" : ""}
 export const metadata: Metadata = ${metadataObject(meta, route, ogImageLocal)};
@@ -319,7 +310,7 @@ function packageJson(name: string): string {
       version: "0.1.0",
       private: true,
       scripts: { dev: "next dev", build: "next build", start: "next start" },
-      dependencies: { next: "14.2.35", react: "^18.3.1", "react-dom": "^18.3.1" },
+      dependencies: { next: "14.2.35", react: "^18.3.1", "react-dom": "^18.3.1", motion: "^11.15.0" },
       devDependencies: {
         "@types/node": "^20",
         "@types/react": "^18.3.1",
@@ -392,10 +383,16 @@ pages (like a site-wide nav or footer) resolves to a single shared file
 imported wherever it's used, instead of being duplicated per page.
 
 There is no Framer runtime and no dependency on framerusercontent.com: images
-and fonts are self-hosted under \`/public\`, and the handful of vanilla-JS
-behaviors Framer's runtime used to provide (scroll-reveal animation, mobile
-menu toggle) are reproduced as a small "use client" React component
-(\`app/site-interactions.tsx\`).
+and fonts are self-hosted under \`/public\`. Appear/scroll-reveal animations
+are real \`motion.*\` (Framer Motion) components using Framer's own authored
+values — see \`initial\`/\`whileInView\`/\`transition\` on the animated elements
+in \`app/_components/\` and each page. The mobile menu toggle is a small
+"use client" React component (\`app/site-interactions.tsx\`).
+
+Not reproduced: hover/tap effects, parallax, scroll-linked transforms, sticky
+effects, and mouse-follow interactions. That data lives inside Framer's
+proprietary runtime bundle, not in a parseable static format, so there's
+nothing reliable to extract it from.
 
 Deploy to Vercel/Netlify like any Next.js app.
 `;
@@ -447,11 +444,35 @@ export async function convertToNextJs(
   // of change most likely to introduce a subtle visual regression for no
   // real benefit.
 
-  // Rename the two markers our own runtime toggles at runtime (Framer's
-  // naming, not ours) to neutral names, in both markup-facing CSS text and
-  // the runtime component below.
-  const renameMarkerTokens = (s: string) =>
-    s.replace(/framer-appeared/g, "is-visible").replace(/framer-anim/g, "js-anim");
+  // Fetch each page's RAW HTML (parallel, capped) purely to extract Framer's
+  // real appear/scroll-reveal animation data — framer/appear scripts are
+  // stripped by the runtime-removal pass inside convertSite, so that data
+  // has to be pulled out separately, before stripping, from an unprocessed
+  // copy. IDs are content hashes and effectively unique site-wide, so every
+  // page's map merges into one.
+  onProgress("Extracting animation data…");
+  const motionMap = new Map<string, MotionAppearSpec>();
+  {
+    const pageUrls = [...new Set(report.pages.map((p) => p.sourceUrl))];
+    let i = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(5, pageUrls.length) }, async () => {
+        while (i < pageUrls.length) {
+          const url = pageUrls[i++];
+          try {
+            const r = await fetchText(url);
+            if (r.status < 400) {
+              for (const [id, spec] of extractAppearMap(load(r.text))) motionMap.set(id, spec);
+            }
+          } catch {
+            /* best-effort — that page's animations just won't be reproduced */
+          }
+        }
+      })
+    );
+  }
+
+  onProgress("Converting pages into React components…");
 
   for (const hf of htmlFiles) {
     const html = hf.content as string;
@@ -460,29 +481,25 @@ export async function convertToNextJs(
     if (!siteTitle && meta.title) siteTitle = meta.title;
     const route = filePathToRoute(hf.path);
 
-    // Rename the two data-framer-* attributes our own runtime still relies
-    // on, before anything else reads them. Class names are left as Framer
-    // generated them (see note above).
+    // Rename the section-name attribute our own runtime still relies on for
+    // the mobile-menu heuristic. data-framer-appear-id is left as-is here —
+    // it's used directly as the motionMap lookup key below and never
+    // emitted in the output (see html-to-jsx.ts). Class names are left as
+    // Framer generated them (see note above).
     $("[data-framer-name]").each((_, el) => {
       $(el).attr("data-section-name", $(el).attr("data-framer-name") || "");
       $(el).removeAttr("data-framer-name");
     });
-    $("[data-framer-appear-id]").each((_, el) => {
-      $(el).attr("data-anim-id", $(el).attr("data-framer-appear-id") || "");
-      $(el).removeAttr("data-framer-appear-id");
-    });
 
     // Pull every <style> block into the shared global stylesheet (dedup exact
     // duplicates — Framer's boilerplate/reset CSS repeats byte-for-byte across
-    // pages of the same site).
+    // pages of the same site). Skip our own injected appear-animation CSS —
+    // Framer Motion owns those elements' opacity/transform now; the old
+    // !important-driven CSS would fight it for control of the same styles.
     $("style").each((_, el) => {
-      let text = $(el).html();
-      if (text && text.trim()) {
-        text = text.replace(/data-framer-appear-id/g, "data-anim-id");
-        text = text.replace(/data-framer-name/g, "data-section-name");
-        text = renameMarkerTokens(text);
-        globalCss.add(text.trim());
-      }
+      if ($(el).attr("data-framer-optimizer") != null) return;
+      const text = $(el).html();
+      if (text && text.trim()) globalCss.add(text.trim());
     });
 
     const jsonLd = collectJsonLd($);
@@ -506,8 +523,9 @@ export async function convertToNextJs(
     // own hydration and in-editor selection). Generic data-framer-* sweep
     // catches every variant (hydrate-v2, generated-page, ssr-released-at,
     // component-type, and any other Framer emits) rather than an enumerated
-    // list that inevitably misses one. data-section-name/data-anim-id
-    // (renamed above, no longer data-framer-* prefixed) survive untouched.
+    // list that inevitably misses one. data-section-name (renamed above) and
+    // data-framer-appear-id (used as the motionMap lookup key below, then
+    // dropped by html-to-jsx.ts — never emitted) survive untouched.
     if (DEAD_NON_NAMESPACED_SELECTOR) {
       $(DEAD_NON_NAMESPACED_SELECTOR).each((_, el) => {
         DEAD_NON_NAMESPACED_ATTRS.forEach((a) => $(el).removeAttr(a));
@@ -524,7 +542,8 @@ export async function convertToNextJs(
 
     const bodyChildren = $("body").get(0)?.children ?? [];
     const pageRefs = new Set<string>();
-    const bodyJsx = extractSections($, bodyChildren, componentRegistry, usedComponentNames, pageRefs);
+    const pageMotion = new Set<string>();
+    const bodyJsx = extractSections($, bodyChildren, componentRegistry, usedComponentNames, pageRefs, motionMap, pageMotion);
 
     // Self-host og:image (not covered by the general image pipeline, which
     // only rewrites <img>/<source>/CSS url() references) so metadata doesn't
@@ -553,7 +572,7 @@ export async function convertToNextJs(
     const dir = routeToPageDir(route);
     files.push({
       path: `${dir}/page.tsx`,
-      content: pageTsx(componentName, route, meta, bodyJsx, jsonLdLocal, [...pageRefs], ogImageLocal),
+      content: pageTsx(componentName, route, meta, bodyJsx, jsonLdLocal, [...pageRefs], pageMotion.size > 0, ogImageLocal),
     });
   }
 
@@ -590,6 +609,7 @@ export async function convertToNextJs(
     notes: [
       "100% pure Next.js App Router project — every page is a real React/JSX Server Component",
       `split into ${componentRegistry.size} reusable component(s) under app/_components (deduplicated across pages)`,
+      `appear/scroll-reveal animations reproduced as real Framer Motion components (${motionMap.size} found), using Framer's own authored values`,
       "no Framer runtime, no framerusercontent.com dependency — images/fonts self-hosted under /public",
       "run: npm install && npm run build",
       ...report.notes,

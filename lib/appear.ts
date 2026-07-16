@@ -251,3 +251,87 @@ export function restoreAppearAnimations($: Doc): AppearResult {
 function escapeAttr(v: string): string {
   return v.replace(/["\\]/g, "\\$&");
 }
+
+export interface MotionAppearSpec {
+  initial: Record<string, number>;
+  animate: Record<string, number>;
+  transition: {
+    duration?: number;
+    delay?: number;
+    ease?: number[];
+    type?: "spring";
+    bounce?: number;
+  };
+}
+
+const MOTION_KEYS: (keyof AppearState)[] = [
+  "opacity",
+  "x",
+  "y",
+  "scale",
+  "rotate",
+  "rotateX",
+  "rotateY",
+  "skewX",
+  "skewY",
+];
+
+/**
+ * Parse the framer/appear scripts present in `$` into structured per-element
+ * animation specs suitable for Framer Motion's `initial`/`whileInView`/
+ * `transition` props — the real numeric state Framer authored (not a CSS
+ * transform-string approximation). Doesn't mutate `$` or inject anything;
+ * call on the RAW page HTML (framer/appear scripts are stripped before the
+ * runtime-removal pass, so this must run before stripRuntime).
+ */
+export function extractAppearMap($: Doc): Map<string, MotionAppearSpec> {
+  const animMap: AppearMap = {};
+  $('script[type="framer/appear"]').each((_, el) => {
+    const txt = $(el).html();
+    if (!txt) return;
+    try {
+      const parsed = JSON.parse(txt);
+      if (!Array.isArray(parsed) && parsed && typeof parsed === "object") {
+        Object.assign(animMap, parsed as AppearMap);
+      }
+    } catch {
+      /* malformed appear script — skip */
+    }
+  });
+
+  const out = new Map<string, MotionAppearSpec>();
+  for (const [id, entry] of Object.entries(animMap)) {
+    if (!entry || typeof entry !== "object") continue;
+    const primary = entry.default ?? firstNonNull(entry);
+    if (!primary || !primary.initial) continue;
+
+    const initial: Record<string, number> = {};
+    const animate: Record<string, number> = {};
+    for (const k of MOTION_KEYS) {
+      if (primary.initial[k] != null) initial[k] = primary.initial[k]!;
+    }
+    const finalState = primary.animate ?? {};
+    for (const k of MOTION_KEYS) {
+      if (finalState[k] != null) animate[k] = finalState[k]!;
+    }
+    if (animate.opacity == null) animate.opacity = 1;
+    if (initial.opacity == null) initial.opacity = 0.001;
+
+    const tr = primary.animate?.transition;
+    const transition: MotionAppearSpec["transition"] = {};
+    if (tr?.type === "spring") {
+      transition.type = "spring";
+      transition.bounce = round(tr.bounce ?? 0);
+      transition.duration = durationOf(tr);
+    } else {
+      transition.duration = durationOf(tr);
+      if (tr?.ease && Array.isArray(tr.ease) && tr.ease.length === 4) {
+        transition.ease = tr.ease.map(round);
+      }
+    }
+    if (tr?.delay) transition.delay = round(Math.max(tr.delay, 0));
+
+    out.set(id, { initial, animate, transition });
+  }
+  return out;
+}
