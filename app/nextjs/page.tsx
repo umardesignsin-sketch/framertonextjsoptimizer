@@ -114,6 +114,7 @@ function NextJsConverter() {
   const [report, setReport] = useState<DoneReport | null>(null);
   const [error, setError] = useState("");
   const [showAuthGate, setShowAuthGate] = useState(false);
+  const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
 
   async function convert(overrideUrl?: string) {
     const targetUrl = overrideUrl ?? url;
@@ -295,8 +296,47 @@ function NextJsConverter() {
                 >
                   ↓ Download Next.js project (.zip)
                 </a>
+                <a
+                  href={`/api/preview/${jobId}/`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-10 items-center rounded-lg border border-border-strong px-4 text-[14px] font-medium hover:bg-muted"
+                >
+                  Open preview in new tab ↗
+                </a>
               </div>
             </div>
+
+            {/* preview — same optimized, runtime-free HTML the shipped page.tsx JSX
+                is derived from, so it renders (including animations) without needing
+                to run npm install/build or deploy anywhere first. */}
+            <section className="overflow-hidden rounded-xl border border-border bg-background">
+              <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+                <span className="text-[13px] font-medium">Live preview</span>
+                <div className="flex gap-1 rounded-md bg-muted p-0.5">
+                  {(["desktop", "mobile"] as const).map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => setDevice(d)}
+                      className={`rounded px-2.5 py-1 text-[12px] capitalize ${
+                        device === d ? "bg-background shadow-sm" : "text-muted-foreground"
+                      }`}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-center bg-muted p-4">
+                <iframe
+                  key={device}
+                  src={`/api/preview/${jobId}/`}
+                  title="preview"
+                  className="h-[560px] rounded-md border border-border bg-white shadow-sm"
+                  style={{ width: device === "mobile" ? 390 : "100%" }}
+                />
+              </div>
+            </section>
 
             <DeployPanel jobId={jobId} />
 
