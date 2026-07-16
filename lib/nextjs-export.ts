@@ -52,6 +52,23 @@ function pageComponentName(route: string): string {
   return parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join("") + "Page";
 }
 
+// Framer editor/hydration bookkeeping — meaningful only to Framer's own
+// runtime (route/breakpoint hydration data, in-editor selection/layout
+// flags). Once the runtime is gone these are inert, so we drop them entirely
+// rather than ship dead attributes in the output markup.
+const DEAD_FRAMER_ATTRS = [
+  "data-framer-hydrate-v2",
+  "data-framer-generated-page",
+  "data-framer-ssr-released-at",
+  "data-framer-page-optimized-at",
+  "data-layout-template",
+  "data-selection",
+  "data-border",
+  "data-framer-component-type",
+  "data-reset",
+];
+const DEAD_FRAMER_ATTR_SELECTOR = DEAD_FRAMER_ATTRS.map((a) => `[${a}]`).join(", ");
+
 function metadataObject(meta: PageMeta, route: string): string {
   const r = normalizeRoute(route);
   const fields: string[] = [];
@@ -77,13 +94,13 @@ function collectJsonLd($: ReturnType<typeof load>): string[] {
   return out;
 }
 
-const FRAMER_RUNTIME_TSX = `"use client";
+const SITE_INTERACTIONS_TSX = `"use client";
 // Reproduces the handful of vanilla-JS behaviors the Framer runtime used to
 // provide (scroll-reveal animation trigger, mobile menu toggle) as a small
 // React effect — no Framer runtime, no Framer CDN dependency.
 import { useEffect } from "react";
 
-export default function FramerRuntime() {
+export default function SiteInteractions() {
   useEffect(() => {
     document.documentElement.classList.add("framer-anim");
 
@@ -198,7 +215,7 @@ export default function FramerRuntime() {
 function layoutTsx(siteTitle: string): string {
   return `import type { Metadata } from "next";
 import "./globals.css";
-import FramerRuntime from "./framer-runtime";
+import SiteInteractions from "./site-interactions";
 
 export const metadata: Metadata = {
   title: ${JSON.stringify(siteTitle || "Site")},
@@ -209,7 +226,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         {children}
-        <FramerRuntime />
+        <SiteInteractions />
       </body>
     </html>
   );
@@ -334,7 +351,7 @@ There is no Framer runtime and no dependency on framerusercontent.com: images
 and fonts are self-hosted under \`/public\`, and the handful of vanilla-JS
 behaviors Framer's runtime used to provide (scroll-reveal animation, mobile
 menu toggle) are reproduced as a small "use client" React component
-(\`app/framer-runtime.tsx\`).
+(\`app/site-interactions.tsx\`).
 
 Deploy to Vercel/Netlify like any Next.js app.
 `;
@@ -379,7 +396,7 @@ export async function convertToNextJs(
     const jsonLd = collectJsonLd($);
 
     // Strip everything that's now handled elsewhere: <style> (-> globals.css),
-    // our own injected behavior scripts (-> framer-runtime.tsx), and JSON-LD
+    // our own injected behavior scripts (-> site-interactions.tsx), and JSON-LD
     // (re-emitted explicitly below).
     $("style").remove();
     $('script[data-framer-optimizer]').remove();
@@ -388,8 +405,17 @@ export async function convertToNextJs(
       // Any remaining inline script (post strip-js) is either dead weight or a
       // genuine custom embed we can't safely execute as JSX text — drop rather
       // than risk broken markup; the vanilla-JS equivalents are already covered
-      // by framer-runtime.tsx.
+      // by site-interactions.tsx.
       $(el).remove();
+    });
+
+    // Drop dead Framer editor/hydration bookkeeping attributes — nothing
+    // reads these once the runtime is gone (they existed only for Framer's
+    // own hydration and in-editor selection). Keep data-framer-name and
+    // data-framer-appear-id: site-interactions.tsx and globals.css still key
+    // off those at runtime.
+    $(DEAD_FRAMER_ATTR_SELECTOR).each((_, el) => {
+      DEAD_FRAMER_ATTRS.forEach((a) => $(el).removeAttr(a));
     });
 
     const bodyChildren = $("body").get(0)?.children ?? [];
@@ -405,7 +431,7 @@ export async function convertToNextJs(
   }
 
   files.push({ path: "app/layout.tsx", content: layoutTsx(siteTitle) });
-  files.push({ path: "app/framer-runtime.tsx", content: FRAMER_RUNTIME_TSX });
+  files.push({ path: "app/site-interactions.tsx", content: SITE_INTERACTIONS_TSX });
   files.push({ path: "app/globals.css", content: [...globalCss].join("\n\n") });
 
   for (const section of componentRegistry.values()) {
