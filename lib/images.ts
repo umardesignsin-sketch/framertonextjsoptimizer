@@ -37,7 +37,6 @@ export function collectImageUrls($: Doc, cssText: string): Set<string> {
     parseSrcset($(el).attr("srcset")).forEach(add);
     add($(el).attr("src"));
   });
-  $("video[poster]").each((_, el) => add($(el).attr("poster")));
   // inline style background-image
   $("[style]").each((_, el) => {
     extractCssUrls($(el).attr("style") || "").forEach(add);
@@ -135,11 +134,6 @@ export function rewriteImageRefs($: Doc, map: Map<string, string>): void {
     const style = $el.attr("style") || "";
     const next = rewriteCssUrls(style, map);
     if (next !== style) $el.attr("style", next);
-  });
-
-  $("video[poster]").each((_, el) => {
-    const newPoster = remap($(el).attr("poster"));
-    if (newPoster) $(el).attr("poster", newPoster);
   });
 
   $('link[as="image"]').each((_, el) => {

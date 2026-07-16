@@ -1,31 +1,17 @@
-// Convert a Framer URL into a real, deployable Next.js project, prioritizing
-// 100% visual/behavioral accuracy over "pure" JSX. Framer's own runtime
-// renders every page, so animations, hover states, scroll-linked transforms,
-// and interactions are pixel-identical to the source — not an approximation
-// reproduced in our own code, which necessarily can't perfectly replicate
-// every effect Framer's proprietary Motion-based engine can produce.
+// Convert a Framer URL into a real, deployable Next.js project — accurately.
 //
-// Reuses the same "hybrid" pipeline as the Hybrid HTML export (runtime kept;
-// trackers removed; images self-hosted + WebP) — each page becomes an
-// `app/<route>/route.ts` Route Handler that serves that page's HTML
-// verbatim. This is still a genuine, deployable Next.js App Router project
-// (npm install && npm run build && npm start, deploys to Vercel/Netlify like
-// any Next.js app) — the trade-off is that pages are Route Handlers, not
-// React/JSX components, and Framer's runtime bundle + fonts still load from
-// framerusercontent.com (self-hosting Framer's own versioned/hashed runtime
-// bundle risks breaking it, since it may reference other CDN resources
-// internally).
-import { convertSite } from "./convert";
-import { normalizeRoute } from "./discover";
-import type { ConvertedFile, ConvertReport } from "./types";
+// Each Framer page becomes a statically-prerendered Next.js Route Handler
+// (`app/<route>/route.ts`) that returns the page's ORIGINAL HTML verbatim,
+// Framer runtime intact. So the deployed Next.js site renders identically to
+// the original — full content, animations, interactivity — because Framer's own
+// runtime + CDN assets do the work. (A stripped/static render loses animations
+// and hides appear-animated content; the hybrid converter is the optimized path.)
+import { fetchText, normalizeUrl } from "./fetch";
+import { load, detectFramer, extractMeta } from "./parse";
+import { discoverPages, normalizeRoute } from "./discover";
+import type { ConvertReport, ConvertedFile } from "./types";
 
 export type ProgressFn = (msg: string) => void;
-
-/** "index.html" | "about/index.html" -> "/" | "/about" (mirrors convert.ts's routeToFilePath). */
-function filePathToRoute(path: string): string {
-  if (path === "index.html") return "/";
-  return "/" + path.replace(/\/index\.html$/, "");
-}
 
 /** Route path -> `app/.../route.ts` file path. */
 function routeFilePath(route: string): string {
@@ -35,9 +21,8 @@ function routeFilePath(route: string): string {
 
 /** A statically-prerendered route handler that returns the page HTML as-is. */
 function routeHandler(html: string): string {
-  return `// Auto-generated from the original Framer page. Served verbatim so
-// Framer's runtime + CDN assets render every animation and interaction
-// exactly like the source.
+  return `// Auto-generated from the original Framer page. Served verbatim so the
+// Framer runtime + CDN assets render it identically to the source.
 export const dynamic = "force-static";
 
 const HTML = ${JSON.stringify(html)};
@@ -122,51 +107,73 @@ npm run build && npm start
 ## How it works
 
 Each page is a statically-prerendered Next.js **route handler**
-(\`app/<route>/route.ts\`) that returns the original Framer page's HTML
-verbatim, with Framer's runtime intact. The site renders and behaves
-**identically to the original** — every animation, hover state, and
-scroll-linked effect, because Framer's own runtime is what's driving them,
-not a reimplementation. Images are self-hosted and optimized to WebP;
-Framer's runtime bundle and fonts still load from framerusercontent.com
-(self-hosting the runtime itself risks breaking it).
+(\`app/<route>/route.ts\`) that returns the original Framer HTML verbatim, with
+Framer's runtime intact. So the site renders **identically to the original** —
+full content, animations, interactivity — with assets loading from Framer's CDN.
 
 Deploy to Vercel/Netlify like any Next.js app.
 `;
+}
+
+/** Simple bounded-concurrency map. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let i = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (i < items.length) {
+        const idx = i++;
+        out[idx] = await fn(items[idx]);
+      }
+    })
+  );
+  return out;
 }
 
 export async function convertToNextJs(
   inputUrl: string,
   onProgress: ProgressFn = () => {}
 ): Promise<ConvertReport> {
-  const report = await convertSite(inputUrl, { mode: "hybrid" }, onProgress);
+  const start = normalizeUrl(inputUrl);
+
+  onProgress(`Fetching ${start.toString()}`);
+  const first = await fetchText(start.toString());
+  if (first.status >= 400) throw new Error(`Source returned HTTP ${first.status}`);
+  const $first = load(first.text);
+  const detection = detectFramer($first);
+  if (!detection.isFramer) {
+    throw new Error(
+      "This does not look like a Framer-published site. Signals: " +
+        (detection.reasons.join(", ") || "none")
+    );
+  }
+  const siteMeta = extractMeta($first);
+
+  onProgress("Discovering pages…");
+  const pages = await discoverPages(first.url, first.text, siteMeta.searchIndexUrl, 20);
+  onProgress(`Found ${pages.length} page(s)`);
+
+  const pageHtml = new Map<string, string>();
+  pageHtml.set(normalizeRoute(new URL(first.url).pathname), first.text);
+  await mapLimit(pages, 5, async (p) => {
+    if (pageHtml.has(p.route)) return;
+    try {
+      const r = await fetchText(p.url);
+      if (r.status < 400) pageHtml.set(p.route, r.text);
+    } catch {
+      /* skip */
+    }
+  });
 
   onProgress("Generating Next.js project…");
-
-  const htmlFiles = report.files.filter((f) => f.path.endsWith(".html") && f.content != null);
-  const assetFiles = report.files.filter((f) => !f.path.endsWith(".html") && f.path !== "vercel.json" && f.path !== "_headers");
-
   const files: ConvertedFile[] = [];
-  for (const hf of htmlFiles) {
-    const route = filePathToRoute(hf.path);
-    files.push({ path: routeFilePath(route), content: routeHandler(hf.content as string) });
-  }
-
-  // Preview-only copy under the same paths the download uses, kept separate
-  // from `files` so the live preview/no-build deploy paths (which need
-  // plain HTML, not a route handler) have something to serve without ending
-  // up in the user's downloaded project.
-  const previewFiles: ConvertedFile[] = htmlFiles.map((hf) => ({
-    path: `.next-preview/${hf.path}`,
-    content: hf.content,
-  }));
-
-  for (const af of assetFiles) {
-    files.push({ path: `public/${af.path.replace(/^\/+/, "")}`, content: af.content, binary: af.binary });
+  for (const [route, html] of pageHtml.entries()) {
+    files.push({ path: routeFilePath(route), content: routeHandler(html) });
   }
 
   const host = (() => {
     try {
-      return new URL(report.sourceUrl).hostname.replace(/^www\./, "").replace(/\./g, "-");
+      return new URL(start.toString()).hostname.replace(/^www\./, "").replace(/\./g, "-");
     } catch {
       return "site";
     }
@@ -176,21 +183,21 @@ export async function convertToNextJs(
   files.push({ path: "next.config.js", content: NEXT_CONFIG });
   files.push({ path: "tsconfig.json", content: TSCONFIG });
   files.push({ path: ".gitignore", content: GITIGNORE });
-  files.push({ path: "README.md", content: readme(report.sourceUrl, htmlFiles.length) });
+  files.push({ path: "README.md", content: readme(start.toString(), pageHtml.size) });
 
-  const pageCount = htmlFiles.length;
+  const pageCount = pageHtml.size;
   return {
-    sourceUrl: report.sourceUrl,
-    pages: report.pages,
-    stats: [{ label: "Next.js routes", before: pageCount, after: pageCount, unit: "count" }, ...report.stats],
+    sourceUrl: start.toString(),
+    pages: [...pageHtml.keys()].map((route) => ({
+      route,
+      sourceUrl: pages.find((p) => p.route === route)?.url || start.toString(),
+    })),
+    stats: [{ label: "Next.js routes", before: pageCount, after: pageCount, unit: "count" }],
     notes: [
-      "real, deployable Next.js App Router project — one statically-prerendered route per Framer page",
-      "renders identically to the original — Framer's runtime is kept, so every animation/interaction is pixel-accurate",
-      "images self-hosted + optimized to WebP; Framer's runtime bundle and fonts stay on framerusercontent.com",
+      "pure Next.js App Router project — one statically-prerendered route per Framer page",
+      "renders identically to the original (Framer runtime kept, assets on CDN)",
       "run: npm install && npm run build",
-      ...report.notes,
     ],
     files,
-    previewFiles,
   };
 }

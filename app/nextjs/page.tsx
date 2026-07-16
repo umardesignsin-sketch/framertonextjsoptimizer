@@ -21,7 +21,7 @@ const NEXTJS_FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Do my Framer animations and interactions still work?",
-    a: "Yes, exactly — Framer's runtime is kept intact, so every animation, hover state, and scroll-linked effect is pixel-accurate to the source, not a reimplementation. This mode prioritizes 100% fidelity over a runtime-free bundle; use the Hybrid (HTML) export if you want the runtime stripped instead.",
+    a: "Yes. The Next.js export keeps Framer's runtime intact, so animations, hover states, and interactions render exactly like the original — pixel-identical fidelity is the whole point of this mode.",
   },
   {
     q: "Do I need my Framer login or an API key?",
@@ -37,7 +37,7 @@ const NEXTJS_FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Next.js export vs HTML export — which should I choose?",
-    a: "Choose Next.js when you want real code and exact fidelity (Framer's runtime kept, every animation and interaction pixel-accurate). Choose the HTML export when you want maximum speed instead — runtime stripped, typically 90–100 Lighthouse. You can run both and compare.",
+    a: "Choose Next.js when you want real code and exact fidelity (runtime kept). Choose the HTML export when you want maximum speed — runtime stripped, images optimized to WebP, typically 90–100 Lighthouse. You can run both and compare.",
   },
   {
     q: "Is exporting my Framer site legal?",

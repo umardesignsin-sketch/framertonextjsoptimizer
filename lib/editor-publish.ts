@@ -5,34 +5,45 @@
 // → redeploy to the saved deploy target. Deterministic, no version drift: the
 // editor renders original + draft overlaid, and publish reproduces exactly
 // that. Edits survive Framer's hydration via the injected override runtime.
-import type { ConvertedFile, ConvertReport } from "./types";
+import type { ConvertReport } from "./types";
 import { editorOverrides, injectOverrides, type EditorEdit } from "./overrides";
 import { getJob } from "./store";
 import { db } from "./db";
 import { decryptSecret, encryptionConfigured } from "./crypto";
 import { redeployNetlify, redeployVercel, toDeployableFiles } from "./deploy";
 
-function injectIntoHtmlFile(f: ConvertedFile, overrides: ReturnType<typeof editorOverrides>): ConvertedFile {
-  if (!f.content || !f.path.endsWith(".html")) return f;
-  return { ...f, content: injectOverrides(f.content, overrides) };
-}
+const NEXTJS_HTML_RE = /const HTML = ("(?:[^"\\]|\\.)*");/;
 
-/**
- * Returns a NEW report with the editor overrides injected into every page.
- * Hybrid bundles carry the edited HTML directly in `files`; Pure Next.js
- * bundles have no static HTML there (real .tsx components instead) — their
- * edits go into `previewFiles`, the same optimized static HTML the no-build
- * deploy path (toDeployableFiles) and live preview both render from.
- */
+/** Returns a NEW report with the editor overrides injected into every page. */
 export function applyEditsToReport(report: ConvertReport, edits: EditorEdit[]): ConvertReport {
   const overrides = editorOverrides(edits);
   if (overrides.length === 0) return report;
 
-  return {
-    ...report,
-    files: report.files.map((f) => injectIntoHtmlFile(f, overrides)),
-    previewFiles: report.previewFiles?.map((f) => injectIntoHtmlFile(f, overrides)),
-  };
+  const files = report.files.map((f) => {
+    if (!f.content) return f;
+    if (f.path.endsWith(".html")) {
+      return { ...f, content: injectOverrides(f.content, overrides) };
+    }
+    if (f.path.endsWith("route.ts")) {
+      // pure-Next.js export: page HTML is embedded as a JSON string literal.
+      const m = f.content.match(NEXTJS_HTML_RE);
+      if (m) {
+        try {
+          const html = JSON.parse(m[1]) as string;
+          const edited = injectOverrides(html, overrides);
+          return {
+            ...f,
+            content: f.content.replace(NEXTJS_HTML_RE, `const HTML = ${JSON.stringify(edited)};`),
+          };
+        } catch {
+          return f;
+        }
+      }
+    }
+    return f;
+  });
+
+  return { ...report, files };
 }
 
 export interface PublishResult {
@@ -67,10 +78,9 @@ export async function publishSite(siteId: string, ownerId: string): Promise<Publ
   }
 
   const edited = applyEditsToReport(job.report, edits);
-  // Pure-Next.js: overrides were injected into previewFiles; toDeployableFiles
-  // uses those (renamed to site-root paths) so the redeploy matches the
-  // original no-build deploy.
-  const files = toDeployableFiles(edited.files, edited.previewFiles);
+  // Pure-Next.js: overrides were injected into the route.ts HTML literals;
+  // render them to static HTML so the redeploy matches the original deploy.
+  const files = toDeployableFiles(edited.files);
   const token = decryptSecret(target.tokenEnc);
 
   const res =
