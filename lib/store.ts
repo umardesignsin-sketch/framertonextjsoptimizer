@@ -59,9 +59,10 @@ export function makeJobId(): string {
   ).toLowerCase();
 }
 
-function indexFiles(files: ConvertedFile[]): Map<string, ConvertedFile> {
+function indexFiles(files: ConvertedFile[], previewFiles?: ConvertedFile[]): Map<string, ConvertedFile> {
   const fileIndex = new Map<string, ConvertedFile>();
   for (const f of files) fileIndex.set(normalize(f.path), f);
+  for (const f of previewFiles || []) fileIndex.set(normalize(f.path), f);
   return fileIndex;
 }
 
@@ -77,6 +78,23 @@ interface SerializedBundle {
   stats: ConvertReport["stats"];
   notes: string[];
   files: SerializedFile[];
+  previewFiles?: SerializedFile[];
+}
+
+function serializeFiles(files: ConvertedFile[]): SerializedFile[] {
+  return files.map((f) => ({
+    path: f.path,
+    content: f.binary ? undefined : f.content,
+    b64: f.binary ? f.binary.toString("base64") : undefined,
+  }));
+}
+
+function deserializeFiles(files: SerializedFile[]): ConvertedFile[] {
+  return files.map((f) => ({
+    path: f.path,
+    content: f.b64 ? undefined : f.content,
+    binary: f.b64 ? Buffer.from(f.b64, "base64") : undefined,
+  }));
 }
 
 function serialize(report: ConvertReport): SerializedBundle {
@@ -85,11 +103,8 @@ function serialize(report: ConvertReport): SerializedBundle {
     pages: report.pages,
     stats: report.stats,
     notes: report.notes,
-    files: report.files.map((f) => ({
-      path: f.path,
-      content: f.binary ? undefined : f.content,
-      b64: f.binary ? f.binary.toString("base64") : undefined,
-    })),
+    files: serializeFiles(report.files),
+    previewFiles: report.previewFiles ? serializeFiles(report.previewFiles) : undefined,
   };
 }
 
@@ -99,11 +114,8 @@ function deserialize(b: SerializedBundle): ConvertReport {
     pages: b.pages,
     stats: b.stats,
     notes: b.notes,
-    files: b.files.map((f) => ({
-      path: f.path,
-      content: f.b64 ? undefined : f.content,
-      binary: f.b64 ? Buffer.from(f.b64, "base64") : undefined,
-    })),
+    files: deserializeFiles(b.files),
+    previewFiles: b.previewFiles ? deserializeFiles(b.previewFiles) : undefined,
   };
 }
 
@@ -122,7 +134,7 @@ async function trimBlob() {
 }
 
 export async function saveJob(id: string, report: ConvertReport): Promise<Job> {
-  const job: Job = { id, report, fileIndex: indexFiles(report.files), createdAt: Date.now() };
+  const job: Job = { id, report, fileIndex: indexFiles(report.files, report.previewFiles), createdAt: Date.now() };
   jobs.set(id, job);
   gcMemory();
 
@@ -174,7 +186,7 @@ export async function getJob(id: string): Promise<Job | undefined> {
     if (!result || result.statusCode !== 200 || !result.stream) return undefined;
     const text = await new Response(result.stream).text();
     const report = deserialize(JSON.parse(text) as SerializedBundle);
-    const job: Job = { id, report, fileIndex: indexFiles(report.files), createdAt: Date.now() };
+    const job: Job = { id, report, fileIndex: indexFiles(report.files, report.previewFiles), createdAt: Date.now() };
     jobs.set(id, job); // populate per-instance cache
     return job;
   } catch {

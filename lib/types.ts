@@ -40,6 +40,14 @@ export interface ConvertReport {
   stats: OptimizationStat[];
   notes: string[];
   files: ConvertedFile[];
+  /**
+   * Preview-only static HTML, one per route — NOT part of the downloadable
+   * project (excluded from files/the zip). The Pure Next.js export ships
+   * real .tsx/.jsx source, which can't be rendered directly in an iframe
+   * without a build step; these give the live preview something to show that
+   * still reflects the exact same optimized, runtime-free markup.
+   */
+  previewFiles?: ConvertedFile[];
 }
 
 /**

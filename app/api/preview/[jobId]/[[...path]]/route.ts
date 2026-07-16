@@ -39,25 +39,23 @@ function lastSegmentHasExt(rawPath: string): boolean {
   return seg.includes(".");
 }
 
-// Pure-Next.js route handlers embed the page HTML as a JSON string literal.
-const NEXTJS_HTML_RE = /const HTML = ("(?:[^"\\]|\\.)*");/;
-
-/** Extract a pure-Next.js page's HTML for the requested route, or null. */
-function extractRouteHtml(
+/**
+ * Pure-Next.js pages ship as real .tsx source (no static HTML in the
+ * downloadable project, so there's nothing to render directly in an
+ * iframe). convertToNextJs additionally returns `previewFiles` — the exact
+ * same optimized, runtime-free HTML the JSX was derived from — namespaced
+ * under `.next-preview/<route>` and indexed alongside the regular bundle
+ * (see lib/store.ts) without being part of the download. Look that up for
+ * the requested route.
+ */
+function findPreviewHtml(
   fileIndex: Map<string, { content?: string }>,
   rawPath: string
 ): string | null {
   const r = rawPath.replace(/^\/+/, "").replace(/\/+$/, "");
-  const routeFile = r ? `app/${r}/route.ts` : "app/route.ts";
-  const f = fileIndex.get(normalize(routeFile));
-  if (!f?.content) return null;
-  const m = f.content.match(NEXTJS_HTML_RE);
-  if (!m) return null;
-  try {
-    return JSON.parse(m[1]) as string;
-  } catch {
-    return null;
-  }
+  const rel = r ? `.next-preview/${r}/index.html` : ".next-preview/index.html";
+  const f = fileIndex.get(normalize(rel));
+  return f?.content ?? null;
 }
 
 export async function GET(
@@ -81,14 +79,21 @@ export async function GET(
   if (!file && !rel.includes(".")) {
     file = job.fileIndex.get(normalize(rel + "/index.html"));
   }
+  // Pure-Next.js export: assets ship under public/ (a real Next.js project
+  // layout) but the preview-only HTML references them at the site root
+  // (/assets/..., matching the hybrid export's convention) — fall back to
+  // the public/-prefixed path rather than duplicating every asset file.
+  if (!file && lastSegmentHasExt(rawPath)) {
+    file = job.fileIndex.get(normalize("public/" + rel));
+  }
 
-  // Pure-Next.js export: pages have no static .html — each route is
-  // `app/<route>/route.ts` with the page HTML in a `const HTML = "..."`
-  // literal. If nothing static matched and this is a page route (its last
-  // segment has no file extension), serve that embedded HTML so the editor
-  // can preview and edit pure-Next.js sites exactly like hybrid ones.
+  // Pure-Next.js export: the downloadable project has no static .html (real
+  // .tsx page components instead). If nothing static matched and this is a
+  // page route (its last segment has no file extension), fall back to the
+  // preview-only HTML captured alongside it so the editor can preview
+  // pure-Next.js sites exactly like hybrid ones.
   if (!file && !lastSegmentHasExt(rawPath)) {
-    const html = extractRouteHtml(job.fileIndex, rawPath);
+    const html = findPreviewHtml(job.fileIndex, rawPath);
     if (html != null) {
       const out = rewriteForPreview(html, `/api/preview/${jobId}/`);
       return new Response(out, {
