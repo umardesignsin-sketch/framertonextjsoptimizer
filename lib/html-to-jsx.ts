@@ -343,8 +343,9 @@ function contentHash(s: string): string {
 
 /**
  * Serialize `nodes` into JSX, but split off a real component instead of
- * inlining wherever a Framer-named boundary (`data-framer-name`, e.g. "Hero",
- * "Footer", "Desktop Nav") is found — mirroring how a human would break a
+ * inlining wherever a Framer-named boundary (`data-section-name` — renamed
+ * from Framer's `data-framer-name`, e.g. "Hero", "Footer", "Desktop Nav") is
+ * found — mirroring how a human would break a
  * page into Header/Hero/Footer files rather than one flat blob. Unnamed
  * wrapper divs (layout containers with no Framer name) stay inline so their
  * flex/grid positioning of the named children is preserved. Extraction goes
@@ -397,7 +398,10 @@ function extractNode(
   // left as-is (no more fragmenting).
   if (depth > MAX_SEARCH_DEPTH) return nodeToJsx($, node);
 
-  const framerName = el.attribs?.["data-framer-name"];
+  // The Pure Next.js exporter renames Framer's data-framer-name attribute to
+  // data-section-name before calling this (see nextjs-export.ts) — read the
+  // renamed key.
+  const framerName = el.attribs?.["data-section-name"];
   if (framerName && framerName.trim()) {
     const fullJsx = nodeToJsx($, node);
     const hash = contentHash(fullJsx);

@@ -102,12 +102,12 @@ import { useEffect } from "react";
 
 export default function SiteInteractions() {
   useEffect(() => {
-    document.documentElement.classList.add("framer-anim");
+    document.documentElement.classList.add("js-anim");
 
     // --- scroll-reveal (appear animations, driven by the CSS in globals.css) ---
-    const els = Array.from(document.querySelectorAll("[data-framer-appear-id]"));
+    const els = Array.from(document.querySelectorAll("[data-anim-id]"));
     if (els.length) {
-      const show = (el: Element) => el.classList.add("framer-appeared");
+      const show = (el: Element) => el.classList.add("is-visible");
       const showAll = () => els.forEach(show);
       const reduced =
         window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -133,7 +133,7 @@ export default function SiteInteractions() {
           const vh = window.innerHeight || 0;
           let remaining = false;
           for (const el of els) {
-            if (el.classList.contains("framer-appeared")) continue;
+            if (el.classList.contains("is-visible")) continue;
             if (el.getBoundingClientRect().top < vh) {
               show(el);
               io.unobserve(el);
@@ -175,8 +175,8 @@ export default function SiteInteractions() {
       style.pointerEvents = on ? "auto" : "";
     };
     const match = (re: RegExp) =>
-      Array.from(document.querySelectorAll("[data-framer-name]")).filter((n) =>
-        re.test(n.getAttribute("data-framer-name") || "")
+      Array.from(document.querySelectorAll("[data-section-name]")).filter((n) =>
+        re.test(n.getAttribute("data-section-name") || "")
       );
     const triggers = match(/menu|hamburger|burger|nav.?(open|toggle|icon)/i);
     const overlays = match(/menu.?(overlay|open|panel)|nav.?(overlay|panel)|mobile.?menu|overlay/i);
@@ -378,6 +378,35 @@ export async function convertToNextJs(
   const componentRegistry = new Map<string, ExtractedSection>();
   const usedComponentNames = new Map<string, string>();
 
+  // Pre-scan every page for class tokens and build one site-wide rename map
+  // (framer-9PFEJ, breakpoint-hash classes like hidden-sv03hi, etc. -> plain
+  // sequential names) so no page or its CSS carries Framer's generated class
+  // names — applied consistently across all pages and their stylesheets.
+  const classTokens = new Set<string>();
+  for (const hf of htmlFiles) {
+    const $scan = load(hf.content as string);
+    $scan("[class]").each((_, el) => {
+      ($scan(el).attr("class") || "").split(/\s+/).filter(Boolean).forEach((c) => classTokens.add(c));
+    });
+  }
+  const classMap = new Map<string, string>();
+  let classCounter = 1;
+  for (const token of classTokens) classMap.set(token, `c${classCounter++}`);
+  const classCssRegexSource = [...classMap.keys()]
+    .sort((a, b) => b.length - a.length)
+    .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  const classCssRegex = classCssRegexSource ? new RegExp(`\\.(${classCssRegexSource})(?![\\w-])`, "g") : null;
+
+  const renameClassAttr = (cls: string) =>
+    cls.split(/\s+/).filter(Boolean).map((c) => classMap.get(c) || c).join(" ");
+
+  // Rename the two markers our own runtime toggles at runtime (Framer's
+  // naming, not ours) to neutral names, in both markup-facing CSS text and
+  // the runtime component below.
+  const renameMarkerTokens = (s: string) =>
+    s.replace(/framer-appeared/g, "is-visible").replace(/framer-anim/g, "js-anim");
+
   for (const hf of htmlFiles) {
     const html = hf.content as string;
     const $ = load(html);
@@ -385,12 +414,32 @@ export async function convertToNextJs(
     if (!siteTitle && meta.title) siteTitle = meta.title;
     const route = filePathToRoute(hf.path);
 
+    // Anonymize class names and the two data-framer-* attributes our own
+    // runtime still relies on, before anything else reads them.
+    $("[class]").each((_, el) => {
+      $(el).attr("class", renameClassAttr($(el).attr("class") || ""));
+    });
+    $("[data-framer-name]").each((_, el) => {
+      $(el).attr("data-section-name", $(el).attr("data-framer-name") || "");
+      $(el).removeAttr("data-framer-name");
+    });
+    $("[data-framer-appear-id]").each((_, el) => {
+      $(el).attr("data-anim-id", $(el).attr("data-framer-appear-id") || "");
+      $(el).removeAttr("data-framer-appear-id");
+    });
+
     // Pull every <style> block into the shared global stylesheet (dedup exact
     // duplicates — Framer's boilerplate/reset CSS repeats byte-for-byte across
     // pages of the same site).
     $("style").each((_, el) => {
-      const text = $(el).html();
-      if (text && text.trim()) globalCss.add(text.trim());
+      let text = $(el).html();
+      if (text && text.trim()) {
+        if (classCssRegex) text = text.replace(classCssRegex, (_, cls: string) => "." + (classMap.get(cls) || cls));
+        text = text.replace(/data-framer-appear-id/g, "data-anim-id");
+        text = text.replace(/data-framer-name/g, "data-section-name");
+        text = renameMarkerTokens(text);
+        globalCss.add(text.trim());
+      }
     });
 
     const jsonLd = collectJsonLd($);
@@ -411,9 +460,9 @@ export async function convertToNextJs(
 
     // Drop dead Framer editor/hydration bookkeeping attributes — nothing
     // reads these once the runtime is gone (they existed only for Framer's
-    // own hydration and in-editor selection). Keep data-framer-name and
-    // data-framer-appear-id: site-interactions.tsx and globals.css still key
-    // off those at runtime.
+    // own hydration and in-editor selection). data-section-name/data-anim-id
+    // (renamed above) are kept: site-interactions.tsx and globals.css still
+    // key off those at runtime.
     $(DEAD_FRAMER_ATTR_SELECTOR).each((_, el) => {
       DEAD_FRAMER_ATTRS.forEach((a) => $(el).removeAttr(a));
     });
