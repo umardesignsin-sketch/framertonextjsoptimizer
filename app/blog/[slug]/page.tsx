@@ -112,7 +112,10 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
           <img
             src={p.coverImage}
             alt={p.title}
-            className="mt-10 aspect-[16/10] w-full rounded-lg object-cover"
+            // Cover images are 1200x630 (the OG-image standard ratio,
+            // ~1.91:1) — a 16:10 box with object-cover was cropping both
+            // edges and clipping the title text baked into the image.
+            className="mt-10 aspect-[1200/630] w-full rounded-lg object-cover"
           />
         ) : (
           <PostCover seed={p.slug} className="mt-10 aspect-[16/10] w-full rounded-lg" />
