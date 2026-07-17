@@ -30,6 +30,7 @@ import { extractSections, type ExtractedSection } from "./html-to-jsx";
 import { fetchBinary } from "./fetch";
 import { isOptimizableImage, optimizeToWebp, copyAsset } from "./images";
 import { extractAppearMap, type MotionAppearSpec } from "./appear";
+import { parseExtraction, buildHoverCss, buildScrollFxTargets, type ExtractionData } from "./extraction-import";
 import type { ConvertedFile, ConvertReport } from "./types";
 
 const MOTION_IMPORT = `import { motion } from "motion/react";\n`;
@@ -339,6 +340,40 @@ export default function SiteInteractions() {
     };
   }, []);
 
+  useEffect(() => {
+    // --- scroll-linked transforms (parallax, scroll-driven translate) ---
+    // Reproduces real linear scrollY->transform mappings recovered from
+    // extraction.json (see lib/extraction-import.ts) — Framer computes these
+    // in its runtime with no static CSS equivalent, so this is the actual
+    // captured fit (slope/intercept), not an approximation.
+    const targets = Array.from(document.querySelectorAll<HTMLElement>("[data-scroll-fx]"))
+      .map((el) => {
+        const [property, slope, intercept] = (el.dataset.scrollFx || "").split(":");
+        return { el, property, slope: parseFloat(slope), intercept: parseFloat(intercept) };
+      })
+      .filter((t) => t.property && Number.isFinite(t.slope) && Number.isFinite(t.intercept));
+    if (!targets.length) return;
+
+    let raf = 0;
+    const apply = () => {
+      const y = window.scrollY;
+      for (const t of targets) {
+        const v = t.slope * y + t.intercept;
+        t.el.style.transform = \`\${t.property}(\${v}px)\`;
+      }
+      raf = 0;
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(apply);
+    };
+    apply();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
   return null;
 }
 `;
@@ -498,8 +533,23 @@ Deploy to Vercel/Netlify like any Next.js app.
 
 export async function convertToNextJs(
   inputUrl: string,
-  onProgress: ProgressFn = () => {}
+  onProgress: ProgressFn = () => {},
+  extractionJsonRaw?: string
 ): Promise<ConvertReport> {
+  // Optional "Framer Intelligence" extraction.json from a separate tool that
+  // actually runs the site in a real browser and records real hover/scroll
+  // interaction data — see lib/extraction-import.ts for why this exists:
+  // Framer's own runtime implements hover/tap/parallax entirely in JS with
+  // no static CSS to recover any other way. A bad/foreign file here should
+  // degrade to "no extraction data" rather than fail the whole conversion.
+  let extraction: ExtractionData | null = null;
+  if (extractionJsonRaw) {
+    try {
+      extraction = parseExtraction(extractionJsonRaw);
+    } catch {
+      onProgress("extraction.json wasn't recognized — continuing without it");
+    }
+  }
   // Framer's real appear/scroll-reveal animation data (framer/appear script
   // JSON), read straight out of the exact same fetch convertSite uses for
   // everything else — via the onRawPage hook, called before stripRuntime
@@ -526,6 +576,20 @@ export async function convertToNextJs(
 
   const htmlFiles = report.files.filter((f) => f.path.endsWith(".html") && f.content != null);
   const assetFiles = report.files.filter((f) => !f.path.endsWith(".html") && f.path !== "vercel.json" && f.path !== "_headers");
+
+  // Framer's class names survive unchanged from this raw HTML all the way
+  // through to the generated JSX (see note below), so it doubles as the
+  // haystack for checking whether an extraction.json entry's classes still
+  // exist in this particular conversion — computed once, up front, rather
+  // than depending on JSX that doesn't exist yet at this point in the loop.
+  const rawHtmlText = extraction ? htmlFiles.map((f) => f.content as string).join("\n") : "";
+  const scrollFxTargets = extraction ? buildScrollFxTargets(extraction, rawHtmlText) : [];
+  const hoverCss = extraction ? buildHoverCss(extraction, rawHtmlText) : "";
+  if (extraction) {
+    onProgress(
+      `Applying extraction.json: ${scrollFxTargets.length} scroll-linked effect(s), ${hoverCss ? "hover interactions" : "no matching hover effects"} recovered`
+    );
+  }
 
   // Preview-only: the exact same optimized, runtime-free static HTML per
   // route that the JSX below is derived from — captured before any of the
@@ -595,6 +659,17 @@ export async function convertToNextJs(
       if (!text || target.text().trim() || target.children().length) return;
       target.text(text);
     });
+
+    // Real scroll-linked transforms (parallax, scroll-driven translate)
+    // recovered from extraction.json — see buildScrollFxTargets. Marked here
+    // with a data attribute; SITE_INTERACTIONS_TSX applies the actual
+    // transform at runtime from the linear fit captured live off the
+    // original site.
+    for (const t of scrollFxTargets) {
+      if (t.page !== route) continue;
+      const selector = "." + t.classes.join(".");
+      $(selector).attr("data-scroll-fx", `${t.property}:${t.slope}:${t.intercept}`);
+    }
 
     // Pull every <style> block into the shared global stylesheet (dedup exact
     // duplicates — Framer's boilerplate/reset CSS repeats byte-for-byte across
@@ -683,6 +758,7 @@ export async function convertToNextJs(
 
   files.push({ path: "app/layout.tsx", content: layoutTsx(siteTitle) });
   files.push({ path: "app/site-interactions.tsx", content: SITE_INTERACTIONS_TSX });
+  if (hoverCss) globalCss.add(hoverCss);
   files.push({ path: "app/globals.css", content: [...globalCss].join("\n\n") });
 
   for (const section of componentRegistry.values()) {
