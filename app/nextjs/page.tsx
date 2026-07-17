@@ -21,7 +21,7 @@ const NEXTJS_FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Do my Framer animations and interactions still work?",
-    a: "Yes — reproduced as real code, not Framer's runtime. Scroll/appear reveal animations are rebuilt as CSS + IntersectionObserver, and menu toggles as a small React component. There's no Framer runtime and no dependency on framerusercontent.com anywhere in the output.",
+    a: "Yes — exactly, because each page keeps Framer's own runtime and CDN assets intact. The Next.js project just wraps and serves the original page verbatim, so every animation, hover, and interaction behaves identically to the source instead of being approximated.",
   },
   {
     q: "Do I need my Framer login or an API key?",
@@ -37,7 +37,7 @@ const NEXTJS_FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Next.js export vs HTML export — which should I choose?",
-    a: "Choose Next.js when you want a real React/App Router codebase to keep building on — components, TypeScript, npm install && npm run build. Choose the HTML export when you want plain static files with zero framework. Both strip Framer's runtime and self-host every asset; you can run both and compare.",
+    a: "Choose Next.js when you want a real Next.js App Router project — package.json, TypeScript config, npm install && npm run build — wrapping the original Framer page so it keeps every animation and interaction exactly as authored. Choose the HTML export when you want plain static files with zero framework instead. You can run both and compare.",
   },
   {
     q: "Is exporting my Framer site legal?",
@@ -226,10 +226,11 @@ function NextJsConverter() {
             <Link href="/speed" className="text-foreground underline underline-offset-2">PageSpeed checker</Link>.
           </p>
           <div className="mt-4 rounded-lg border border-border bg-muted px-4 py-3 text-[13px] leading-relaxed text-muted-foreground">
-            <span className="font-medium text-foreground">Note:</span> every page is a genuine
-            React Server Component — real JSX, split into reusable components under{" "}
-            <code>app/_components/</code>, no Framer runtime and no dependency on{" "}
-            <code>framerusercontent.com</code> anywhere. Prefer plain static files with zero
+            <span className="font-medium text-foreground">Note:</span> each page is a
+            statically-prerendered Next.js route that serves the original Framer page verbatim,
+            with Framer&apos;s own runtime and CDN assets kept intact — so the site renders and
+            behaves <span className="font-medium text-foreground">exactly</span> like the source,
+            animations included. Prefer plain static files with zero
             framework instead? Use the{" "}
             <Link href="/" className="underline">Hybrid converter</Link>, or{" "}
             <Link href="/speed" className="underline">compare both against your original</Link>{" "}
