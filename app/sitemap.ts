@@ -4,6 +4,11 @@ import { listPublishedPosts } from "@/lib/blog";
 
 const siteUrl = "https://framertonextjs.com";
 
+// New posts are published straight to the database (no redeploy), so this
+// needs to actually refresh — without a revalidate window it's generated
+// once at build/deploy time and silently omits every post added since.
+export const revalidate = 3600;
+
 // Only the publicly indexable pages belong here. Authenticated app routes,
 // embeds, and API handlers are excluded (and disallowed in robots.ts).
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
