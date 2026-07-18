@@ -7,7 +7,8 @@
 // Fix: persist each bundle to Vercel Blob (durable + shared across instances)
 // when BLOB_READ_WRITE_TOKEN is configured, with an in-memory fast-path/cache.
 // With no token (local dev), it falls back to memory-only — unchanged behavior.
-import { put, list, del, get } from "@vercel/blob";
+import { put, list, del, get, head } from "@vercel/blob";
+import { createHash } from "node:crypto";
 import type { ConvertReport, ConvertedFile } from "./types";
 
 export interface Job {
@@ -24,6 +25,9 @@ const MAX_JOBS = 25;
 const TTL_MS = 1000 * 60 * 60; // 1h (in-memory cache)
 const BLOB_PREFIX = "jobs/";
 const META_PREFIX = "meta/"; // small per-job metadata for the admin dashboard
+// Binary assets (images/fonts/video) are content-addressed here, shared
+// across ALL jobs — see serializeFiles for why.
+const ASSET_PREFIX = "assets/";
 
 /** Lightweight metadata about a conversion (for the admin list). */
 export interface JobMeta {
@@ -66,11 +70,20 @@ function indexFiles(files: ConvertedFile[], previewFiles?: ConvertedFile[]): Map
   return fileIndex;
 }
 
-// ---- Serialization for Blob (binary -> base64) ----
+// ---- Serialization for Blob ----
+// Binary files (images especially, after WebP self-hosting) are the dominant
+// share of a job's bytes. Inlining them as base64 in the per-job JSON meant
+// re-converting the SAME site N times re-uploaded the SAME ~30MB of images N
+// times — that's what actually burned through the Blob free tier's 10GB
+// transfer allowance in one afternoon of repeat testing, not real traffic.
+// Instead, binaries are content-addressed: stored once at
+// assets/<sha1>.<ext>, shared across every job that happens to reference the
+// same bytes, and skipped entirely (via a cheap `head()` check) if a
+// conversion of the same site has already uploaded that exact image.
 interface SerializedFile {
   path: string;
   content?: string;
-  b64?: string;
+  assetHash?: string; // -> ASSET_PREFIX + assetHash, fetched lazily on read
 }
 interface SerializedBundle {
   sourceUrl: string;
@@ -81,41 +94,89 @@ interface SerializedBundle {
   previewFiles?: SerializedFile[];
 }
 
-function serializeFiles(files: ConvertedFile[]): SerializedFile[] {
-  return files.map((f) => ({
-    path: f.path,
-    content: f.binary ? undefined : f.content,
-    b64: f.binary ? f.binary.toString("base64") : undefined,
-  }));
+function extOf(path: string): string {
+  const m = /\.[a-z0-9]+$/i.exec(path);
+  return m ? m[0] : ".bin";
 }
 
-function deserializeFiles(files: SerializedFile[]): ConvertedFile[] {
-  return files.map((f) => ({
-    path: f.path,
-    content: f.b64 ? undefined : f.content,
-    binary: f.b64 ? Buffer.from(f.b64, "base64") : undefined,
-  }));
+/** Bounded-concurrency map — many small head()/put() calls, not a flood. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let i = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (i < items.length) {
+        const idx = i++;
+        out[idx] = await fn(items[idx]);
+      }
+    })
+  );
+  return out;
 }
 
-function serialize(report: ConvertReport): SerializedBundle {
+async function serializeFiles(files: ConvertedFile[]): Promise<SerializedFile[]> {
+  return mapLimit(files, 8, async (f) => {
+    if (!f.binary) return { path: f.path, content: f.content };
+    const hash = createHash("sha1").update(f.binary).digest("hex") + extOf(f.path);
+    const pathname = `${ASSET_PREFIX}${hash}`;
+    try {
+      const exists = await head(pathname).catch(() => null);
+      if (!exists) {
+        // Content-addressed by hash — the bytes at this path can never
+        // change, so cache as long as Blob allows (unlike the per-job JSON,
+        // which is invalidated by TTL_MS instead).
+        await put(pathname, f.binary, {
+          access: "private",
+          addRandomSuffix: false,
+          contentType: "application/octet-stream",
+          cacheControlMaxAge: 31536000,
+        });
+      }
+      return { path: f.path, assetHash: hash };
+    } catch (err) {
+      // Blob unavailable (e.g. transfer-limit pause) — this file just won't
+      // survive to a cold instance; the in-memory copy still works for the
+      // instance that did the conversion.
+      console.error("[store] asset persist failed:", err);
+      return { path: f.path };
+    }
+  });
+}
+
+async function deserializeFiles(files: SerializedFile[]): Promise<ConvertedFile[]> {
+  return mapLimit(files, 8, async (f) => {
+    if (!f.assetHash) return { path: f.path, content: f.content };
+    try {
+      const result = await get(`${ASSET_PREFIX}${f.assetHash}`, { access: "private" });
+      if (!result?.stream) return { path: f.path };
+      const buf = Buffer.from(await new Response(result.stream).arrayBuffer());
+      return { path: f.path, binary: buf };
+    } catch (err) {
+      console.error("[store] asset fetch failed:", err);
+      return { path: f.path };
+    }
+  });
+}
+
+async function serialize(report: ConvertReport): Promise<SerializedBundle> {
   return {
     sourceUrl: report.sourceUrl,
     pages: report.pages,
     stats: report.stats,
     notes: report.notes,
-    files: serializeFiles(report.files),
-    previewFiles: report.previewFiles ? serializeFiles(report.previewFiles) : undefined,
+    files: await serializeFiles(report.files),
+    previewFiles: report.previewFiles ? await serializeFiles(report.previewFiles) : undefined,
   };
 }
 
-function deserialize(b: SerializedBundle): ConvertReport {
+async function deserialize(b: SerializedBundle): Promise<ConvertReport> {
   return {
     sourceUrl: b.sourceUrl,
     pages: b.pages,
     stats: b.stats,
     notes: b.notes,
-    files: deserializeFiles(b.files),
-    previewFiles: b.previewFiles ? deserializeFiles(b.previewFiles) : undefined,
+    files: await deserializeFiles(b.files),
+    previewFiles: b.previewFiles ? await deserializeFiles(b.previewFiles) : undefined,
   };
 }
 
@@ -140,7 +201,7 @@ export async function saveJob(id: string, report: ConvertReport): Promise<Job> {
 
   if (blobEnabled()) {
     try {
-      const payload = JSON.stringify(serialize(report));
+      const payload = JSON.stringify(await serialize(report));
       // Private store: blobs are read back with get({access:'private'}), which
       // authenticates via OIDC (BLOB_STORE_ID + VERCEL_OIDC_TOKEN).
       await put(`${BLOB_PREFIX}${id}.json`, payload, {
@@ -185,7 +246,7 @@ export async function getJob(id: string): Promise<Job | undefined> {
     const result = await get(`${BLOB_PREFIX}${id}.json`, { access: "private" });
     if (!result || result.statusCode !== 200 || !result.stream) return undefined;
     const text = await new Response(result.stream).text();
-    const report = deserialize(JSON.parse(text) as SerializedBundle);
+    const report = await deserialize(JSON.parse(text) as SerializedBundle);
     const job: Job = { id, report, fileIndex: indexFiles(report.files, report.previewFiles), createdAt: Date.now() };
     jobs.set(id, job); // populate per-instance cache
     return job;
