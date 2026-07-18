@@ -21,10 +21,17 @@
 // happens to be almost exactly what Framer's own official hosting scores on
 // the same test — that's the real ceiling while keeping Framer's runtime for
 // pixel-perfect fidelity; no wrapping choice gets past it.
-import { fetchText, normalizeUrl } from "./fetch";
-import { load, detectFramer, extractMeta } from "./parse";
+import { fetchText, fetchBinary, normalizeUrl } from "./fetch";
+import { load, detectFramer, extractMeta, collectStyleText } from "./parse";
 import { discoverPages, normalizeRoute } from "./discover";
 import { toRootRelative } from "./seo";
+import {
+  collectImageUrls,
+  isOptimizableImage,
+  optimizeToWebp,
+  copyAsset,
+  rewriteImageRefs,
+} from "./images";
 import type { ConvertReport, ConvertedFile } from "./types";
 
 export type ProgressFn = (msg: string) => void;
@@ -90,7 +97,7 @@ function boostLcpImage($: ReturnType<typeof load>): void {
  * document — Framer's runtime, appear-animation data, every class and
  * attribute — is untouched, so the page renders identically to the source.
  */
-function processDocument(html: string, route: string): string {
+function processDocument(html: string, route: string, assetMap: Map<string, string>): string {
   const $ = load(html);
   const path = route || "/";
 
@@ -104,7 +111,12 @@ function processDocument(html: string, route: string): string {
     $("head").append(`<link rel="canonical" href="${path}">`);
   }
 
+  // Mark the hero BEFORE rewriting refs — boostLcpImage matches on the
+  // framerusercontent URL, which rewriteImageRefs is about to replace with a
+  // local /assets path. The fetchpriority attribute persists through the
+  // rewrite.
   boostLcpImage($);
+  if (assetMap.size) rewriteImageRefs($, assetMap);
 
   // Framer's own site-analytics beacon — reports visitor traffic back to
   // Framer's servers, for a site that's no longer even hosted there. A
@@ -113,9 +125,9 @@ function processDocument(html: string, route: string): string {
   // weight + a pointless privacy leak), unlike the runtime bundle itself.
   $('script[src^="https://events.framer.com/"]').remove();
 
-  // Every image, font, and the runtime bundle itself loads from here —
-  // preconnecting shaves the DNS+TLS handshake off the very first request
-  // instead of paying it mid-render.
+  // The runtime bundle and fonts still load from Framer's CDN (images are now
+  // self-hosted) — preconnecting shaves the DNS+TLS handshake off the very
+  // first request instead of paying it mid-render.
   $("head").prepend(
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
       '<link rel="preconnect" href="https://framerusercontent.com">'
@@ -227,13 +239,15 @@ npm run build && npm start
 Each page is a statically-prerendered Next.js **route handler**
 (\`app/<route>/route.ts\`) that returns the original Framer HTML verbatim, with
 Framer's runtime intact. So the site renders **identically to the original** —
-full content, animations, interactivity — with assets loading from Framer's CDN.
+full content, animations, interactivity.
 
-On top of that it applies a few host-agnostic fixes: the above-the-fold hero
-image is marked \`fetchpriority="high"\` for a faster LCP, canonical/og:url are
-repointed to the deploy domain (root-relative, upgraded to absolute in the
-browser so they never reference Framer's domain), and Framer's own analytics
-beacon is removed. Pages are static and CDN-cacheable, so TTFB stays low.
+On top of that it applies a few fixes: site images are re-encoded to WebP and
+self-hosted under \`public/assets/img\` (fidelity-safe, and the biggest payload
+win on image-led sites), the above-the-fold hero image is marked
+\`fetchpriority="high"\` for a faster LCP, canonical/og:url are repointed to the
+deploy domain (root-relative, upgraded to absolute in the browser so they never
+reference Framer's domain), and Framer's analytics beacon is removed. Pages are
+static and CDN-cacheable, so TTFB stays low.
 
 Deploy to Vercel/Netlify like any Next.js app.
 `;
@@ -289,17 +303,59 @@ export async function convertToNextJs(
     }
   });
 
+  // ---- Self-host + optimize images ----
+  // Framer serves site images as under-compressed PNG/JPEG from its CDN — on
+  // an image-led site that's the dominant payload (and the #1 thing capping
+  // the perf score below the original). Re-encoding to WebP and self-hosting
+  // is fidelity-safe (visually identical, unlike stripping the runtime) and
+  // ships assets under public/ so Next serves them from the deploy's own CDN.
+  const MAX_IMAGES = 300;
+  const imageUrls = new Set<string>();
+  for (const html of pageHtml.values()) {
+    const $ = load(html);
+    collectImageUrls($, collectStyleText($)).forEach((u) => imageUrls.add(u));
+  }
+  const assetMap = new Map<string, string>(); // original URL -> /assets/img/<hash>.webp
+  const assetFiles: ConvertedFile[] = [];
+  let imgBefore = 0;
+  let imgAfter = 0;
+  const urls = [...imageUrls].slice(0, MAX_IMAGES);
+  const capNote =
+    imageUrls.size > urls.length ? `image cap hit: optimized ${urls.length} of ${imageUrls.size}` : null;
+  if (urls.length) {
+    onProgress(`Optimizing ${urls.length} image(s)…`);
+    await mapLimit(urls, 6, async (url) => {
+      try {
+        const bin = await fetchBinary(url);
+        if (bin.status >= 400 || bin.buffer.length === 0) return;
+        const result =
+          isOptimizableImage(url) && !/image\/svg/i.test(bin.contentType)
+            ? await optimizeToWebp(url, bin.buffer)
+            : copyAsset(url, bin.buffer);
+        if (!result) return;
+        assetMap.set(url, result.localPath);
+        // Next.js serves the public/ directory at the site root, so a file at
+        // public/assets/img/x.webp is fetched as /assets/img/x.webp.
+        assetFiles.push({ path: `public${result.localPath}`, binary: result.buffer });
+        imgBefore += result.beforeBytes;
+        imgAfter += result.afterBytes;
+      } catch {
+        /* skip broken asset — its <img> keeps the original CDN URL */
+      }
+    });
+  }
+
   onProgress("Generating Next.js project…");
-  const files: ConvertedFile[] = [];
-  // The downloadable bundle only has route.ts source (a JS string wrapping
-  // the original HTML) — there's nothing an iframe can render directly from
-  // that without actually running the Next.js server. previewFiles ships the
-  // same raw HTML separately, namespaced under .next-preview/, purely for
-  // the in-app "Live preview" — never part of the download.
+  const files: ConvertedFile[] = [...assetFiles];
+  // The downloadable bundle has route.ts source (a JS string wrapping the
+  // original HTML) plus the self-hosted images under public/ — but nothing an
+  // iframe can render directly without running the Next.js server. previewFiles
+  // ships the same optimized HTML separately, namespaced under .next-preview/,
+  // for the in-app "Live preview" (which resolves /assets/ against public/).
   const previewFiles: ConvertedFile[] = [];
 
   for (const [route, html] of pageHtml.entries()) {
-    const processed = processDocument(html, route);
+    const processed = processDocument(html, route, assetMap);
     files.push({ path: routeFilePath(route), content: routeHandler(processed) });
     const r = route.replace(/^\/+/, "").replace(/\/+$/, "");
     previewFiles.push({ path: r ? `.next-preview/${r}/index.html` : ".next-preview/index.html", content: processed });
@@ -326,12 +382,19 @@ export async function convertToNextJs(
       route,
       sourceUrl: pages.find((p) => p.route === route)?.url || start.toString(),
     })),
-    stats: [{ label: "Next.js routes", before: pageCount, after: pageCount, unit: "count" }],
+    stats: [
+      { label: "Next.js routes", before: pageCount, after: pageCount, unit: "count" },
+      ...(imgBefore > 0
+        ? [{ label: "Image payload", before: imgBefore, after: imgAfter, unit: "bytes" as const }]
+        : []),
+    ],
     notes: [
       "pure Next.js App Router project — one statically-prerendered, CDN-cached route per Framer page",
-      "renders identically to the original (Framer runtime kept, assets on CDN)",
+      "renders identically to the original (Framer runtime kept)",
+      `images self-hosted & re-encoded to WebP under public/${assetMap.size ? ` (${assetMap.size} files)` : ""}`,
       "LCP hero image prioritized (fetchpriority=high) for faster load than the original",
       "canonical URLs repointed to the deploy domain, Framer's analytics beacon removed",
+      ...(capNote ? [capNote] : []),
       "run: npm install && npm run build",
     ],
     files,
