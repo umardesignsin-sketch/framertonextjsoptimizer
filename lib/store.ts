@@ -9,6 +9,7 @@
 // With no token (local dev), it falls back to memory-only — unchanged behavior.
 import { put, list, del, get, head } from "@vercel/blob";
 import { createHash } from "node:crypto";
+import { db, dbConfigured } from "./db";
 import type { ConvertReport, ConvertedFile } from "./types";
 
 export interface Job {
@@ -251,6 +252,48 @@ export async function getJob(id: string): Promise<Job | undefined> {
     jobs.set(id, job); // populate per-instance cache
     return job;
   } catch {
+    return undefined;
+  }
+}
+
+/**
+ * getJob(), but if the job is missing from BOTH the in-memory cache and Blob
+ * (evicted, or — as happened when the Blob free-tier transfer cap was hit —
+ * Blob unavailable entirely), transparently re-runs the same conversion and
+ * re-saves it under the same id, instead of surfacing "Job expired" for a
+ * result the caller already generated once.
+ *
+ * This works independent of Blob's health because the lookup key (source URL
+ * + which converter produced it) is durably recorded in Postgres by
+ * recordConversion (lib/sites.ts) at conversion time — a completely separate
+ * store from Blob, so a Blob outage can't take this fallback down with it.
+ * Slower than a cache hit (a full reconversion), so only use this at the
+ * three points a user can hit a stale job: preview, download, deploy.
+ */
+export async function getOrRegenerateJob(
+  id: string,
+  onProgress?: (msg: string) => void
+): Promise<Job | undefined> {
+  const existing = await getJob(id);
+  if (existing) return existing;
+  if (!dbConfigured()) return undefined;
+
+  try {
+    const site = await db.site.findFirst({ where: { themeRef: id } });
+    if (!site?.framerUrl) return undefined;
+
+    // Lazy imports: these pull in the full conversion pipelines (cheerio,
+    // sharp, etc.), which every other store.ts caller (preview/download/
+    // deploy on a cache hit — the overwhelmingly common case) has no reason
+    // to load.
+    const report =
+      site.outputKind === "nextjs"
+        ? await (await import("./nextjs-export")).convertToNextJs(site.framerUrl, onProgress)
+        : await (await import("./convert")).convertSite(site.framerUrl, { mode: "hybrid" }, onProgress);
+
+    return await saveJob(id, report);
+  } catch (err) {
+    console.error("[store] job regeneration failed:", err);
     return undefined;
   }
 }

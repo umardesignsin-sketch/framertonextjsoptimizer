@@ -1,7 +1,7 @@
 // POST /api/deploy  { jobId, provider: "netlify"|"vercel", token, name?, teamId?, save? }
 // `save: true` (opt-in) stores the deploy token encrypted on the Deployment
 // row so the AI editor can push future changes to the same live site.
-import { getJob } from "@/lib/store";
+import { getOrRegenerateJob } from "@/lib/store";
 import { deployNetlify, deployVercel, toDeployableFiles } from "@/lib/deploy";
 import { db, dbConfigured } from "@/lib/db";
 import { getAuthUser } from "@/lib/supabase/user";
@@ -9,7 +9,9 @@ import { encryptSecret, encryptionConfigured } from "@/lib/crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+// Generous budget: a cache miss falls back to a full reconversion (see
+// getOrRegenerateJob) before the actual deploy even starts.
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
   let body: {
@@ -33,7 +35,7 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  const job = await getJob(jobId);
+  const job = await getOrRegenerateJob(jobId);
   if (!job) {
     return Response.json(
       { error: "Job expired or not found. Re-run the conversion." },

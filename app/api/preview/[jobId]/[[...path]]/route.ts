@@ -1,9 +1,12 @@
 // GET /api/preview/{jobId}/{...path}
 // Serves a converted bundle's files so the result can be previewed in an iframe.
-import { getJob, normalize } from "@/lib/store";
+import { getOrRegenerateJob, normalize } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Generous budget: a cache miss falls back to a full reconversion (see
+// getOrRegenerateJob), which can take as long as the original convert call.
+export const maxDuration = 300;
 
 const MIME: Record<string, string> = {
   html: "text/html; charset=utf-8",
@@ -63,7 +66,7 @@ export async function GET(
   { params }: { params: Promise<{ jobId: string; path?: string[] }> }
 ) {
   const { jobId, path } = await params;
-  const job = await getJob(jobId);
+  const job = await getOrRegenerateJob(jobId);
   if (!job) {
     return new Response("Job expired or not found. Re-run the conversion.", {
       status: 404,
