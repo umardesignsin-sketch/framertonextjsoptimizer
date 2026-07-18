@@ -141,6 +141,13 @@ function Home() {
         <div id="convert" className="scroll-mt-20">
           <ConvertCard url={url} setUrl={setUrl} status={status} convert={convert} />
         </div>
+        <p className="mt-3 px-1 text-[12.5px] leading-relaxed text-muted-foreground">
+          <span className="font-medium text-foreground">Honest expectations:</span>{" "}
+          SEO / Best-Practices / Accessibility reliably hit 95–100. Performance is 90–100 on
+          desktop; mobile is typically 75–95 for marketing sites (Lighthouse throttles mobile CPU
+          4×, so mobile always scores well below desktop — compare mobile-to-mobile). 100/100 on
+          every site is not realistic.
+        </p>
 
         {(status === "converting" || lines.length > 0) && (
           <LogPane lines={lines} logRef={logRef} active={status === "converting"} />
@@ -219,32 +226,183 @@ export default function HomePage() {
   );
 }
 
+// Lucide-style stroke icons — inline so there's no runtime dep and no
+// broken-emoji fallback on machines missing the glyphs.
+const ICONS: Record<string, React.ReactNode> = {
+  zap: <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z" />,
+  image: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="9" cy="9" r="2" />
+      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </>
+  ),
+  rocket: (
+    <>
+      <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
+      <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
+      <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
+      <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
+    </>
+  ),
+};
+
+function Icon({ name, className = "h-5 w-5" }: { name: string; className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      {ICONS[name]}
+    </svg>
+  );
+}
+
+// A Lighthouse-style score dial. Colour bands mirror Lighthouse: red < 50,
+// amber < 90, green ≥ 90.
+function ScoreRing({ score, label }: { score: number; label: string }) {
+  const r = 24;
+  const circ = 2 * Math.PI * r;
+  const offset = circ * (1 - score / 100);
+  const color = score >= 90 ? "#0cce6b" : score >= 50 ? "#ffa400" : "#ff4e42";
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <div className="relative h-14 w-14">
+        <svg viewBox="0 0 60 60" className="h-14 w-14 -rotate-90">
+          <circle cx="30" cy="30" r={r} fill="none" strokeWidth="4" className="stroke-border" />
+          <circle
+            cx="30"
+            cy="30"
+            r={r}
+            fill="none"
+            stroke={color}
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeDasharray={circ}
+            strokeDashoffset={offset}
+          />
+        </svg>
+        <span
+          className="absolute inset-0 flex items-center justify-center text-[14px] font-semibold"
+          style={{ color }}
+        >
+          {score}
+        </span>
+      </div>
+      <span className="text-[10.5px] text-muted-foreground">{label}</span>
+    </div>
+  );
+}
+
+// The hero product shot: a browser frame showing a before/after Lighthouse
+// comparison — the product's core value prop, rendered as a real visual.
+function HeroVisual() {
+  return (
+    <div className="relative">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -inset-6 -z-10 rounded-[2rem] bg-[radial-gradient(60%_60%_at_60%_20%,var(--accent-soft),transparent_70%)]"
+      />
+      <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-xl shadow-black/[0.06]">
+        <div className="flex items-center gap-1.5 border-b border-border bg-muted/50 px-4 py-3">
+          <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
+          <div className="ml-3 flex h-6 flex-1 items-center rounded-md bg-background px-3 text-[11px] text-muted-foreground">
+            your-site.com
+          </div>
+        </div>
+        <div className="p-5">
+          <div className="text-[11.5px] font-medium text-muted-foreground">Lighthouse — mobile</div>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-border bg-muted/30 p-3.5">
+              <div className="text-[11px] font-medium text-muted-foreground">Before · Framer</div>
+              <div className="mt-3 flex justify-around">
+                <ScoreRing score={42} label="Perf" />
+                <ScoreRing score={71} label="SEO" />
+              </div>
+            </div>
+            <div className="rounded-xl border border-accent/30 bg-accent-soft/50 p-3.5">
+              <div className="text-[11px] font-medium text-accent">After · Optimized</div>
+              <div className="mt-3 flex justify-around">
+                <ScoreRing score={98} label="Perf" />
+                <ScoreRing score={100} label="SEO" />
+              </div>
+            </div>
+          </div>
+          <div className="mt-3.5 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-[12px] font-medium text-emerald-700">
+            <Icon name="zap" className="h-3.5 w-3.5" />
+            −840&nbsp;KB JavaScript · runtime stripped
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Hero() {
   return (
-    <section className="pt-16 pb-10 sm:pt-20">
-      <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1 text-[12.5px] font-medium text-muted-foreground">
-        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-        Free · No signup to preview
-      </div>
-      <h1 className="mt-4 text-[40px] font-semibold leading-[1.05] tracking-tight sm:text-[56px]">
-        Convert Framer sites to{" "}
-        <span className="text-accent">Next.js &amp; HTML</span>
-      </h1>
-      <p className="mt-4 max-w-2xl text-[16px] leading-relaxed text-muted-foreground">
-        Paste a published Framer URL and get a production-ready export: this captures the
-        server-rendered HTML, strips Framer&apos;s JS runtime, self-hosts &amp; re-encodes
-        images to WebP, inlines fonts, and runs an SEO pass — a deployable static bundle
-        built for maximum Lighthouse scores. Prefer a dedicated{" "}
-        <Link href="/framer-to-html" className="text-foreground underline underline-offset-2">Framer to HTML converter</Link>
-        {" "}or a{" "}
-        <Link href="/nextjs" className="text-foreground underline underline-offset-2">real Next.js project</Link>.
-      </p>
-      <div className="mt-5 rounded-xl border border-border bg-muted/40 px-4 py-3 text-[13px] leading-relaxed text-muted-foreground">
-        <span className="font-medium text-foreground">Honest expectations:</span>{" "}
-        SEO / Best-Practices / Accessibility reliably hit 95–100. Performance is
-        90–100 on desktop; mobile is typically 75–95 for marketing sites (Lighthouse
-        throttles mobile CPU 4×, so mobile always scores well below desktop —
-        compare mobile-to-mobile). 100/100 on every site is not realistic.
+    <section className="relative pt-14 pb-10 sm:pt-20">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 -top-24 -z-10 h-[420px] bg-[radial-gradient(50%_60%_at_50%_0%,var(--accent-soft),transparent_70%)]"
+      />
+      <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background/70 px-3 py-1 text-[12.5px] font-medium text-muted-foreground backdrop-blur">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+            Free · No signup to preview
+          </div>
+          <h1 className="mt-5 text-[38px] font-semibold leading-[1.03] tracking-tight sm:text-[54px]">
+            Convert Framer sites to{" "}
+            <span className="bg-gradient-to-br from-accent to-[#8b5cf6] bg-clip-text text-transparent">
+              Next.js &amp; HTML
+            </span>
+          </h1>
+          <p className="mt-5 max-w-xl text-[16px] leading-relaxed text-muted-foreground">
+            Paste a published Framer URL and get a production-ready export: it captures the
+            server-rendered HTML, strips Framer&apos;s JS runtime, self-hosts &amp; re-encodes
+            images to WebP, inlines fonts, and runs an SEO pass — a deployable bundle built for
+            top Lighthouse scores.
+          </p>
+          <div className="mt-7 flex flex-wrap items-center gap-3">
+            <a
+              href="#convert"
+              className="inline-flex h-11 items-center rounded-full bg-accent px-5 text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
+            >
+              Convert your site free →
+            </a>
+            <Link
+              href="/nextjs"
+              className="inline-flex h-11 items-center rounded-full border border-border-strong px-5 text-[14px] font-medium transition-colors hover:bg-muted"
+            >
+              Pure Next.js export
+            </Link>
+          </div>
+          <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[12.5px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="text-emerald-600">✓</span> Pixel-perfect fidelity
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="text-emerald-600">✓</span> Self-hosted images
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="text-emerald-600">✓</span> One-click deploy
+            </span>
+          </div>
+        </div>
+        <HeroVisual />
       </div>
     </section>
   );
@@ -292,43 +450,50 @@ function ConvertCard(props: {
 function FeatureGrid() {
   const features = [
     {
-      icon: "⚡",
+      icon: "zap",
       title: "Strips the runtime",
       body: "Framer's JS bundle, hover-state machinery, and analytics beacon are removed — the server-rendered HTML ships as-is.",
     },
     {
-      icon: "🖼",
+      icon: "image",
       title: "Self-hosted, re-encoded images",
       body: "Every image is downloaded, converted to WebP, and served from your own domain instead of Framer's CDN.",
     },
     {
-      icon: "🔍",
+      icon: "search",
       title: "Full SEO pass",
       body: "Canonical tags, Open Graph, sitemaps, and structured data are checked and corrected automatically.",
     },
     {
-      icon: "🚀",
+      icon: "rocket",
       title: "Deploy in one click",
       body: "Push the optimized bundle straight to Netlify or Vercel, or download a real Next.js project to keep.",
     },
   ];
   return (
-    <section className="mt-20">
-      <h2 className="text-2xl font-semibold tracking-tight">Built for speed, kept pixel-perfect</h2>
-      <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-        Every conversion runs the same pipeline under the hood — no manual cleanup required.
-      </p>
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+    <section className="mt-24">
+      <div className="max-w-2xl">
+        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1 text-[12px] font-medium text-muted-foreground">
+          Under the hood
+        </div>
+        <h2 className="mt-4 text-[28px] font-semibold tracking-tight sm:text-[34px]">
+          Built for speed, kept pixel-perfect
+        </h2>
+        <p className="mt-3 text-[15.5px] leading-relaxed text-muted-foreground">
+          Every conversion runs the same pipeline under the hood — no manual cleanup required.
+        </p>
+      </div>
+      <div className="mt-8 grid gap-4 sm:grid-cols-2">
         {features.map((f) => (
           <div
             key={f.title}
-            className="rounded-xl border border-border bg-background p-5 transition-colors hover:border-accent/40"
+            className="group rounded-2xl border border-border bg-background p-6 transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-lg hover:shadow-accent/5"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-soft text-[16px]">
-              {f.icon}
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent transition-colors group-hover:bg-accent group-hover:text-accent-foreground">
+              <Icon name={f.icon} />
             </div>
-            <h3 className="mt-3 text-[15.5px] font-semibold">{f.title}</h3>
-            <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">{f.body}</p>
+            <h3 className="mt-4 text-[16px] font-semibold">{f.title}</h3>
+            <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">{f.body}</p>
           </div>
         ))}
       </div>
