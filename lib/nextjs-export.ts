@@ -50,16 +50,25 @@ function metadataObject(meta: PageMeta): string {
   if (meta.title) og.title = meta.title;
   if (meta.description) og.description = meta.description;
   if (meta.ogImage) og.images = [meta.ogImage];
+  if (meta.canonical) og.url = meta.canonical;
   if (Object.keys(og).length) obj.openGraph = og;
   if (meta.ogImage) {
     obj.twitter = { card: "summary_large_image", title: meta.title, description: meta.description, images: [meta.ogImage] };
   }
   if (meta.canonical) obj.alternates = { canonical: meta.canonical };
+  if (meta.favicon) obj.icons = { icon: meta.favicon };
+  if (meta.robots) obj.robots = meta.robots;
   return JSON.stringify(obj, null, 2);
 }
 
 /** A genuine Next.js App Router page — real metadata, the original body markup preserved exactly. */
-function pageTsx(componentName: string, meta: PageMeta, bodyHtml: string): string {
+function pageTsx(componentName: string, meta: PageMeta, bodyHtml: string, jsonLd: string[]): string {
+  const ldScripts = jsonLd
+    .map(
+      (json, i) =>
+        `      <script key="ld-${i}" type="application/ld+json" dangerouslySetInnerHTML={{ __html: ${JSON.stringify(json)} }} />`
+    )
+    .join("\n");
   return `import type { Metadata } from "next";
 
 // Statically generated at build time — the body markup below is the exact
@@ -72,7 +81,12 @@ export const metadata: Metadata = ${metadataObject(meta)};
 const BODY_HTML = ${JSON.stringify(bodyHtml)};
 
 export default function ${componentName}() {
-  return <div suppressHydrationWarning dangerouslySetInnerHTML={{ __html: BODY_HTML }} />;
+  return (
+    <>
+      <div suppressHydrationWarning dangerouslySetInnerHTML={{ __html: BODY_HTML }} />
+${ldScripts}
+    </>
+  );
 }
 `;
 }
@@ -188,14 +202,19 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R
   return out;
 }
 
-/** Pull the exact inner HTML of <body> and the <html> tag's lang/dir, without altering a single byte inside body. */
-function splitDocument(html: string): { bodyHtml: string; lang: string; dir: string } {
+/** Pull the exact inner HTML of <body>, the <html> tag's lang/dir, and any <head> JSON-LD, without altering a single byte inside body. */
+function splitDocument(html: string): { bodyHtml: string; lang: string; dir: string; jsonLd: string[] } {
   const $ = load(html);
   const htmlEl = $("html");
   const lang = htmlEl.attr("lang") || "en";
   const dir = htmlEl.attr("dir") || "";
   const bodyHtml = $("body").html() || "";
-  return { bodyHtml, lang, dir };
+  const jsonLd: string[] = [];
+  $('script[type="application/ld+json"]').each((_, el) => {
+    const txt = $(el).html();
+    if (txt && txt.trim()) jsonLd.push(txt.trim());
+  });
+  return { bodyHtml, lang, dir, jsonLd };
 }
 
 export async function convertToNextJs(
@@ -246,13 +265,13 @@ export async function convertToNextJs(
 
   for (const [route, html] of pageHtml.entries()) {
     const meta = extractMeta(load(html));
-    const { bodyHtml, lang, dir } = splitDocument(html);
+    const { bodyHtml, lang, dir, jsonLd } = splitDocument(html);
     if (first_) {
       rootLang = lang;
       rootDir = dir;
       first_ = false;
     }
-    files.push({ path: routeFilePath(route), content: pageTsx(routeToComponentName(route), meta, bodyHtml) });
+    files.push({ path: routeFilePath(route), content: pageTsx(routeToComponentName(route), meta, bodyHtml, jsonLd) });
     const r = route.replace(/^\/+/, "").replace(/\/+$/, "");
     previewFiles.push({ path: r ? `.next-preview/${r}/index.html` : ".next-preview/index.html", content: html });
   }

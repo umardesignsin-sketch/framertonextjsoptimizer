@@ -38,6 +38,7 @@ export interface PageMeta {
   ogDescription: string;
   ogImage: string;
   searchIndexUrl: string;
+  robots: string;
 }
 
 export function extractMeta($: Doc): PageMeta {
@@ -55,6 +56,7 @@ export function extractMeta($: Doc): PageMeta {
     ogDescription: $('meta[property="og:description"]').attr("content") || "",
     ogImage: $('meta[property="og:image"]').attr("content") || "",
     searchIndexUrl: $('meta[name="framer-search-index"]').attr("content") || "",
+    robots: $('meta[name="robots"]').attr("content") || "",
   };
 }
 
