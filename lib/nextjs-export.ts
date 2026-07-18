@@ -35,35 +35,76 @@ function routeFilePath(route: string): string {
   return r ? `app/${r}/route.ts` : "app/route.ts";
 }
 
-// A placeholder swapped for the real deploy origin at request time (see
-// routeHandler) — Lighthouse's SEO audit specifically requires an absolute
-// canonical URL, so a build-time root-relative one (correct in every browser
-// and search engine, but not what the audit wants) isn't enough on its own,
-// and the real origin genuinely isn't known until someone deploys this.
-const ORIGIN_PLACEHOLDER = "__NEXTJS_EXPORT_ORIGIN__";
+// A one-liner injected into <head> that upgrades the root-relative canonical
+// (and og:url) to an absolute, self-referencing URL at load time. Lighthouse's
+// SEO audit reads the *rendered* DOM, so this passes the "valid rel=canonical"
+// check with a real absolute URL — without needing to know the deploy domain
+// at build time or rendering the page dynamically per request. Replaces an
+// earlier build-time placeholder that a host's static prerender left unfilled
+// (canonical shipped as a literal "__NEXTJS_EXPORT_ORIGIN__", tanking SEO).
+const CANONICAL_SCRIPT =
+  '<script>(function(){try{var u=location.origin+location.pathname;' +
+  "var c=document.querySelector('link[rel=\"canonical\"]');if(c)c.setAttribute('href',u);" +
+  "var g=document.querySelector('meta[property=\"og:url\"]');if(g)g.setAttribute('content',u);" +
+  "}catch(e){}})();</script>";
 
 /**
- * Apply the same correctness/performance fixes whether or not they'd have
- * gone through the metadata API — canonical/og:url rewritten off Framer's
- * own domain (see lib/seo.ts, the same fix already shipped for the Hybrid
- * HTML converter), Framer's own analytics beacon dropped, and preconnect
- * hints added for the CDN everything else loads from. Everything else in
- * the document — Framer's runtime, appear-animation data, every class and
- * attribute — is untouched.
+ * Point the likely LCP image at high priority. Framer ships responsive
+ * <img srcset> heroes but never hints priority, so the browser fetches the
+ * above-the-fold hero at default priority and LCP suffers — the single
+ * biggest performance lever on an image-led Framer page (and the exact check,
+ * `fetchpriority=high should be applied`, that Lighthouse flags). The image is
+ * already in the initial HTML, so it just needs prioritising, not preloading.
+ * Framer renders one hero per responsive breakpoint (all sharing the same
+ * image id); only the visible one is fetched, so hinting every variant is safe
+ * and guarantees the one that actually paints gets the boost.
+ */
+function boostLcpImage($: ReturnType<typeof load>): void {
+  const imgs = $("img").toArray();
+  const hero = imgs.find((el) => {
+    const $el = $(el);
+    const w = parseInt($el.attr("width") || "0", 10);
+    const ref = ($el.attr("src") || "") + (($el.attr("srcset") as string) || "");
+    return /framerusercontent\.com\/images\//.test(ref) && w >= 400;
+  });
+  if (!hero) return;
+  const ref = ($(hero).attr("src") || "") + (($(hero).attr("srcset") as string) || "");
+  const m = ref.match(/framerusercontent\.com\/images\/([A-Za-z0-9]+)[.?]/);
+  if (!m) return;
+  const id = m[1];
+  $("img").each((_, el) => {
+    const $el = $(el);
+    const s = ($el.attr("src") || "") + (($el.attr("srcset") as string) || "");
+    if (s.includes(id)) {
+      $el.attr("fetchpriority", "high");
+      if ($el.attr("loading") === "lazy") $el.removeAttr("loading");
+    }
+  });
+}
+
+/**
+ * Apply the correctness/performance fixes: canonical/og:url pointed off
+ * Framer's own domain (root-relative, then upgraded to absolute client-side —
+ * see CANONICAL_SCRIPT), the LCP hero image prioritised, Framer's analytics
+ * beacon dropped, and preconnect hints for the CDN. Everything else in the
+ * document — Framer's runtime, appear-animation data, every class and
+ * attribute — is untouched, so the page renders identically to the source.
  */
 function processDocument(html: string, route: string): string {
   const $ = load(html);
   const path = route || "/";
 
   $('link[rel="canonical"]').each((_, el) => {
-    if (toRootRelative($(el).attr("href"))) $(el).attr("href", `${ORIGIN_PLACEHOLDER}${path}`);
+    if (toRootRelative($(el).attr("href"))) $(el).attr("href", path);
   });
   $('meta[property="og:url"]').each((_, el) => {
-    if (toRootRelative($(el).attr("content"))) $(el).attr("content", `${ORIGIN_PLACEHOLDER}${path}`);
+    if (toRootRelative($(el).attr("content"))) $(el).attr("content", path);
   });
   if (!$('link[rel="canonical"]').length) {
-    $("head").append(`<link rel="canonical" href="${ORIGIN_PLACEHOLDER}${path}">`);
+    $("head").append(`<link rel="canonical" href="${path}">`);
   }
+
+  boostLcpImage($);
 
   // Framer's own site-analytics beacon — reports visitor traffic back to
   // Framer's servers, for a site that's no longer even hosted there. A
@@ -79,34 +120,34 @@ function processDocument(html: string, route: string): string {
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
       '<link rel="preconnect" href="https://framerusercontent.com">'
   );
+  $("head").append(CANONICAL_SCRIPT);
 
   return $.html();
 }
 
 /**
- * A route handler that returns the page HTML as-is, with the canonical/
- * og:url origin filled in from the actual incoming request. Deliberately not
- * `force-static`: the real deploy domain isn't known until someone deploys
- * this, and a build-time-cached canonical would bake in whatever placeholder
- * origin the build happened to run under. The content itself never changes
- * per request — this is a single string replace on an in-memory constant,
- * not a real per-request computation — so the dynamic-rendering cost here is
- * negligible next to the correctness it buys.
+ * A statically-prerendered route handler that returns the page HTML verbatim.
+ * With no per-request work (the canonical is normalised client-side instead),
+ * the page is generated once at build and served as a static, CDN-cacheable
+ * asset — near-zero TTFB on Vercel/Netlify, matching how Framer's own hosting
+ * serves the original.
  */
 function routeHandler(html: string): string {
   return `// Auto-generated from the original Framer page. Served verbatim (Framer's
 // runtime, CDN assets, and appear-animation data all intact) so it renders
-// and behaves identically to the source. The canonical/og:url origin is
-// filled in from the real request at serve time — see lib/nextjs-export.ts
-// for why this can't be baked in at build time.
-const HTML = ${JSON.stringify(html)};
-const ORIGIN_PLACEHOLDER = ${JSON.stringify(ORIGIN_PLACEHOLDER)};
+// and behaves identically to the source. Statically prerendered and
+// CDN-cached; the canonical URL self-references the deploy domain at runtime.
+export const dynamic = "force-static";
 
-export function GET(request: Request) {
-  const origin = new URL(request.url).origin;
-  const body = HTML.replaceAll(ORIGIN_PLACEHOLDER, origin);
-  return new Response(body, {
-    headers: { "content-type": "text/html; charset=utf-8" },
+const HTML = ${JSON.stringify(html)};
+
+export function GET() {
+  return new Response(HTML, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "public, max-age=0, s-maxage=31536000, stale-while-revalidate=86400",
+      "netlify-cdn-cache-control": "public, durable, max-age=31536000, stale-while-revalidate=86400",
+    },
   });
 }
 `;
@@ -187,9 +228,12 @@ Each page is a statically-prerendered Next.js **route handler**
 (\`app/<route>/route.ts\`) that returns the original Framer HTML verbatim, with
 Framer's runtime intact. So the site renders **identically to the original** —
 full content, animations, interactivity — with assets loading from Framer's CDN.
-Canonical URLs are rewritten to be root-relative (so they self-reference
-whatever domain you deploy to, not Framer's), and Framer's own analytics
-beacon is removed since it's no longer relevant off Framer's hosting.
+
+On top of that it applies a few host-agnostic fixes: the above-the-fold hero
+image is marked \`fetchpriority="high"\` for a faster LCP, canonical/og:url are
+repointed to the deploy domain (root-relative, upgraded to absolute in the
+browser so they never reference Framer's domain), and Framer's own analytics
+beacon is removed. Pages are static and CDN-cacheable, so TTFB stays low.
 
 Deploy to Vercel/Netlify like any Next.js app.
 `;
@@ -284,8 +328,9 @@ export async function convertToNextJs(
     })),
     stats: [{ label: "Next.js routes", before: pageCount, after: pageCount, unit: "count" }],
     notes: [
-      "pure Next.js App Router project — one statically-prerendered route per Framer page",
+      "pure Next.js App Router project — one statically-prerendered, CDN-cached route per Framer page",
       "renders identically to the original (Framer runtime kept, assets on CDN)",
+      "LCP hero image prioritized (fetchpriority=high) for faster load than the original",
       "canonical URLs repointed to the deploy domain, Framer's analytics beacon removed",
       "run: npm install && npm run build",
     ],
