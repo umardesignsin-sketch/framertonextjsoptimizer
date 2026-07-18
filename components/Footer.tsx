@@ -22,7 +22,6 @@ export function Footer() {
           <Link href="/vs/convertframer" className="hover:text-foreground">vs ConvertFramer</Link>
           <Link href="/guides/self-host-framer" className="hover:text-foreground">Self-host Framer</Link>
           <Link href="/guides/remove-made-in-framer-badge" className="hover:text-foreground">Remove Framer badge</Link>
-          <Link href="/blog" className="hover:text-foreground">Blog</Link>
           <a href="/llms.txt" className="hover:text-foreground">llms.txt</a>
         </nav>
       </div>
