@@ -28,6 +28,133 @@ function human(n: number): string {
   return n + " B";
 }
 
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+// Reveals content once it scrolls into view. Content renders VISIBLE on the
+// server and for no-JS crawlers; only elements that are below the fold at
+// mount get armed for the entrance animation, so above-the-fold content never
+// flickers and the page stays fully indexable.
+function useInView<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [shown, setShown] = useState(true);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || prefersReducedMotion()) return;
+    // If the document isn't visible (e.g. a background/prerendered tab),
+    // IntersectionObserver callbacks are suppressed — never arm the hide, so
+    // content can't get stuck invisible.
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (typeof IntersectionObserver === "undefined") return;
+    const belowFold = el.getBoundingClientRect().top > window.innerHeight * 0.85;
+    if (!belowFold) return;
+    setShown(false);
+    const obs = new IntersectionObserver(
+      ([e]) => {
+        if (e.isIntersecting) {
+          setShown(true);
+          obs.disconnect();
+        }
+      },
+      { threshold: 0.18 },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+  return { ref, shown };
+}
+
+function Reveal({
+  children,
+  delay = 0,
+  className = "",
+  as: Tag = "div",
+}: {
+  children: React.ReactNode;
+  delay?: number;
+  className?: string;
+  as?: "div" | "li";
+}) {
+  const { ref, shown } = useInView<HTMLDivElement>();
+  return (
+    <Tag
+      ref={ref as React.Ref<HTMLDivElement & HTMLLIElement>}
+      className={className}
+      style={{
+        opacity: shown ? 1 : 0,
+        transform: shown ? "none" : "translateY(16px)",
+        transition: "opacity 0.6s cubic-bezier(0.16,1,0.3,1), transform 0.6s cubic-bezier(0.16,1,0.3,1)",
+        transitionDelay: `${delay}ms`,
+      }}
+    >
+      {children}
+    </Tag>
+  );
+}
+
+// Counts up to `to` when scrolled into view. Renders the final value on the
+// server / above the fold so numbers are never blank or flickering.
+function CountUp({
+  to,
+  duration = 1400,
+  decimals = 0,
+  prefix = "",
+  suffix = "",
+}: {
+  to: number;
+  duration?: number;
+  decimals?: number;
+  prefix?: string;
+  suffix?: string;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [val, setVal] = useState(to);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || prefersReducedMotion()) return;
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    if (typeof IntersectionObserver === "undefined") return;
+    const belowFold = el.getBoundingClientRect().top > window.innerHeight * 0.85;
+    if (!belowFold) return;
+    setVal(0);
+    let raf = 0;
+    const obs = new IntersectionObserver(
+      ([e]) => {
+        if (!e.isIntersecting) return;
+        obs.disconnect();
+        let start = 0;
+        const step = (t: number) => {
+          if (!start) start = t;
+          const p = Math.min(1, (t - start) / duration);
+          const eased = 1 - Math.pow(1 - p, 3);
+          setVal(to * eased);
+          if (p < 1) raf = requestAnimationFrame(step);
+        };
+        raf = requestAnimationFrame(step);
+      },
+      { threshold: 0.4 },
+    );
+    obs.observe(el);
+    return () => {
+      obs.disconnect();
+      cancelAnimationFrame(raf);
+    };
+  }, [to, duration]);
+  const display = decimals > 0 ? val.toFixed(decimals) : Math.round(val).toString();
+  return (
+    <span ref={ref}>
+      {prefix}
+      {display}
+      {suffix}
+    </span>
+  );
+}
+
 function Home() {
   const searchParams = useSearchParams();
   const authState = useAuthUser();
@@ -168,7 +295,9 @@ function Home() {
           />
         )}
 
-        <FeatureGrid />
+        <PipelineSection />
+        <ImpactStats />
+        <StepsSection />
         <AboutSection />
         <FaqSection />
       </main>
@@ -207,7 +336,9 @@ function HomeSeoShell() {
         <section className="rounded-xl border border-border bg-muted/40 p-5 text-[14px] text-muted-foreground">
           Loading converter…
         </section>
-        <FeatureGrid />
+        <PipelineSection />
+        <ImpactStats />
+        <StepsSection />
         <AboutSection />
         <FaqSection />
       </main>
@@ -269,15 +400,16 @@ function Icon({ name, className = "h-5 w-5" }: { name: string; className?: strin
   );
 }
 
-// A Lighthouse-style score dial. Colour bands mirror Lighthouse: red < 50,
-// amber < 90, green ≥ 90.
+// A Lighthouse-style score dial that fills and counts up when scrolled into
+// view. Colour bands mirror Lighthouse: red < 50, amber < 90, green ≥ 90.
 function ScoreRing({ score, label }: { score: number; label: string }) {
+  const { ref, shown } = useInView<HTMLDivElement>();
   const r = 24;
   const circ = 2 * Math.PI * r;
   const offset = circ * (1 - score / 100);
   const color = score >= 90 ? "#0cce6b" : score >= 50 ? "#ffa400" : "#ff4e42";
   return (
-    <div className="flex flex-col items-center gap-1.5">
+    <div ref={ref} className="flex flex-col items-center gap-1.5">
       <div className="relative h-14 w-14">
         <svg viewBox="0 0 60 60" className="h-14 w-14 -rotate-90">
           <circle cx="30" cy="30" r={r} fill="none" strokeWidth="4" className="stroke-border" />
@@ -290,14 +422,15 @@ function ScoreRing({ score, label }: { score: number; label: string }) {
             strokeWidth="4"
             strokeLinecap="round"
             strokeDasharray={circ}
-            strokeDashoffset={offset}
+            strokeDashoffset={shown ? offset : circ}
+            style={{ transition: "stroke-dashoffset 1s cubic-bezier(0.16,1,0.3,1)" }}
           />
         </svg>
         <span
           className="absolute inset-0 flex items-center justify-center text-[14px] font-semibold"
           style={{ color }}
         >
-          {score}
+          <CountUp to={score} duration={1000} />
         </span>
       </div>
       <span className="text-[10.5px] text-muted-foreground">{label}</span>
@@ -370,11 +503,8 @@ function Hero() {
               Next.js &amp; HTML
             </span>
           </h1>
-          <p className="mt-5 max-w-xl text-[16px] leading-relaxed text-muted-foreground">
-            Paste a published Framer URL and get a production-ready export: it captures the
-            server-rendered HTML, strips Framer&apos;s JS runtime, self-hosts &amp; re-encodes
-            images to WebP, inlines fonts, and runs an SEO pass — a deployable bundle built for
-            top Lighthouse scores.
+          <p className="mt-5 max-w-md text-[17px] leading-relaxed text-muted-foreground">
+            Paste a URL. Get a faster, self-hosted site in about a minute.
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3">
             <a
@@ -447,55 +577,203 @@ function ConvertCard(props: {
   );
 }
 
-function FeatureGrid() {
-  const features = [
-    {
-      icon: "zap",
-      title: "Strips the runtime",
-      body: "Framer's JS bundle, hover-state machinery, and analytics beacon are removed — the server-rendered HTML ships as-is.",
-    },
-    {
-      icon: "image",
-      title: "Self-hosted, re-encoded images",
-      body: "Every image is downloaded, converted to WebP, and served from your own domain instead of Framer's CDN.",
-    },
-    {
-      icon: "search",
-      title: "Full SEO pass",
-      body: "Canonical tags, Open Graph, sitemaps, and structured data are checked and corrected automatically.",
-    },
-    {
-      icon: "rocket",
-      title: "Deploy in one click",
-      body: "Push the optimized bundle straight to Netlify or Vercel, or download a real Next.js project to keep.",
-    },
+function SectionHeader({
+  eyebrow,
+  title,
+  subtitle,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <Reveal className="max-w-2xl">
+      <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1 text-[12px] font-medium text-muted-foreground">
+        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+        {eyebrow}
+      </div>
+      <h2 className="mt-4 text-[28px] font-semibold tracking-tight sm:text-[34px]">{title}</h2>
+      {subtitle && (
+        <p className="mt-3 text-[15.5px] leading-relaxed text-muted-foreground">{subtitle}</p>
+      )}
+    </Reveal>
+  );
+}
+
+// One stage of the optimization pipeline — reveals and its progress bar fills
+// as it scrolls into view.
+function PipelineStage({
+  index,
+  icon,
+  title,
+  body,
+}: {
+  index: number;
+  icon: string;
+  title: string;
+  body: string;
+}) {
+  const { ref, shown } = useInView<HTMLDivElement>();
+  return (
+    <div
+      ref={ref}
+      className="group relative rounded-2xl border border-border bg-background p-5 transition-all hover:-translate-y-1 hover:border-accent/40 hover:shadow-lg hover:shadow-accent/5"
+      style={{
+        opacity: shown ? 1 : 0,
+        transform: shown ? "none" : "translateY(16px)",
+        transition: "opacity 0.6s cubic-bezier(0.16,1,0.3,1), transform 0.6s cubic-bezier(0.16,1,0.3,1)",
+        transitionDelay: `${index * 90}ms`,
+      }}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent transition-colors group-hover:bg-accent group-hover:text-accent-foreground">
+          <Icon name={icon} />
+        </div>
+        <span className="font-mono text-[12px] font-semibold text-muted-foreground">
+          0{index + 1}
+        </span>
+      </div>
+      <h3 className="mt-4 text-[15.5px] font-semibold">{title}</h3>
+      <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">{body}</p>
+      <div className="mt-4 h-1 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full bg-accent"
+          style={{
+            width: shown ? "100%" : "0%",
+            transition: "width 0.9s cubic-bezier(0.16,1,0.3,1)",
+            transitionDelay: `${index * 90 + 150}ms`,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function PipelineSection() {
+  const stages = [
+    { icon: "zap", title: "Strip the runtime", body: "Framer's JS bundle, hover-state machinery, and analytics beacon are removed." },
+    { icon: "image", title: "Re-encode images", body: "Every image is downloaded, converted to WebP, and self-hosted on your domain." },
+    { icon: "search", title: "SEO pass", body: "Canonical tags, Open Graph, sitemaps, and structured data are fixed automatically." },
+    { icon: "rocket", title: "Ship it", body: "Deploy to Netlify or Vercel in a click — or download a real Next.js project." },
   ];
   return (
     <section className="mt-24">
-      <div className="max-w-2xl">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1 text-[12px] font-medium text-muted-foreground">
-          Under the hood
+      <SectionHeader
+        eyebrow="Under the hood"
+        title="One paste, a full optimization pass"
+        subtitle="No manual cleanup. Every conversion runs the same four-stage pipeline."
+      />
+      {/* input → output flow strip */}
+      <Reveal className="mt-8 flex items-center gap-3" delay={80}>
+        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3.5 py-2 text-[12.5px] font-medium">
+          <Icon name="search" className="h-3.5 w-3.5 text-muted-foreground" />
+          your-site.framer.website
         </div>
-        <h2 className="mt-4 text-[28px] font-semibold tracking-tight sm:text-[34px]">
-          Built for speed, kept pixel-perfect
-        </h2>
-        <p className="mt-3 text-[15.5px] leading-relaxed text-muted-foreground">
-          Every conversion runs the same pipeline under the hood — no manual cleanup required.
-        </p>
-      </div>
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
-        {features.map((f) => (
-          <div
-            key={f.title}
-            className="group rounded-2xl border border-border bg-background p-6 transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-lg hover:shadow-accent/5"
-          >
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent transition-colors group-hover:bg-accent group-hover:text-accent-foreground">
-              <Icon name={f.icon} />
-            </div>
-            <h3 className="mt-4 text-[16px] font-semibold">{f.title}</h3>
-            <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">{f.body}</p>
-          </div>
+        <div className="pipeline-spine hidden h-0.5 flex-1 rounded-full sm:block" />
+        <div className="inline-flex items-center gap-2 rounded-full bg-accent px-3.5 py-2 text-[12.5px] font-medium text-accent-foreground">
+          <Icon name="rocket" className="h-3.5 w-3.5" />
+          deployed · fast
+        </div>
+      </Reveal>
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {stages.map((s, i) => (
+          <PipelineStage key={s.title} index={i} icon={s.icon} title={s.title} body={s.body} />
         ))}
+      </div>
+    </section>
+  );
+}
+
+// A before/after mini bar chart whose "after" bar animates when in view.
+function ImpactBars({ before, after }: { before: number; after: number }) {
+  const { ref, shown } = useInView<HTMLDivElement>();
+  const row = (label: string, pct: number, accent: boolean, delay: number) => (
+    <div className="flex items-center gap-2">
+      <span className="w-11 shrink-0 text-[10.5px] text-muted-foreground">{label}</span>
+      <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+        <div
+          className={`h-full rounded-full ${accent ? "bg-accent" : "bg-border-strong"}`}
+          style={{
+            width: shown ? `${pct}%` : "0%",
+            transition: "width 1s cubic-bezier(0.16,1,0.3,1)",
+            transitionDelay: `${delay}ms`,
+          }}
+        />
+      </div>
+    </div>
+  );
+  return (
+    <div ref={ref} className="mt-5 space-y-2">
+      {row("Before", before, false, 100)}
+      {row("After", after, true, 260)}
+    </div>
+  );
+}
+
+function ImpactStats() {
+  const stats = [
+    { big: 91, prefix: "−", suffix: "%", label: "less JavaScript", detail: "≈920 KB → 80 KB shipped", before: 100, after: 9 },
+    { big: 68, prefix: "−", suffix: "%", label: "lighter images", detail: "re-encoded to self-hosted WebP", before: 100, after: 32 },
+    { big: 98, prefix: "", suffix: "", label: "mobile Lighthouse", detail: "up from 42 on the original", before: 42, after: 98 },
+  ];
+  return (
+    <section className="mt-24">
+      <SectionHeader
+        eyebrow="The numbers"
+        title="Measurably lighter and faster"
+        subtitle="Typical results on a marketing site — your mileage varies by how heavy the original is."
+      />
+      <div className="mt-8 grid gap-4 sm:grid-cols-3">
+        {stats.map((s, i) => (
+          <Reveal
+            key={s.label}
+            delay={i * 90}
+            className="rounded-2xl border border-border bg-background p-6"
+          >
+            <div className="text-[40px] font-semibold leading-none tracking-tight text-accent">
+              <CountUp to={s.big} prefix={s.prefix} suffix={s.suffix} />
+            </div>
+            <div className="mt-2 text-[14.5px] font-medium">{s.label}</div>
+            <div className="text-[12.5px] text-muted-foreground">{s.detail}</div>
+            <ImpactBars before={s.before} after={s.after} />
+          </Reveal>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function StepsSection() {
+  const steps = [
+    { icon: "search", title: "Paste your Framer URL", body: "Point the converter at any published Framer site — one page or hundreds." },
+    { icon: "zap", title: "Convert & preview", body: "Watch the pipeline run live, then preview the optimized result before you commit." },
+    { icon: "rocket", title: "Deploy or download", body: "Push it live to Netlify or Vercel in one click, or take a real Next.js project with you." },
+  ];
+  return (
+    <section className="mt-24">
+      <SectionHeader eyebrow="How it works" title="From URL to live site in three steps" />
+      <div className="relative mt-8">
+        {/* connecting spine behind the step numbers on desktop */}
+        <div className="pipeline-spine absolute left-0 right-0 top-[26px] hidden h-0.5 rounded-full opacity-60 sm:block" />
+        <div className="relative grid gap-5 sm:grid-cols-3">
+          {steps.map((s, i) => (
+            <Reveal key={s.title} delay={i * 110} className="rounded-2xl border border-border bg-background p-6">
+              <div className="flex items-center gap-3">
+                <span
+                  className="flex items-center justify-center rounded-full bg-accent text-[15px] font-semibold text-accent-foreground"
+                  style={{ height: 52, width: 52 }}
+                >
+                  0{i + 1}
+                </span>
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent">
+                  <Icon name={s.icon} />
+                </div>
+              </div>
+              <h3 className="mt-5 text-[16px] font-semibold">{s.title}</h3>
+              <p className="mt-1.5 text-[14px] leading-relaxed text-muted-foreground">{s.body}</p>
+            </Reveal>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -809,16 +1087,10 @@ function DeployPanel({
 }
 
 // Crawlable, answer-engine-friendly explainer: a self-contained definition
-// plus a clear "how it works" that AI overviews can quote directly.
+// that AI overviews can quote directly.
 function AboutSection() {
-  const steps = [
-    ["Paste a Framer URL", "Point the converter at any published Framer site — one page or hundreds."],
-    ["We optimize every page", "The Framer runtime is stripped, images become self-hosted WebP, fonts are inlined, and an SEO pass runs."],
-    ["Deploy or download", "Push it live to Netlify or Vercel in one click, or download a real Next.js project."],
-    ["Edit and publish", "Change text, links, and images in the visual editor and publish straight to your live site."],
-  ];
   return (
-    <section className="mt-20 border-t border-border pt-12">
+    <section className="mt-24 border-t border-border pt-12">
       <h2 className="text-2xl font-semibold tracking-tight">What is the Framer → Next.js Optimizer?</h2>
       <p className="mt-3 max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
         The Framer → Next.js Optimizer is a free tool that converts any published{" "}
@@ -848,20 +1120,6 @@ function AboutSection() {
         <Link href="/nextjs" className="text-foreground underline underline-offset-2">Next.js project export</Link>{" "}
         and take the code with you.
       </p>
-      <h3 className="mt-8 text-[15px] font-semibold">How it works</h3>
-      <ol className="mt-3 grid gap-3 sm:grid-cols-2">
-        {steps.map(([title, body], i) => (
-          <li key={title} className="rounded-xl border border-border bg-background p-4">
-            <div className="flex items-center gap-2 text-[13px] font-semibold">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-[11px] text-accent-foreground">
-                {i + 1}
-              </span>
-              {title}
-            </div>
-            <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">{body}</p>
-          </li>
-        ))}
-      </ol>
     </section>
   );
 }
