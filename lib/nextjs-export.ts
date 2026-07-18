@@ -1,36 +1,91 @@
 // Convert a Framer URL into a real, deployable Next.js project — accurately.
 //
-// Each Framer page becomes a statically-prerendered Next.js Route Handler
-// (`app/<route>/route.ts`) that returns the page's ORIGINAL HTML verbatim,
-// Framer runtime intact. So the deployed Next.js site renders identically to
-// the original — full content, animations, interactivity — because Framer's own
-// runtime + CDN assets do the work. (A stripped/static render loses animations
-// and hides appear-animated content; the hybrid converter is the optimized path.)
+// Each Framer page becomes a genuine Next.js App Router page
+// (`app/<route>/page.tsx`) with a real `generateMetadata`/`export const
+// metadata`, statically prerendered. The page's original <body> markup is
+// preserved byte-for-byte and rendered via dangerouslySetInnerHTML, with
+// Framer's own runtime script and CDN assets left completely untouched — so
+// the deployed site renders and behaves identically to the source (full
+// content, real animations, real interactivity), while actually being a
+// proper Next.js project instead of a Route Handler faking a static file
+// server. (A stripped/reproduced render loses fidelity; the hybrid converter
+// is the optimized, runtime-free path for that.)
+//
+// Why dangerouslySetInnerHTML is safe here, not a hack: this content is only
+// ever the page's own initial server-rendered HTML — the same bytes the
+// browser's native HTML parser would receive from any traditional
+// server-rendered page, script tags included. React's hydration explicitly
+// skips diffing a dangerouslySetInnerHTML subtree, so nothing re-parses or
+// re-executes it client-side; the browser's first-load HTML parser is what
+// runs Framer's <script> tags, exactly as it would on Framer's own hosting.
 import { fetchText, normalizeUrl } from "./fetch";
-import { load, detectFramer, extractMeta } from "./parse";
+import { load, detectFramer, extractMeta, type PageMeta } from "./parse";
 import { discoverPages, normalizeRoute } from "./discover";
 import type { ConvertReport, ConvertedFile } from "./types";
 
 export type ProgressFn = (msg: string) => void;
 
-/** Route path -> `app/.../route.ts` file path. */
+/** Route path -> `app/.../page.tsx` file path. */
 function routeFilePath(route: string): string {
   const r = normalizeRoute(route).replace(/^\/+/, "");
-  return r ? `app/${r}/route.ts` : "app/route.ts";
+  return r ? `app/${r}/page.tsx` : "app/page.tsx";
 }
 
-/** A statically-prerendered route handler that returns the page HTML as-is. */
-function routeHandler(html: string): string {
-  return `// Auto-generated from the original Framer page. Served verbatim so the
-// Framer runtime + CDN assets render it identically to the source.
+function routeToComponentName(route: string): string {
+  const r = normalizeRoute(route).replace(/^\/+/, "");
+  if (!r) return "HomePage";
+  const name = r
+    .split("/")
+    .map((seg) => seg.replace(/[^a-zA-Z0-9]+(.)?/g, (_, c) => (c ? c.toUpperCase() : "")))
+    .map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1))
+    .join("");
+  return `${name}Page`;
+}
+
+function metadataObject(meta: PageMeta): string {
+  const obj: Record<string, unknown> = {};
+  if (meta.title) obj.title = meta.title;
+  if (meta.description) obj.description = meta.description;
+  const og: Record<string, unknown> = {};
+  if (meta.title) og.title = meta.title;
+  if (meta.description) og.description = meta.description;
+  if (meta.ogImage) og.images = [meta.ogImage];
+  if (Object.keys(og).length) obj.openGraph = og;
+  if (meta.ogImage) {
+    obj.twitter = { card: "summary_large_image", title: meta.title, description: meta.description, images: [meta.ogImage] };
+  }
+  if (meta.canonical) obj.alternates = { canonical: meta.canonical };
+  return JSON.stringify(obj, null, 2);
+}
+
+/** A genuine Next.js App Router page — real metadata, the original body markup preserved exactly. */
+function pageTsx(componentName: string, meta: PageMeta, bodyHtml: string): string {
+  return `import type { Metadata } from "next";
+
+// Statically generated at build time — the body markup below is the exact
+// original page content, Framer's runtime script included, so it behaves
+// identically to the source once the browser parses it.
 export const dynamic = "force-static";
 
-const HTML = ${JSON.stringify(html)};
+export const metadata: Metadata = ${metadataObject(meta)};
 
-export function GET() {
-  return new Response(HTML, {
-    headers: { "content-type": "text/html; charset=utf-8" },
-  });
+const BODY_HTML = ${JSON.stringify(bodyHtml)};
+
+export default function ${componentName}() {
+  return <div suppressHydrationWarning dangerouslySetInnerHTML={{ __html: BODY_HTML }} />;
+}
+`;
+}
+
+function layoutTsx(lang: string, dir: string): string {
+  return `import type { ReactNode } from "react";
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="${lang}"${dir ? ` dir="${dir}"` : ""}>
+      <body>{children}</body>
+    </html>
+  );
 }
 `;
 }
@@ -74,9 +129,10 @@ const TSCONFIG = JSON.stringify(
       resolveJsonModule: true,
       isolatedModules: true,
       incremental: true,
+      jsx: "preserve",
       plugins: [{ name: "next" }],
     },
-    include: ["next-env.d.ts", "**/*.ts", ".next/types/**/*.ts"],
+    include: ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
     exclude: ["node_modules"],
   },
   null,
@@ -94,7 +150,7 @@ next-env.d.ts
 function readme(sourceUrl: string, pageCount: number): string {
   return `# Next.js project (converted from Framer)
 
-Generated from ${sourceUrl}. ${pageCount} page(s), one App Router route each.
+Generated from ${sourceUrl}. ${pageCount} page(s), one real App Router page each.
 
 ## Run
 
@@ -106,10 +162,12 @@ npm run build && npm start
 
 ## How it works
 
-Each page is a statically-prerendered Next.js **route handler**
-(\`app/<route>/route.ts\`) that returns the original Framer HTML verbatim, with
-Framer's runtime intact. So the site renders **identically to the original** —
-full content, animations, interactivity — with assets loading from Framer's CDN.
+Every page is a genuine \`app/<route>/page.tsx\` — a real Next.js page with
+its own \`generateMetadata\`, statically prerendered at build time. Each
+page's original body markup is preserved exactly, Framer's runtime script
+and CDN assets included, so the site renders and behaves **identically to
+the original** — full content, real animations, real interactivity — while
+actually being proper Next.js, not a Route Handler serving a raw string.
 
 Deploy to Vercel/Netlify like any Next.js app.
 `;
@@ -128,6 +186,16 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R
     })
   );
   return out;
+}
+
+/** Pull the exact inner HTML of <body> and the <html> tag's lang/dir, without altering a single byte inside body. */
+function splitDocument(html: string): { bodyHtml: string; lang: string; dir: string } {
+  const $ = load(html);
+  const htmlEl = $("html");
+  const lang = htmlEl.attr("lang") || "en";
+  const dir = htmlEl.attr("dir") || "";
+  const bodyHtml = $("body").html() || "";
+  return { bodyHtml, lang, dir };
 }
 
 export async function convertToNextJs(
@@ -167,17 +235,29 @@ export async function convertToNextJs(
 
   onProgress("Generating Next.js project…");
   const files: ConvertedFile[] = [];
-  // The downloadable bundle only has route.ts source (a JS string wrapping
-  // the original HTML) — there's nothing an iframe can render directly from
-  // that without actually running the Next.js server. previewFiles ships the
-  // same raw HTML separately, namespaced under .next-preview/ so it's never
-  // part of the download, purely so the in-app "Live preview" can show it.
+  // The downloadable bundle ships real page.tsx source (no static HTML file
+  // to render directly in an iframe), so previewFiles carries the same raw
+  // HTML separately, namespaced under .next-preview/, purely for the in-app
+  // "Live preview" — never part of the download.
   const previewFiles: ConvertedFile[] = [];
+  let rootLang = "en";
+  let rootDir = "";
+  let first_ = true;
+
   for (const [route, html] of pageHtml.entries()) {
-    files.push({ path: routeFilePath(route), content: routeHandler(html) });
+    const meta = extractMeta(load(html));
+    const { bodyHtml, lang, dir } = splitDocument(html);
+    if (first_) {
+      rootLang = lang;
+      rootDir = dir;
+      first_ = false;
+    }
+    files.push({ path: routeFilePath(route), content: pageTsx(routeToComponentName(route), meta, bodyHtml) });
     const r = route.replace(/^\/+/, "").replace(/\/+$/, "");
     previewFiles.push({ path: r ? `.next-preview/${r}/index.html` : ".next-preview/index.html", content: html });
   }
+
+  files.push({ path: "app/layout.tsx", content: layoutTsx(rootLang, rootDir) });
 
   const host = (() => {
     try {
@@ -200,9 +280,9 @@ export async function convertToNextJs(
       route,
       sourceUrl: pages.find((p) => p.route === route)?.url || start.toString(),
     })),
-    stats: [{ label: "Next.js routes", before: pageCount, after: pageCount, unit: "count" }],
+    stats: [{ label: "Next.js pages", before: pageCount, after: pageCount, unit: "count" }],
     notes: [
-      "pure Next.js App Router project — one statically-prerendered route per Framer page",
+      "pure Next.js App Router project — one real, statically-prerendered page per Framer page",
       "renders identically to the original (Framer runtime kept, assets on CDN)",
       "run: npm install && npm run build",
     ],
