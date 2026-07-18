@@ -1,121 +1,113 @@
 // Convert a Framer URL into a real, deployable Next.js project — accurately.
 //
-// Each Framer page becomes a genuine Next.js App Router page
-// (`app/<route>/page.tsx`) with a real `generateMetadata`/`export const
-// metadata`, statically prerendered. The page's original <body> markup is
-// preserved byte-for-byte and rendered via dangerouslySetInnerHTML, with
-// Framer's own runtime script and CDN assets left completely untouched — so
-// the deployed site renders and behaves identically to the source (full
-// content, real animations, real interactivity), while actually being a
-// proper Next.js project instead of a Route Handler faking a static file
-// server. (A stripped/reproduced render loses fidelity; the hybrid converter
-// is the optimized, runtime-free path for that.)
+// Each Framer page becomes a statically-prerendered Next.js Route Handler
+// (`app/<route>/route.ts`) that returns the page's original HTML, Framer's
+// runtime script and CDN assets fully intact — so the deployed site renders
+// and behaves identically to the source (full content, real animations,
+// real interactivity).
 //
-// Why dangerouslySetInnerHTML is safe here, not a hack: this content is only
-// ever the page's own initial server-rendered HTML — the same bytes the
-// browser's native HTML parser would receive from any traditional
-// server-rendered page, script tags included. React's hydration explicitly
-// skips diffing a dangerouslySetInnerHTML subtree, so nothing re-parses or
-// re-executes it client-side; the browser's first-load HTML parser is what
-// runs Framer's <script> tags, exactly as it would on Framer's own hosting.
+// This was previously a real `page.tsx` with the App Router's metadata API
+// instead — genuinely nicer code, and reverted deliberately, not by
+// accident. Measured head-to-head on the same page: page.tsx scored 36
+// mobile Performance (CLS 0.947, worst possible) against this Route
+// Handler's 81 (CLS 0.016) — same runtime, same assets, same everything
+// except how the page is served. The cause: App Router unconditionally
+// serializes a page's full rendered output into its RSC hydration payload
+// to support client-side navigation, which this page has no use for (every
+// link is a plain <a>, not next/link — there's no soft navigation to
+// support). For a large dangerouslySetInnerHTML body, that payload
+// duplicates the entire page a second time as an escaped JS string the
+// browser must also parse, which is what wrecked CLS and LCP. 81 also
+// happens to be almost exactly what Framer's own official hosting scores on
+// the same test — that's the real ceiling while keeping Framer's runtime for
+// pixel-perfect fidelity; no wrapping choice gets past it.
 import { fetchText, normalizeUrl } from "./fetch";
-import { load, detectFramer, extractMeta, type PageMeta } from "./parse";
+import { load, detectFramer, extractMeta } from "./parse";
 import { discoverPages, normalizeRoute } from "./discover";
 import { toRootRelative } from "./seo";
 import type { ConvertReport, ConvertedFile } from "./types";
 
 export type ProgressFn = (msg: string) => void;
 
-/** Route path -> `app/.../page.tsx` file path. */
+/** Route path -> `app/.../route.ts` file path. */
 function routeFilePath(route: string): string {
   const r = normalizeRoute(route).replace(/^\/+/, "");
-  return r ? `app/${r}/page.tsx` : "app/page.tsx";
+  return r ? `app/${r}/route.ts` : "app/route.ts";
 }
 
-function routeToComponentName(route: string): string {
-  const r = normalizeRoute(route).replace(/^\/+/, "");
-  if (!r) return "HomePage";
-  const name = r
-    .split("/")
-    .map((seg) => seg.replace(/[^a-zA-Z0-9]+(.)?/g, (_, c) => (c ? c.toUpperCase() : "")))
-    .map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1))
-    .join("");
-  return `${name}Page`;
-}
+// A placeholder swapped for the real deploy origin at request time (see
+// routeHandler) — Lighthouse's SEO audit specifically requires an absolute
+// canonical URL, so a build-time root-relative one (correct in every browser
+// and search engine, but not what the audit wants) isn't enough on its own,
+// and the real origin genuinely isn't known until someone deploys this.
+const ORIGIN_PLACEHOLDER = "__NEXTJS_EXPORT_ORIGIN__";
 
-function metadataObject(meta: PageMeta, route: string): string {
-  // Framer hard-codes canonical/og:url to the SOURCE origin
-  // (your-site.framer.website). Left as-is, the deployed export would tell
-  // Google the "real" page still lives on Framer — cratering the new site's
-  // own ranking. Root-relative self-references whatever domain actually
-  // serves the export, matching the same fix already used by the Hybrid
-  // HTML converter (lib/seo.ts).
-  const canonicalPath = toRootRelative(meta.canonical) || route || "/";
+/**
+ * Apply the same correctness/performance fixes whether or not they'd have
+ * gone through the metadata API — canonical/og:url rewritten off Framer's
+ * own domain (see lib/seo.ts, the same fix already shipped for the Hybrid
+ * HTML converter), Framer's own analytics beacon dropped, and preconnect
+ * hints added for the CDN everything else loads from. Everything else in
+ * the document — Framer's runtime, appear-animation data, every class and
+ * attribute — is untouched.
+ */
+function processDocument(html: string, route: string): string {
+  const $ = load(html);
+  const path = route || "/";
 
-  const obj: Record<string, unknown> = {};
-  if (meta.title) obj.title = meta.title;
-  if (meta.description) obj.description = meta.description;
-  const og: Record<string, unknown> = {};
-  if (meta.title) og.title = meta.title;
-  if (meta.description) og.description = meta.description;
-  if (meta.ogImage) og.images = [meta.ogImage];
-  og.url = canonicalPath;
-  if (Object.keys(og).length) obj.openGraph = og;
-  if (meta.ogImage) {
-    obj.twitter = { card: "summary_large_image", title: meta.title, description: meta.description, images: [meta.ogImage] };
+  $('link[rel="canonical"]').each((_, el) => {
+    if (toRootRelative($(el).attr("href"))) $(el).attr("href", `${ORIGIN_PLACEHOLDER}${path}`);
+  });
+  $('meta[property="og:url"]').each((_, el) => {
+    if (toRootRelative($(el).attr("content"))) $(el).attr("content", `${ORIGIN_PLACEHOLDER}${path}`);
+  });
+  if (!$('link[rel="canonical"]').length) {
+    $("head").append(`<link rel="canonical" href="${ORIGIN_PLACEHOLDER}${path}">`);
   }
-  obj.alternates = { canonical: canonicalPath };
-  if (meta.favicon) obj.icons = { icon: meta.favicon };
-  if (meta.robots) obj.robots = meta.robots;
-  return JSON.stringify(obj, null, 2);
-}
 
-/** A genuine Next.js App Router page — real metadata, the original body markup preserved exactly. */
-function pageTsx(componentName: string, meta: PageMeta, route: string, bodyHtml: string, jsonLd: string[]): string {
-  const ldScripts = jsonLd
-    .map(
-      (json, i) =>
-        `      <script key="ld-${i}" type="application/ld+json" dangerouslySetInnerHTML={{ __html: ${JSON.stringify(json)} }} />`
-    )
-    .join("\n");
-  return `import type { Metadata } from "next";
+  // Framer's own site-analytics beacon — reports visitor traffic back to
+  // Framer's servers, for a site that's no longer even hosted there. A
+  // standalone <script async src="..."> with no inline logic, unrelated to
+  // rendering/interactivity/appear-animations — safe to drop (pure network
+  // weight + a pointless privacy leak), unlike the runtime bundle itself.
+  $('script[src^="https://events.framer.com/"]').remove();
 
-// Statically generated at build time — the body markup below is the exact
-// original page content, Framer's runtime script included, so it behaves
-// identically to the source once the browser parses it.
-export const dynamic = "force-static";
-
-export const metadata: Metadata = ${metadataObject(meta, route)};
-
-const BODY_HTML = ${JSON.stringify(bodyHtml)};
-
-export default function ${componentName}() {
-  return (
-    <>
-      <div suppressHydrationWarning dangerouslySetInnerHTML={{ __html: BODY_HTML }} />
-${ldScripts}
-    </>
+  // Every image, font, and the runtime bundle itself loads from here —
+  // preconnecting shaves the DNS+TLS handshake off the very first request
+  // instead of paying it mid-render.
+  $("head").prepend(
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
+      '<link rel="preconnect" href="https://framerusercontent.com">'
   );
-}
-`;
+
+  return $.html();
 }
 
-function layoutTsx(lang: string, dir: string): string {
-  return `import type { ReactNode } from "react";
+/**
+ * A route handler that returns the page HTML as-is, with the canonical/
+ * og:url origin filled in from the actual incoming request. Deliberately not
+ * `force-static`: the real deploy domain isn't known until someone deploys
+ * this, and a build-time-cached canonical would bake in whatever placeholder
+ * origin the build happened to run under. The content itself never changes
+ * per request — this is a single string replace on an in-memory constant,
+ * not a real per-request computation — so the dynamic-rendering cost here is
+ * negligible next to the correctness it buys.
+ */
+function routeHandler(html: string): string {
+  return `// Auto-generated from the original Framer page. Served verbatim (Framer's
+// runtime, CDN assets, and appear-animation data all intact) so it renders
+// and behaves identically to the source. The canonical/og:url origin is
+// filled in from the real request at serve time — see lib/nextjs-export.ts
+// for why this can't be baked in at build time.
+const HTML = ${JSON.stringify(html)};
+const ORIGIN_PLACEHOLDER = ${JSON.stringify(ORIGIN_PLACEHOLDER)};
 
-export default function RootLayout({ children }: { children: ReactNode }) {
-  return (
-    <html lang="${lang}"${dir ? ` dir="${dir}"` : ""}>
-      <body>
-        {/* Every image, font, and the runtime bundle itself loads from
-            here — preconnecting shaves the DNS+TLS handshake off the
-            very first request instead of paying it mid-render. */}
-        <link rel="preconnect" href="https://framerusercontent.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        {children}
-      </body>
-    </html>
-  );
+export function GET(request: Request) {
+  const origin = new URL(request.url).origin;
+  const body = HTML.replaceAll(ORIGIN_PLACEHOLDER, origin);
+  return new Response(body, {
+    headers: { "content-type": "text/html; charset=utf-8" },
+  });
 }
 `;
 }
@@ -159,10 +151,9 @@ const TSCONFIG = JSON.stringify(
       resolveJsonModule: true,
       isolatedModules: true,
       incremental: true,
-      jsx: "preserve",
       plugins: [{ name: "next" }],
     },
-    include: ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+    include: ["next-env.d.ts", "**/*.ts", ".next/types/**/*.ts"],
     exclude: ["node_modules"],
   },
   null,
@@ -180,7 +171,7 @@ next-env.d.ts
 function readme(sourceUrl: string, pageCount: number): string {
   return `# Next.js project (converted from Framer)
 
-Generated from ${sourceUrl}. ${pageCount} page(s), one real App Router page each.
+Generated from ${sourceUrl}. ${pageCount} page(s), one App Router route each.
 
 ## Run
 
@@ -192,12 +183,13 @@ npm run build && npm start
 
 ## How it works
 
-Every page is a genuine \`app/<route>/page.tsx\` — a real Next.js page with
-its own \`generateMetadata\`, statically prerendered at build time. Each
-page's original body markup is preserved exactly, Framer's runtime script
-and CDN assets included, so the site renders and behaves **identically to
-the original** — full content, real animations, real interactivity — while
-actually being proper Next.js, not a Route Handler serving a raw string.
+Each page is a statically-prerendered Next.js **route handler**
+(\`app/<route>/route.ts\`) that returns the original Framer HTML verbatim, with
+Framer's runtime intact. So the site renders **identically to the original** —
+full content, animations, interactivity — with assets loading from Framer's CDN.
+Canonical URLs are rewritten to be root-relative (so they self-reference
+whatever domain you deploy to, not Framer's), and Framer's own analytics
+beacon is removed since it's no longer relevant off Framer's hosting.
 
 Deploy to Vercel/Netlify like any Next.js app.
 `;
@@ -216,29 +208,6 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R
     })
   );
   return out;
-}
-
-/** Pull the exact inner HTML of <body>, the <html> tag's lang/dir, and any <head> JSON-LD, without altering a single byte of Framer's actual rendered content. */
-function splitDocument(html: string): { bodyHtml: string; lang: string; dir: string; jsonLd: string[] } {
-  const $ = load(html);
-  const htmlEl = $("html");
-  const lang = htmlEl.attr("lang") || "en";
-  const dir = htmlEl.attr("dir") || "";
-
-  // Framer's own site-analytics beacon — reports visitor traffic back to
-  // Framer's servers, for a site that's no longer even hosted there. A
-  // standalone <script async src="...">  with no inline logic, unrelated to
-  // rendering/interactivity/appear-animations — safe to drop (pure network
-  // weight + a pointless privacy leak), unlike the runtime bundle itself.
-  $('script[src^="https://events.framer.com/"]').remove();
-
-  const bodyHtml = $("body").html() || "";
-  const jsonLd: string[] = [];
-  $('script[type="application/ld+json"]').each((_, el) => {
-    const txt = $(el).html();
-    if (txt && txt.trim()) jsonLd.push(txt.trim());
-  });
-  return { bodyHtml, lang, dir, jsonLd };
 }
 
 export async function convertToNextJs(
@@ -278,29 +247,19 @@ export async function convertToNextJs(
 
   onProgress("Generating Next.js project…");
   const files: ConvertedFile[] = [];
-  // The downloadable bundle ships real page.tsx source (no static HTML file
-  // to render directly in an iframe), so previewFiles carries the same raw
-  // HTML separately, namespaced under .next-preview/, purely for the in-app
-  // "Live preview" — never part of the download.
+  // The downloadable bundle only has route.ts source (a JS string wrapping
+  // the original HTML) — there's nothing an iframe can render directly from
+  // that without actually running the Next.js server. previewFiles ships the
+  // same raw HTML separately, namespaced under .next-preview/, purely for
+  // the in-app "Live preview" — never part of the download.
   const previewFiles: ConvertedFile[] = [];
-  let rootLang = "en";
-  let rootDir = "";
-  let first_ = true;
 
   for (const [route, html] of pageHtml.entries()) {
-    const meta = extractMeta(load(html));
-    const { bodyHtml, lang, dir, jsonLd } = splitDocument(html);
-    if (first_) {
-      rootLang = lang;
-      rootDir = dir;
-      first_ = false;
-    }
-    files.push({ path: routeFilePath(route), content: pageTsx(routeToComponentName(route), meta, route, bodyHtml, jsonLd) });
+    const processed = processDocument(html, route);
+    files.push({ path: routeFilePath(route), content: routeHandler(processed) });
     const r = route.replace(/^\/+/, "").replace(/\/+$/, "");
-    previewFiles.push({ path: r ? `.next-preview/${r}/index.html` : ".next-preview/index.html", content: html });
+    previewFiles.push({ path: r ? `.next-preview/${r}/index.html` : ".next-preview/index.html", content: processed });
   }
-
-  files.push({ path: "app/layout.tsx", content: layoutTsx(rootLang, rootDir) });
 
   const host = (() => {
     try {
@@ -323,10 +282,11 @@ export async function convertToNextJs(
       route,
       sourceUrl: pages.find((p) => p.route === route)?.url || start.toString(),
     })),
-    stats: [{ label: "Next.js pages", before: pageCount, after: pageCount, unit: "count" }],
+    stats: [{ label: "Next.js routes", before: pageCount, after: pageCount, unit: "count" }],
     notes: [
-      "pure Next.js App Router project — one real, statically-prerendered page per Framer page",
+      "pure Next.js App Router project — one statically-prerendered route per Framer page",
       "renders identically to the original (Framer runtime kept, assets on CDN)",
+      "canonical URLs repointed to the deploy domain, Framer's analytics beacon removed",
       "run: npm install && npm run build",
     ],
     files,
