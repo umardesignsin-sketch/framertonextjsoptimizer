@@ -90,12 +90,106 @@ function boostLcpImage($: ReturnType<typeof load>): void {
 }
 
 /**
- * Apply the correctness/performance fixes: canonical/og:url pointed off
- * Framer's own domain (root-relative, then upgraded to absolute client-side —
- * see CANONICAL_SCRIPT), the LCP hero image prioritised, Framer's analytics
- * beacon dropped, and preconnect hints for the CDN. Everything else in the
- * document — Framer's runtime, appear-animation data, every class and
- * attribute — is untouched, so the page renders identically to the source.
+ * Framer never sets a `lang` attribute on `<html>`, which fails Lighthouse's
+ * `html-has-lang` accessibility audit on every export regardless of source
+ * site. There's no reliable per-site language signal in the document (no
+ * og:locale, no content-language meta) — "en" is the same default assumption
+ * most static-site generators make, and is trivially overridable by editing
+ * the generated route's HTML if a site is in another language.
+ */
+function ensureHtmlLang($: ReturnType<typeof load>): void {
+  if (!$("html").attr("lang")) $("html").attr("lang", "en");
+}
+
+/**
+ * Video/map/audio embeds Framer renders as bare `<iframe src>` with no
+ * `title` — fails `frame-title`. Screen readers announce an iframe by its
+ * title or fall back to reading the raw src URL, so this is a real a11y gap,
+ * not a fidelity trade-off; labelling it changes nothing visually.
+ */
+function ensureIframeTitles($: ReturnType<typeof load>): void {
+  $("iframe").each((_, el) => {
+    const $el = $(el);
+    if ($el.attr("title")) return;
+    const src = $el.attr("src") || "";
+    let label = "Embedded content";
+    if (/vimeo\.com|youtube\.com|youtu\.be|wistia\.com/i.test(src)) label = "Video player";
+    else if (/spotify\.com|soundcloud\.com/i.test(src)) label = "Audio player";
+    else if (/google\.com\/maps|maps\.google/i.test(src)) label = "Map";
+    $el.attr("title", label);
+  });
+}
+
+/**
+ * Ensures exactly one `role="main"` landmark exists — fails `landmark-one-main`
+ * otherwise. Framer wraps the entire page in a single `<div id="main">`
+ * sibling to script/link/svg-defs tags (verified against the real markup),
+ * so promoting that one div is safe and unambiguous; it's not touched at all
+ * on sites that already have a main landmark.
+ */
+function ensureMainLandmark($: ReturnType<typeof load>): void {
+  if ($('[role="main"], main').length > 0) return;
+  const candidate = $("body > div#main");
+  if (candidate.length === 1) candidate.attr("role", "main");
+}
+
+const KNOWN_LINK_HOSTS: [RegExp, string][] = [
+  [/instagram\.com/i, "Instagram"],
+  [/(twitter|x)\.com/i, "Twitter"],
+  [/facebook\.com/i, "Facebook"],
+  [/linkedin\.com/i, "LinkedIn"],
+  [/youtube\.com|youtu\.be/i, "YouTube"],
+  [/tiktok\.com/i, "TikTok"],
+  [/github\.com/i, "GitHub"],
+  [/behance\.net/i, "Behance"],
+  [/dribbble\.com/i, "Dribbble"],
+  [/pinterest\.com/i, "Pinterest"],
+];
+
+/**
+ * Framer commonly renders a logo/home link and social icons as an anchor
+ * wrapping an `aria-hidden` decorative SVG with no visible text — correct for
+ * the icon itself, but it leaves the *link* with no accessible name at all,
+ * failing `link-name`. Infers a label from context (home-link patterns, known
+ * social hosts, mailto/tel) rather than guessing blindly; links that already
+ * have visible text, an aria-label, or an alt'd image are left untouched.
+ */
+function fixUnlabeledLinks($: ReturnType<typeof load>): void {
+  $("a").each((_, el) => {
+    const $el = $(el);
+    const hasVisibleText = ($el.text() || "").trim().length > 0;
+    const hasLabel = $el.attr("aria-label") || $el.attr("aria-labelledby") || $el.attr("title");
+    const hasImgAlt =
+      $el.find("img[alt]").filter((_, im) => ($(im).attr("alt") || "").trim() !== "").length > 0;
+    if (hasVisibleText || hasLabel || hasImgAlt) return;
+
+    const href = ($el.attr("href") || "").trim();
+    const innerHtml = $el.html() || "";
+    let label = "";
+    if (/^(\.?\/?#home|\.?\/?)$/i.test(href) || /data-framer-name="Logo"/i.test(innerHtml)) {
+      label = "Home";
+    } else if (href.startsWith("mailto:")) {
+      label = "Email";
+    } else if (href.startsWith("tel:")) {
+      label = "Phone";
+    } else {
+      const known = KNOWN_LINK_HOSTS.find(([re]) => re.test(href));
+      if (known) label = known[1];
+    }
+    if (label) $el.attr("aria-label", label);
+  });
+}
+
+/**
+ * Apply the correctness/performance/accessibility fixes: canonical/og:url
+ * pointed off Framer's own domain (root-relative, then upgraded to absolute
+ * client-side — see CANONICAL_SCRIPT), the LCP hero image prioritised,
+ * Framer's analytics beacon dropped, preconnect hints for the CDN, and a
+ * handful of accessibility gaps Framer's own export always has (missing
+ * `lang`, iframe titles, a main landmark, unlabeled icon-only links).
+ * Everything else in the document — Framer's runtime, appear-animation data,
+ * every class and attribute, and all visual styling — is untouched, so the
+ * page renders identically to the source.
  */
 function processDocument(html: string, route: string, assetMap: Map<string, string>): string {
   const $ = load(html);
@@ -117,6 +211,11 @@ function processDocument(html: string, route: string, assetMap: Map<string, stri
   // rewrite.
   boostLcpImage($);
   if (assetMap.size) rewriteImageRefs($, assetMap);
+
+  ensureHtmlLang($);
+  ensureIframeTitles($);
+  ensureMainLandmark($);
+  fixUnlabeledLinks($);
 
   // Framer's own site-analytics beacon — reports visitor traffic back to
   // Framer's servers, for a site that's no longer even hosted there. A
@@ -394,6 +493,7 @@ export async function convertToNextJs(
       `images self-hosted & re-encoded to WebP under public/${assetMap.size ? ` (${assetMap.size} files)` : ""}`,
       "LCP hero image prioritized (fetchpriority=high) for faster load than the original",
       "canonical URLs repointed to the deploy domain, Framer's analytics beacon removed",
+      "accessibility gaps fixed: html[lang], iframe titles, one main landmark, unlabeled icon links",
       ...(capNote ? [capNote] : []),
       "run: npm install && npm run build",
     ],
