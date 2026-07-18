@@ -134,7 +134,7 @@ export function seoPass($: Doc, meta: PageMeta, route: string): SeoResult {
  * Protocol-relative and non-http(s) values are left alone. Used to make
  * canonical/og:url self-reference the deploy domain instead of Framer's.
  */
-function toRootRelative(href: string | undefined): string | undefined {
+export function toRootRelative(href: string | undefined): string | undefined {
   if (!href) return href;
   const h = href.trim();
   if (!/^https?:\/\//i.test(h)) return h; // already relative — keep as-is

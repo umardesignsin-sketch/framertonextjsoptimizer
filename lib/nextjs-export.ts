@@ -21,6 +21,7 @@
 import { fetchText, normalizeUrl } from "./fetch";
 import { load, detectFramer, extractMeta, type PageMeta } from "./parse";
 import { discoverPages, normalizeRoute } from "./discover";
+import { toRootRelative } from "./seo";
 import type { ConvertReport, ConvertedFile } from "./types";
 
 export type ProgressFn = (msg: string) => void;
@@ -42,7 +43,15 @@ function routeToComponentName(route: string): string {
   return `${name}Page`;
 }
 
-function metadataObject(meta: PageMeta): string {
+function metadataObject(meta: PageMeta, route: string): string {
+  // Framer hard-codes canonical/og:url to the SOURCE origin
+  // (your-site.framer.website). Left as-is, the deployed export would tell
+  // Google the "real" page still lives on Framer — cratering the new site's
+  // own ranking. Root-relative self-references whatever domain actually
+  // serves the export, matching the same fix already used by the Hybrid
+  // HTML converter (lib/seo.ts).
+  const canonicalPath = toRootRelative(meta.canonical) || route || "/";
+
   const obj: Record<string, unknown> = {};
   if (meta.title) obj.title = meta.title;
   if (meta.description) obj.description = meta.description;
@@ -50,19 +59,19 @@ function metadataObject(meta: PageMeta): string {
   if (meta.title) og.title = meta.title;
   if (meta.description) og.description = meta.description;
   if (meta.ogImage) og.images = [meta.ogImage];
-  if (meta.canonical) og.url = meta.canonical;
+  og.url = canonicalPath;
   if (Object.keys(og).length) obj.openGraph = og;
   if (meta.ogImage) {
     obj.twitter = { card: "summary_large_image", title: meta.title, description: meta.description, images: [meta.ogImage] };
   }
-  if (meta.canonical) obj.alternates = { canonical: meta.canonical };
+  obj.alternates = { canonical: canonicalPath };
   if (meta.favicon) obj.icons = { icon: meta.favicon };
   if (meta.robots) obj.robots = meta.robots;
   return JSON.stringify(obj, null, 2);
 }
 
 /** A genuine Next.js App Router page — real metadata, the original body markup preserved exactly. */
-function pageTsx(componentName: string, meta: PageMeta, bodyHtml: string, jsonLd: string[]): string {
+function pageTsx(componentName: string, meta: PageMeta, route: string, bodyHtml: string, jsonLd: string[]): string {
   const ldScripts = jsonLd
     .map(
       (json, i) =>
@@ -76,7 +85,7 @@ function pageTsx(componentName: string, meta: PageMeta, bodyHtml: string, jsonLd
 // identically to the source once the browser parses it.
 export const dynamic = "force-static";
 
-export const metadata: Metadata = ${metadataObject(meta)};
+export const metadata: Metadata = ${metadataObject(meta, route)};
 
 const BODY_HTML = ${JSON.stringify(bodyHtml)};
 
@@ -271,7 +280,7 @@ export async function convertToNextJs(
       rootDir = dir;
       first_ = false;
     }
-    files.push({ path: routeFilePath(route), content: pageTsx(routeToComponentName(route), meta, bodyHtml, jsonLd) });
+    files.push({ path: routeFilePath(route), content: pageTsx(routeToComponentName(route), meta, route, bodyHtml, jsonLd) });
     const r = route.replace(/^\/+/, "").replace(/\/+$/, "");
     previewFiles.push({ path: r ? `.next-preview/${r}/index.html` : ".next-preview/index.html", content: html });
   }
