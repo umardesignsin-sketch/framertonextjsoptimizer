@@ -32,15 +32,6 @@ export default async function BlogIndexPage() {
 
   return (
     <div className="min-h-screen w-full">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 text-[13px]">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="flex h-6 w-6 items-center justify-center rounded bg-foreground text-[13px] font-bold text-background">F</span>
-            <span className="font-semibold">Framer → Next.js Optimizer</span>
-          </Link>
-          <Link href="/" className="text-muted-foreground hover:text-foreground">Converter ↗</Link>
-        </div>
-      </header>
 
       <main className="mx-auto max-w-6xl px-5 pb-24">
         <section className="pt-14 pb-6">

@@ -3,7 +3,6 @@
 import { useState, useRef, useCallback, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { SpeedCompare } from "@/components/SpeedCompare";
-import { AuthNavLink } from "@/components/AuthNavLink";
 import { AuthGateModal } from "@/components/AuthGateModal";
 import { useAuthUser } from "@/components/useAuthUser";
 import Link from "next/link";
@@ -137,10 +136,11 @@ function Home() {
 
   return (
     <div className="min-h-screen w-full">
-      <Header />
       <main className="mx-auto max-w-5xl px-5 pb-24">
         <Hero />
-        <ConvertCard url={url} setUrl={setUrl} status={status} convert={convert} />
+        <div id="convert" className="scroll-mt-20">
+          <ConvertCard url={url} setUrl={setUrl} status={status} convert={convert} />
+        </div>
 
         {(status === "converting" || lines.length > 0) && (
           <LogPane lines={lines} logRef={logRef} active={status === "converting"} />
@@ -161,6 +161,7 @@ function Home() {
           />
         )}
 
+        <FeatureGrid />
         <AboutSection />
         <FaqSection />
       </main>
@@ -185,24 +186,6 @@ function Home() {
 function HomeSeoShell() {
   return (
     <div className="min-h-screen w-full">
-      <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3.5">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-6 w-6 items-center justify-center rounded bg-foreground text-[13px] font-bold text-background">
-              F
-            </div>
-            <span className="text-[15px] font-semibold tracking-tight">
-              Framer <span className="text-muted-foreground">→</span> Next.js Optimizer
-            </span>
-          </div>
-          <nav className="flex items-center gap-5 text-[13px]">
-            <Link href="/framer-to-html" className="font-medium text-foreground">Framer to HTML Converter</Link>
-            <Link href="/nextjs" className="text-muted-foreground hover:text-foreground">Pure Next.js</Link>
-            <Link href="/speed" className="text-muted-foreground hover:text-foreground">PageSpeed checker</Link>
-            <Link href="/blog" className="text-muted-foreground hover:text-foreground">Blog</Link>
-          </nav>
-        </div>
-      </header>
       <main className="mx-auto max-w-5xl px-5 pb-24">
         <section className="pt-14 pb-8">
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -217,6 +200,7 @@ function HomeSeoShell() {
         <section className="rounded-xl border border-border bg-muted/40 p-5 text-[14px] text-muted-foreground">
           Loading converter…
         </section>
+        <FeatureGrid />
         <AboutSection />
         <FaqSection />
       </main>
@@ -235,45 +219,18 @@ export default function HomePage() {
   );
 }
 
-function Header() {
-  return (
-    <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
-      <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3.5">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-6 w-6 items-center justify-center rounded bg-foreground text-[13px] font-bold text-background">
-            F
-          </div>
-          <span className="text-[15px] font-semibold tracking-tight">
-            Framer <span className="text-muted-foreground">→</span> Next.js Optimizer
-          </span>
-        </div>
-        <nav className="flex items-center gap-5 text-[13px]">
-          <Link href="/framer-to-html" className="font-medium text-foreground">
-            Framer to HTML Converter
-          </Link>
-          <Link href="/nextjs" className="text-muted-foreground hover:text-foreground">
-            Pure Next.js
-          </Link>
-          <Link href="/speed" className="text-muted-foreground hover:text-foreground">
-            PageSpeed checker
-          </Link>
-          <Link href="/blog" className="text-muted-foreground hover:text-foreground">
-            Blog
-          </Link>
-          <AuthNavLink />
-        </nav>
-      </div>
-    </header>
-  );
-}
-
 function Hero() {
   return (
-    <section className="pt-14 pb-8">
-      <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-        Convert Framer Websites to Next.js &amp; HTML
+    <section className="pt-16 pb-10 sm:pt-20">
+      <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1 text-[12.5px] font-medium text-muted-foreground">
+        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+        Free · No signup to preview
+      </div>
+      <h1 className="mt-4 text-[40px] font-semibold leading-[1.05] tracking-tight sm:text-[56px]">
+        Convert Framer sites to{" "}
+        <span className="text-accent">Next.js &amp; HTML</span>
       </h1>
-      <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+      <p className="mt-4 max-w-2xl text-[16px] leading-relaxed text-muted-foreground">
         Paste a published Framer URL and get a production-ready export: this captures the
         server-rendered HTML, strips Framer&apos;s JS runtime, self-hosts &amp; re-encodes
         images to WebP, inlines fonts, and runs an SEO pass — a deployable static bundle
@@ -282,7 +239,7 @@ function Hero() {
         {" "}or a{" "}
         <Link href="/nextjs" className="text-foreground underline underline-offset-2">real Next.js project</Link>.
       </p>
-      <div className="mt-4 rounded-lg border border-border bg-muted px-4 py-3 text-[13px] leading-relaxed text-muted-foreground">
+      <div className="mt-5 rounded-xl border border-border bg-muted/40 px-4 py-3 text-[13px] leading-relaxed text-muted-foreground">
         <span className="font-medium text-foreground">Honest expectations:</span>{" "}
         SEO / Best-Practices / Accessibility reliably hit 95–100. Performance is
         90–100 on desktop; mobile is typically 75–95 for marketing sites (Lighthouse
@@ -316,17 +273,64 @@ function ConvertCard(props: {
         <button
           onClick={() => props.convert()}
           disabled={busy || !props.url.trim()}
-          className="h-11 rounded-lg bg-foreground px-5 text-[15px] font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          className="h-11 rounded-lg bg-accent px-5 text-[15px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy ? "Converting…" : "Convert"}
         </button>
       </div>
 
       <div className="mt-4">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-foreground/5 px-2.5 py-1 text-[12px] font-medium">
-          <span className="h-1.5 w-1.5 rounded-full bg-foreground" />
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/20 bg-accent-soft px-2.5 py-1 text-[12px] font-medium text-accent">
+          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
           Hybrid mode — full fidelity, optimized
         </span>
+      </div>
+    </section>
+  );
+}
+
+function FeatureGrid() {
+  const features = [
+    {
+      icon: "⚡",
+      title: "Strips the runtime",
+      body: "Framer's JS bundle, hover-state machinery, and analytics beacon are removed — the server-rendered HTML ships as-is.",
+    },
+    {
+      icon: "🖼",
+      title: "Self-hosted, re-encoded images",
+      body: "Every image is downloaded, converted to WebP, and served from your own domain instead of Framer's CDN.",
+    },
+    {
+      icon: "🔍",
+      title: "Full SEO pass",
+      body: "Canonical tags, Open Graph, sitemaps, and structured data are checked and corrected automatically.",
+    },
+    {
+      icon: "🚀",
+      title: "Deploy in one click",
+      body: "Push the optimized bundle straight to Netlify or Vercel, or download a real Next.js project to keep.",
+    },
+  ];
+  return (
+    <section className="mt-20">
+      <h2 className="text-2xl font-semibold tracking-tight">Built for speed, kept pixel-perfect</h2>
+      <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+        Every conversion runs the same pipeline under the hood — no manual cleanup required.
+      </p>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        {features.map((f) => (
+          <div
+            key={f.title}
+            className="rounded-xl border border-border bg-background p-5 transition-colors hover:border-accent/40"
+          >
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-soft text-[16px]">
+              {f.icon}
+            </div>
+            <h3 className="mt-3 text-[15.5px] font-semibold">{f.title}</h3>
+            <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">{f.body}</p>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -684,7 +688,7 @@ function AboutSection() {
         {steps.map(([title, body], i) => (
           <li key={title} className="rounded-xl border border-border bg-background p-4">
             <div className="flex items-center gap-2 text-[13px] font-semibold">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-[11px] text-background">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-[11px] text-accent-foreground">
                 {i + 1}
               </span>
               {title}
@@ -706,7 +710,7 @@ function FaqSection() {
           <details key={f.q} className="group px-4" open={i === 0}>
             <summary className="flex cursor-pointer list-none items-center justify-between py-4 text-[15px] font-medium marker:content-none">
               <span>{f.q}</span>
-              <span className="ml-3 shrink-0 text-muted-foreground transition-transform group-open:rotate-45">
+              <span className="ml-3 shrink-0 text-accent transition-transform group-open:rotate-45">
                 +
               </span>
             </summary>

@@ -63,21 +63,6 @@ function badgeJsonLd() {
 export default function RemoveBadgeGuide() {
   return (
     <div className="min-h-screen w-full">
-      <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3.5">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="flex h-6 w-6 items-center justify-center rounded bg-foreground text-[13px] font-bold text-background">F</span>
-            <span className="text-[15px] font-semibold tracking-tight">
-              Framer <span className="text-muted-foreground">→</span> Next.js Optimizer
-            </span>
-          </Link>
-          <nav className="flex items-center gap-5 text-[13px]">
-            <Link href="/" className="text-muted-foreground hover:text-foreground">Hybrid converter</Link>
-            <Link href="/nextjs" className="text-muted-foreground hover:text-foreground">Pure Next.js</Link>
-            <Link href="/blog" className="text-muted-foreground hover:text-foreground">Blog</Link>
-          </nav>
-        </div>
-      </header>
 
       <main className="mx-auto max-w-3xl px-5 pb-24">
         <section className="pt-14 pb-8">

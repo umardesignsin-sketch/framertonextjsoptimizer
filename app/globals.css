@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
-/* Light-mode only, minimal Vercel-dashboard aesthetic. */
+/* Light-mode, minimal Vercel-dashboard aesthetic — plus one accent color
+   (indigo) reserved for primary CTAs and a handful of highlight moments.
+   Everything else stays monochrome; the accent is a spotlight, not a theme. */
 :root {
   --background: #ffffff;
   --foreground: #0a0a0a;
@@ -8,7 +10,10 @@
   --muted-foreground: #666;
   --border: #ebebeb;
   --border-strong: #d4d4d4;
-  --accent: #0a0a0a;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-soft: #eef2ff;
+  --accent-foreground: #ffffff;
 }
 
 @theme inline {
@@ -18,6 +23,10 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-foreground: var(--accent-foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

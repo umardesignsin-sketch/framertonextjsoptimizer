@@ -66,15 +66,6 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
 
   return (
     <div className="min-h-screen w-full">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-3.5 text-[13px]">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="flex h-6 w-6 items-center justify-center rounded bg-foreground text-[13px] font-bold text-background">F</span>
-            <span className="font-semibold">Framer → Next.js Optimizer</span>
-          </Link>
-          <Link href="/blog" className="text-muted-foreground hover:text-foreground">All posts</Link>
-        </div>
-      </header>
 
       {/* Case-study style: title + subtitle, a stacked meta list on the left
           with a single link on the right, then the hero image below — no

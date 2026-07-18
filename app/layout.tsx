@@ -4,7 +4,6 @@ import { Analytics } from "@vercel/analytics/next";
 import Script from "next/script";
 import "./globals.css";
 import { SITE, KEYWORDS, siteJsonLd, jsonLdScript } from "@/lib/site-meta";
-import { Footer } from "@/components/Footer";
 
 const GA_MEASUREMENT_ID = "G-RQ8X7MFJP6";
 
@@ -97,7 +96,6 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col">
         {children}
-        <Footer />
         <Analytics />
         {/* Google tag (gtag.js) */}
         <Script
