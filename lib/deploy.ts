@@ -26,7 +26,13 @@ export function toDeployableFiles(files: ConvertedFile[], previewFiles?: Convert
     const assets = files
       .filter((f) => f.path.startsWith("public/"))
       .map((f) => ({ ...f, path: f.path.replace(/^public\//, "") }));
-    return [...html, ...assets];
+    // Host config files (_headers, vercel.json — cache lifetimes for the
+    // self-hosted images) live at the project root alongside package.json
+    // etc., which this no-build path otherwise drops entirely since none of
+    // that root-level source is meaningful without `next build`. These two
+    // specifically ARE meaningful to a static deploy, so keep them.
+    const configFiles = files.filter((f) => f.path === "_headers" || f.path === "vercel.json");
+    return [...html, ...assets, ...configFiles];
   }
 
   return files;

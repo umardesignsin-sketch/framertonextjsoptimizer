@@ -32,6 +32,7 @@ import {
   copyAsset,
   rewriteImageRefs,
 } from "./images";
+import { platformConfigFiles } from "./platform-config";
 import type { ConvertReport, ConvertedFile } from "./types";
 
 export type ProgressFn = (msg: string) => void;
@@ -86,6 +87,32 @@ function boostLcpImage($: ReturnType<typeof load>): void {
       $el.attr("fetchpriority", "high");
       if ($el.attr("loading") === "lazy") $el.removeAttr("loading");
     }
+  });
+}
+
+/**
+ * Framer's own markup sets no `loading` attribute at all — every image on
+ * the page fetches eagerly, competing with the actual LCP image for
+ * bandwidth on first load. Same fix already validated on the Hybrid path
+ * (lib/loading.ts): everything except the hero (already marked
+ * fetchpriority="high" by boostLcpImage, which must run first) gets
+ * `loading="lazy"` + `decoding="async"`, so below-the-fold images don't
+ * start downloading until the browser is actually about to need them.
+ * Third-party video/map iframes get the same native lazy-load treatment —
+ * defers that embed's whole cost (script, cookies, network) until it's
+ * actually scrolled near, which is often never for a page view that never
+ * reaches that section.
+ */
+function deferOffscreenMedia($: ReturnType<typeof load>): void {
+  $("img").each((_, el) => {
+    const $el = $(el);
+    if ($el.attr("fetchpriority") === "high") return;
+    if (!$el.attr("loading")) $el.attr("loading", "lazy");
+    if (!$el.attr("decoding")) $el.attr("decoding", "async");
+  });
+  $("iframe").each((_, el) => {
+    const $el = $(el);
+    if (!$el.attr("loading")) $el.attr("loading", "lazy");
   });
 }
 
@@ -184,12 +211,13 @@ function fixUnlabeledLinks($: ReturnType<typeof load>): void {
  * Apply the correctness/performance/accessibility fixes: canonical/og:url
  * pointed off Framer's own domain (root-relative, then upgraded to absolute
  * client-side — see CANONICAL_SCRIPT), the LCP hero image prioritised,
- * Framer's analytics beacon dropped, preconnect hints for the CDN, and a
- * handful of accessibility gaps Framer's own export always has (missing
- * `lang`, iframe titles, a main landmark, unlabeled icon-only links).
- * Everything else in the document — Framer's runtime, appear-animation data,
- * every class and attribute, and all visual styling — is untouched, so the
- * page renders identically to the source.
+ * every other image/iframe deferred until needed, Framer's analytics beacon
+ * dropped, preconnect hints for the CDN, and a handful of accessibility gaps
+ * Framer's own export always has (missing `lang`, iframe titles, a main
+ * landmark, unlabeled icon-only links). Everything else in the document —
+ * Framer's runtime, appear-animation data, every class and attribute, and
+ * all visual styling — is untouched, so the page renders identically to the
+ * source.
  */
 function processDocument(html: string, route: string, assetMap: Map<string, string>): string {
   const $ = load(html);
@@ -210,6 +238,7 @@ function processDocument(html: string, route: string, assetMap: Map<string, stri
   // local /assets path. The fetchpriority attribute persists through the
   // rewrite.
   boostLcpImage($);
+  deferOffscreenMedia($);
   if (assetMap.size) rewriteImageRefs($, assetMap);
 
   ensureHtmlLang($);
@@ -473,6 +502,12 @@ export async function convertToNextJs(
   files.push({ path: "tsconfig.json", content: TSCONFIG });
   files.push({ path: ".gitignore", content: GITIGNORE });
   files.push({ path: "README.md", content: readme(start.toString(), pageHtml.size) });
+  // _headers / vercel.json: harmless alongside a real `next build`, but the
+  // thing that actually gives the self-hosted images a long-lived
+  // Cache-Control on the static (no-build) deploy path the in-app "Deploy"
+  // button uses — was already shipped for the Hybrid export, never wired up
+  // here.
+  files.push(...platformConfigFiles());
 
   const pageCount = pageHtml.size;
   return {
@@ -491,7 +526,7 @@ export async function convertToNextJs(
       "pure Next.js App Router project — one statically-prerendered, CDN-cached route per Framer page",
       "renders identically to the original (Framer runtime kept)",
       `images self-hosted & re-encoded to WebP under public/${assetMap.size ? ` (${assetMap.size} files)` : ""}`,
-      "LCP hero image prioritized (fetchpriority=high) for faster load than the original",
+      "LCP hero image prioritized (fetchpriority=high); every other image/video iframe deferred (loading=lazy)",
       "canonical URLs repointed to the deploy domain, Framer's analytics beacon removed",
       "accessibility gaps fixed: html[lang], iframe titles, one main landmark, unlabeled icon links",
       ...(capNote ? [capNote] : []),
