@@ -115,69 +115,22 @@ function boostLcpImage($: ReturnType<typeof load>): void {
   });
 }
 
-const VIDEO_HOST_RE = /vimeo\.com|youtube\.com|youtu\.be|wistia\.com/i;
-const FACADE_ATTR_NAMES = ["src", "width", "height", "allow", "allowfullscreen", "referrerpolicy", "frameborder"];
-
-// A single triangle-in-circle play icon, not tied to any one video host.
-const PLAY_BUTTON_SVG =
-  '<svg viewBox="0 0 68 48" width="68" height="48" aria-hidden="true">' +
-  '<path d="M66.52 7.74c-.78-2.93-2.49-5.41-5.42-6.19C55.79.13 34 0 34 0S12.21.13 6.9 1.55c-2.93.78-4.64 3.26-5.42 6.19C0 13.05 0 24 0 24s0 10.95 1.48 16.26c.78 2.93 2.49 5.41 5.42 6.19C12.21 47.87 34 48 34 48s21.79-.13 27.1-1.55c2.93-.78 4.64-3.26 5.42-6.19C68 34.95 68 24 68 24s0-10.95-1.48-16.26z" fill="#1a1a1a" fill-opacity=".8"/>' +
-  '<path d="M45 24 27 14v20" fill="#fff"/>' +
-  "</svg>";
-
-// Delegated listeners (one script for the whole page, however many videos it
-// has) rebuild a real iframe from the facade's stored attributes on click or
-// Enter/Space, and never touch anything until then.
-const VIDEO_FACADE_SCRIPT =
-  "<script>(function(){function swap(f){var attrs;try{attrs=JSON.parse(f.getAttribute('data-iframe-attrs')||'{}');}catch(e){attrs={};}" +
-  "var ifr=document.createElement('iframe');ifr.setAttribute('title','Video player');" +
-  "Object.keys(attrs).forEach(function(k){ifr.setAttribute(k,attrs[k]);});f.replaceWith(ifr);}" +
-  "document.addEventListener('click',function(e){var f=e.target.closest && e.target.closest('.__vid-facade');if(f)swap(f);});" +
-  "document.addEventListener('keydown',function(e){if(e.key!=='Enter'&&e.key!==' ')return;var f=e.target.closest && e.target.closest('.__vid-facade');if(!f)return;e.preventDefault();swap(f);});" +
-  "})();</script>";
-
 /**
- * Framer embeds video as a plain, eagerly-loaded `<iframe>` — the Vimeo/
- * YouTube player's own JS registers an unload handler in that sub-frame,
- * which unconditionally fails Lighthouse's bf-cache audit (confirmed via
- * Chrome's own protocol reason, `UnloadHandlerExistsInSubFrame`) the moment
- * the embed loads at all, independent of `loading="lazy"` timing. Not
- * Framer's runtime and not fixable by deferring — the only real fix is not
- * loading the actual player until someone asks for it: swap the iframe for a
- * static play-button placeholder (same size, a standard and expected pattern
- * for embedded video) and rebuild the real iframe on click/Enter/Space.
- * Keeps its own accessible name (role="button", aria-label) since the a11y
- * fixes below never see this element — it isn't an iframe at conversion time.
+ * A previous version of this function replaced video iframes with a
+ * click-to-play facade (a placeholder div, real iframe rebuilt on click) to
+ * dodge Lighthouse's bf-cache audit failure caused by the Vimeo/YouTube
+ * player's own unload handler. Removed: verified in a real browser — on the
+ * OLD architecture too, not something today's change caused — that Framer's
+ * own runtime doesn't recognize the facade div where it expects its video
+ * component's iframe, and silently reconstructs a live, eagerly-loaded
+ * iframe in its place regardless. That meant real users never actually got
+ * the deferred-load benefit; they paid for the facade's own script AND the
+ * eagerly-loaded video, which is worse than doing nothing. `loading="lazy"`
+ * on the iframe itself (applied to every iframe uniformly in
+ * deferOffscreenMedia below) is the only thing that has actually been
+ * verified to survive Framer's runtime, since it's an attribute on the real
+ * iframe rather than a substitute element Framer doesn't recognize.
  */
-function facadeVideoEmbeds($: ReturnType<typeof load>): boolean {
-  let any = false;
-  $("iframe").each((_, el) => {
-    const $el = $(el);
-    const src = $el.attr("src") || "";
-    if (!VIDEO_HOST_RE.test(src)) return;
-    any = true;
-
-    const attrs: Record<string, string> = {};
-    for (const name of FACADE_ATTR_NAMES) {
-      const v = $el.attr(name);
-      if (v !== undefined) attrs[name] = v;
-    }
-    const originalStyle = $el.attr("style") || "display:block;";
-    const facade = $("<div>")
-      .attr("class", "__vid-facade")
-      .attr("data-iframe-attrs", JSON.stringify(attrs))
-      .attr("role", "button")
-      .attr("tabindex", "0")
-      .attr("aria-label", "Play video")
-      .attr(
-        "style",
-        `${originalStyle};cursor:pointer;background:#000;display:flex;align-items:center;justify-content:center;`
-      )
-      .html(PLAY_BUTTON_SVG);
-    $el.replaceWith(facade);
-  });
-  return any;
-}
 
 /**
  * Framer's own markup sets no `loading` attribute at all — every image on
@@ -299,12 +252,11 @@ function fixUnlabeledLinks($: ReturnType<typeof load>): void {
 /**
  * Apply the correctness/performance/accessibility fixes: canonical/og:url
  * pointed off Framer's own domain (root-relative, then upgraded to absolute
- * client-side — see CANONICAL_SCRIPT), the LCP hero image prioritised, video
- * embeds turned into click-to-play facades, every other image/iframe
- * deferred until needed, Framer's analytics beacon dropped, preconnect hints
- * for the CDN, and a handful of accessibility gaps Framer's own export
- * always has (missing `lang`, iframe titles, a main landmark, unlabeled
- * icon-only links). Everything else in the document — Framer's runtime,
+ * client-side — see CANONICAL_SCRIPT), the LCP hero image prioritised, every
+ * other image/iframe deferred until needed, Framer's analytics beacon
+ * dropped, preconnect hints for the CDN, and a handful of accessibility gaps
+ * Framer's own export always has (missing `lang`, iframe titles, a main
+ * landmark, unlabeled icon-only links). Everything else in the document — Framer's runtime,
  * appear-animation data, every class and attribute, and all visual styling —
  * is untouched, so the page renders identically to the source.
  */
@@ -327,9 +279,6 @@ function processDocument(html: string, route: string, assetMap: Map<string, stri
   // local /assets path. The fetchpriority attribute persists through the
   // rewrite.
   boostLcpImage($);
-  // Before deferOffscreenMedia: no point lazy-loading an iframe this is
-  // about to remove entirely.
-  const hasVideoFacade = facadeVideoEmbeds($);
   deferOffscreenMedia($);
   if (assetMap.size) rewriteImageRefs($, assetMap);
 
@@ -353,7 +302,6 @@ function processDocument(html: string, route: string, assetMap: Map<string, stri
       '<link rel="preconnect" href="https://framerusercontent.com">'
   );
   $("head").append(CANONICAL_SCRIPT);
-  if (hasVideoFacade) $("body").append(VIDEO_FACADE_SCRIPT);
 
   return $.html();
 }
@@ -737,7 +685,6 @@ export async function convertToNextJs(
       "renders identically to the original (Framer runtime kept)",
       `images self-hosted & re-encoded to WebP under public/${assetMap.size ? ` (${assetMap.size} files)` : ""}`,
       "LCP hero image prioritized (fetchpriority=high); other images/embeds deferred (loading=lazy)",
-      "video embeds (Vimeo/YouTube) replaced with a click-to-play facade — no player JS loads until clicked",
       "canonical URLs repointed to the deploy domain, Framer's analytics beacon removed",
       "accessibility gaps fixed: html[lang], iframe titles, one main landmark, unlabeled icon links",
       ...(capNote ? [capNote] : []),
