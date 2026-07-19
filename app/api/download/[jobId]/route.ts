@@ -1,6 +1,6 @@
 // GET /api/download/{jobId} -> zip of the converted static bundle.
 import { getOrRegenerateJob } from "@/lib/store";
-import { zipBundle } from "@/lib/bundle";
+import { zipBundleStream } from "@/lib/bundle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +17,6 @@ export async function GET(
   if (!job) {
     return new Response("Job expired or not found.", { status: 404 });
   }
-  const zip = await zipBundle(job.report.files);
   const host = (() => {
     try {
       return new URL(job.report.sourceUrl).hostname.replace(/\./g, "-");
@@ -25,7 +24,10 @@ export async function GET(
       return "site";
     }
   })();
-  return new Response(new Uint8Array(zip), {
+  // Streamed, not buffered — Vercel hard-caps a function's buffered response
+  // at 4.5MB, and image-heavy exports (self-hosted WebP images) routinely
+  // exceed that. See lib/bundle.ts's zipBundleStream doc comment.
+  return new Response(zipBundleStream(job.report.files), {
     status: 200,
     headers: {
       "Content-Type": "application/zip",

@@ -2,7 +2,7 @@
 import JSZip from "jszip";
 import type { ConvertedFile } from "./types";
 
-export async function zipBundle(files: ConvertedFile[]): Promise<Buffer> {
+function buildZip(files: ConvertedFile[]): JSZip {
   const zip = new JSZip();
   for (const f of files) {
     const path = f.path.replace(/^\/+/, "");
@@ -17,5 +17,44 @@ export async function zipBundle(files: ConvertedFile[]): Promise<Buffer> {
       "any static host (Netlify drop, Vercel, Cloudflare Pages, GitHub Pages).\n" +
       "Do NOT run a build step — it is already built.\n"
   );
-  return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+  return zip;
+}
+
+/**
+ * Buffers the whole zip in memory — fine for an outbound fetch a serverless
+ * function makes itself (e.g. uploading to Netlify's deploy API in
+ * lib/deploy.ts), which isn't subject to any response-size limit. NOT safe
+ * to return directly as this function's own HTTP response to a browser —
+ * see zipBundleStream for that.
+ */
+export async function zipBundle(files: ConvertedFile[]): Promise<Buffer> {
+  return buildZip(files).generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+}
+
+/**
+ * Streams the zip instead of buffering it fully in memory. Required for
+ * serving a download directly from a Vercel Function: Vercel hard-caps a
+ * function's own (buffered) response body at 4.5MB — image-heavy Pure
+ * Next.js exports blow past that (measured at 30MB+ for a real site) — but
+ * per Vercel's own docs, a genuinely streamed response isn't subject to that
+ * limit. Wrap the result in `new Response(stream, {...})` directly.
+ */
+export function zipBundleStream(files: ConvertedFile[]): ReadableStream<Uint8Array> {
+  const nodeStream = buildZip(files).generateNodeStream({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+    streamFiles: true,
+  });
+  // Bridged manually via events rather than Readable.toWeb(): JSZip's stream
+  // is its own bundled stream implementation, not a genuine instance of
+  // Node's stream.Readable class, so toWeb() rejects it despite exposing the
+  // same on('data'/'end'/'error') interface.
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      nodeStream.on("data", (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)));
+      nodeStream.on("end", () => controller.close());
+      nodeStream.on("error", (err: unknown) => controller.error(err));
+      nodeStream.resume();
+    },
+  });
 }
