@@ -37,7 +37,11 @@ export interface FetchBinaryResult {
   contentType: string;
 }
 
-export async function fetchBinary(url: string): Promise<FetchBinaryResult> {
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchBinaryOnce(url: string): Promise<FetchBinaryResult> {
   const res = await fetch(url, {
     headers: { "User-Agent": UA, Accept: "*/*" },
     redirect: "follow",
@@ -49,6 +53,37 @@ export async function fetchBinary(url: string): Promise<FetchBinaryResult> {
     buffer: Buffer.from(arrayBuf),
     contentType: res.headers.get("content-type") || "",
   };
+}
+
+/**
+ * Sites with 100-300+ images fetch that many assets from Framer's CDN per
+ * conversion (6-way concurrent) — a real, observed failure mode: an
+ * occasional transient network error or 429/5xx silently dropped an image,
+ * which the caller then can't distinguish from a real 404, so it just keeps
+ * the original CDN URL. Retries transient failures (network errors, 429,
+ * 5xx) with a short backoff; a genuine 4xx (real 404/403) returns
+ * immediately since retrying won't fix a resource that doesn't exist.
+ */
+export async function fetchBinary(url: string, retries = 2): Promise<FetchBinaryResult> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const result = await fetchBinaryOnce(url);
+      const transientFailure = result.status === 429 || result.status >= 500;
+      if (transientFailure && attempt < retries) {
+        await delay(250 * (attempt + 1));
+        continue;
+      }
+      return result;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) {
+        await delay(250 * (attempt + 1));
+        continue;
+      }
+    }
+  }
+  throw lastErr;
 }
 
 /** Normalize a user-supplied URL into an absolute https origin + path. */
