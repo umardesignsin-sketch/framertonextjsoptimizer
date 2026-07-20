@@ -77,7 +77,7 @@ export default function PricingPage() {
 
       <main className="mx-auto max-w-3xl px-5 pb-24">
         <section className="pt-14 pb-4">
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Pricing — free, with nothing hidden</h1>
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Own your site instead of renting it</h1>
           <p className="mt-4 max-w-2xl text-[15.5px] leading-relaxed text-muted-foreground">
             Converting a Framer site to{" "}
             <Link href="/framer-to-html" className="text-foreground underline underline-offset-2">static HTML</Link>{" "}
@@ -85,10 +85,28 @@ export default function PricingPage() {
             <Link href="/nextjs" className="text-foreground underline underline-offset-2">Next.js project</Link>{" "}
             is free: no per-site fees, no export credits, no paywalled features. The only cost in the whole
             setup is your own hosting — and free tiers on Netlify or Vercel handle converted sites easily.
+            The real cost you&apos;re removing isn&apos;t ours; it&apos;s the Framer subscription you stop paying forever.
           </p>
         </section>
 
-        <section className="mt-8 overflow-hidden rounded-2xl border border-border">
+        <section className="mt-6 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-border p-5">
+            <div className="text-[12.5px] font-medium uppercase tracking-wide text-muted-foreground">Staying on Framer</div>
+            <div className="mt-2 text-2xl font-semibold tracking-tight">$5–30+<span className="text-[14px] font-normal text-muted-foreground">/mo, forever</span></div>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
+              Paid every month you keep the site live, on every site you run. Locked into Framer&apos;s editor and hosting the whole time.
+            </p>
+          </div>
+          <div className="rounded-xl border border-accent/30 bg-accent-soft/40 p-5">
+            <div className="text-[12.5px] font-medium uppercase tracking-wide text-accent">Converting once</div>
+            <div className="mt-2 text-2xl font-semibold tracking-tight">$0<span className="text-[14px] font-normal text-muted-foreground"> + your own free hosting</span></div>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
+              A real project you own outright. Deploy it anywhere Next.js or static HTML runs — no recurring fee tied to us or to Framer.
+            </p>
+          </div>
+        </section>
+
+        <section className="mt-6 overflow-hidden rounded-2xl border border-border">
           <div className="border-b border-border bg-foreground/5 px-6 py-5">
             <div className="flex items-baseline gap-3">
               <span className="text-4xl font-semibold tracking-tight">$0</span>

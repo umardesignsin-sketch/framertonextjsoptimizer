@@ -51,6 +51,10 @@ const NEXTJS_FAQ: { q: string; a: string }[] = [
     q: "Is it free?",
     a: "Yes — converting, previewing, and downloading the project are free. Deploying uses your own free Netlify or Vercel account, and there are no per-site fees.",
   },
+  {
+    q: "Will this make my site faster?",
+    a: "Not necessarily, and we'd rather tell you that upfront than oversell it. This export keeps Framer's own runtime intact so animations and interactions stay exactly as authored — which means it carries over the same JS/image weight the original had. We tested this directly across 10 real templates and published the honest results. If maximum Lighthouse score matters more than pixel-perfect fidelity for your site, use the Hybrid HTML export instead, which strips the runtime and rebuilds for speed.",
+  },
 ];
 
 const NEXTJS_STEPS = [
@@ -102,6 +106,28 @@ function human(n: number): string {
   if (n >= 1e6) return (n / 1e6).toFixed(1) + " MB";
   if (n >= 1e3) return (n / 1e3).toFixed(1) + " KB";
   return n + " B";
+}
+
+const NEXTJS_BENEFITS: [string, string][] = [
+  ["Own the code, not a subscription", "No more monthly Framer hosting fee, no editor lock-in. Deploy the project to your own Vercel or Netlify account and it's genuinely yours from that point on."],
+  ["Accessibility fixed automatically", "Framer's own export always ships without html[lang], iframe titles, a main landmark, or accessible names on icon-only links. This conversion fixes all four — measured improving on 10/10 real templates we tested."],
+  ["Deploy anywhere, extend forever", "A real package.json, tsconfig, and App Router project — open, editable, and portable to any host that runs Next.js, not tied to this tool after you download it."],
+];
+
+function NextjsBenefits() {
+  return (
+    <section className="mt-16 border-t border-border pt-12">
+      <h2 className="text-2xl font-semibold tracking-tight">Why real Next.js code, not just faster hosting</h2>
+      <div className="mt-5 grid gap-4 sm:grid-cols-3">
+        {NEXTJS_BENEFITS.map(([title, body]) => (
+          <div key={title} className="rounded-xl border border-border bg-background p-4">
+            <div className="text-[14.5px] font-semibold">{title}</div>
+            <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">{body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function NextJsConverter() {
@@ -194,7 +220,7 @@ function NextJsConverter() {
       <main className="mx-auto max-w-5xl px-5 pb-24">
         <section className="pt-14 pb-8">
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Convert Framer to Next.js
+            Own Your Framer Site as Real Next.js Code
           </h1>
           <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             Paste a published{" "}
@@ -202,24 +228,25 @@ function NextJsConverter() {
             URL and get back a real, deployable{" "}
             <a href="https://nextjs.org/docs/app" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Next.js App Router</a>{" "}
             project — one statically-prerendered route per page that renders{" "}
-            <span className="font-medium text-foreground">identically to the original</span>. Deploy it to{" "}
+            <span className="font-medium text-foreground">identically to the original</span>, animations included.
+            Stop paying for Framer hosting, stop being locked into their editor — deploy the code to{" "}
             <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Vercel</a>{" "}or{" "}
             <a href="https://www.netlify.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Netlify</a>{" "}
-            in one click, or preview the difference with the{" "}
-            <Link href="/speed" className="text-foreground underline underline-offset-2">PageSpeed checker</Link>.
+            for free and it&apos;s genuinely yours from that point on.
           </p>
           <div className="mt-4 rounded-lg border border-border bg-muted px-4 py-3 text-[13px] leading-relaxed text-muted-foreground">
-            <span className="font-medium text-foreground">Note:</span> each page is a
-            statically-prerendered Next.js route that serves the original Framer page verbatim,
-            with Framer&apos;s own runtime and CDN assets kept intact — so the site renders and
-            behaves <span className="font-medium text-foreground">exactly</span> like the source,
-            animations included. Prefer plain static files with zero
-            framework instead? Use the{" "}
+            <span className="font-medium text-foreground">Honest expectations:</span> this export
+            keeps Framer&apos;s own runtime and CDN assets intact, so the site renders and behaves{" "}
+            <span className="font-medium text-foreground">exactly</span> like the source — that&apos;s
+            the point, not a compromise. It also automatically fixes the accessibility gaps every
+            Framer export ships with (missing <code>lang</code>, untitled iframes, no landmark, unlabeled
+            icon links). What it does <span className="font-medium text-foreground">not</span> promise is a
+            faster Lighthouse score — we{" "}
+            <Link href="/blog/does-converting-framer-to-next-js-make-it-faster-10-real-templates-tested" className="underline">tested that honestly across 10 real templates</Link>.
+            Want maximum speed instead of pixel-perfect fidelity? Use the{" "}
             <Link href="/" className="underline">Hybrid converter</Link>, or{" "}
             <Link href="/speed" className="underline">compare both against your original</Link>{" "}
-            with the{" "}
-            <a href="https://developer.chrome.com/docs/lighthouse/overview" target="_blank" rel="noopener noreferrer" className="underline">Lighthouse</a>{" "}
-            PageSpeed checker.
+            with the PageSpeed checker.
           </div>
         </section>
 
@@ -338,8 +365,10 @@ function NextJsConverter() {
           </section>
         )}
 
+        <NextjsBenefits />
+
         {/* How it works — matches the HowTo schema below */}
-        <section className="mt-20 border-t border-border pt-12">
+        <section className="mt-16 border-t border-border pt-12">
           <h2 className="text-2xl font-semibold tracking-tight">How to convert Framer to Next.js</h2>
           <ol className="mt-4 grid gap-3 sm:grid-cols-2">
             {NEXTJS_STEPS.map((s, i) => (
@@ -401,17 +430,19 @@ function NextjsSeoShell() {
       <main className="mx-auto max-w-5xl px-5 pb-24">
         <section className="pt-14 pb-8">
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Convert Framer to Next.js
+            Own Your Framer Site as Real Next.js Code
           </h1>
           <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
             Paste a published Framer URL and get a real, deployable Next.js App Router project —
-            one statically-prerendered route per page that renders identically to the original.
+            one statically-prerendered route per page that renders identically to the original,
+            animations included. Stop paying for Framer hosting and own the code instead.
           </p>
         </section>
         <section className="rounded-xl border border-border bg-muted/40 p-5 text-[14px] text-muted-foreground">
           Loading converter…
         </section>
-        <section className="mt-20 border-t border-border pt-12">
+        <NextjsBenefits />
+        <section className="mt-16 border-t border-border pt-12">
           <h2 className="text-2xl font-semibold tracking-tight">How to convert Framer to Next.js</h2>
           <ol className="mt-4 grid gap-3 sm:grid-cols-2">
             {NEXTJS_STEPS.map((s, i) => (
