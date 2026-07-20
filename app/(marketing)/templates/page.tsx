@@ -43,7 +43,7 @@ const TEMPLATES: Template[] = [
     tagline: "Agency Portfolio Template",
     description:
       "A premium agency portfolio template for creative agencies, digital agencies, design studios, and web development teams — homepage, project galleries, case studies, team, and testimonials, all responsive.",
-    image: "https://image.mux.com/5zZ02SsZ2Zt637H02sLmFlCwQffexpSxdhIXweWaVsOWE/thumbnail.jpg?time=0",
+    image: "https://image.mux.com/5zZ02SsZ2Zt637H02sLmFlCwQffexpSxdhIXweWaVsOWE/thumbnail.jpg?time=2",
     previewUrl: "https://portfolie.framer.website/",
     getUrl: "https://framer.link/ggmluKZ",
     categories: ["Agency", "Portfolio", "Consulting", "Free"],
@@ -55,7 +55,7 @@ const TEMPLATES: Template[] = [
     tagline: "Free Photography Portfolio Template",
     description:
       "A sleek, modern template built specifically for photographers, photography studios, videographers, and content creators who need a clean, easy-to-customize portfolio.",
-    image: "https://image.mux.com/Uj6giFQ01VBRXxaZJNeo01jqGfSHdXk5LnouUI01iCSjQk/thumbnail.jpg?time=0",
+    image: "https://image.mux.com/Uj6giFQ01VBRXxaZJNeo01jqGfSHdXk5LnouUI01iCSjQk/thumbnail.jpg?time=2",
     previewUrl: "https://photograph.framer.media/",
     getUrl: "https://framer.link/cyRXHVw",
     categories: ["Personal", "Photography", "Portfolio", "Art & Design"],
@@ -67,7 +67,7 @@ const TEMPLATES: Template[] = [
     tagline: "Portfolio Template for Designers, Developers & Freelancers",
     description:
       "A modern portfolio template crafted for designers, developers, and freelancers who want a professional personal site without starting from a blank canvas.",
-    image: "https://image.mux.com/ESvjhdOfZ1G2G3ywT3PEMEA7Ird6Zlfwx1VODROlbEs/thumbnail.jpg?time=0",
+    image: "https://image.mux.com/ESvjhdOfZ1G2G3ywT3PEMEA7Ird6Zlfwx1VODROlbEs/thumbnail.jpg?time=2",
     previewUrl: "https://portfolioz.framer.ai/",
     getUrl: "https://framer.link/DUF18Uz",
     categories: ["Resume", "Agency", "Personal", "Free"],
@@ -79,7 +79,7 @@ const TEMPLATES: Template[] = [
     tagline: "Portfolio Website Template",
     description:
       "A clean portfolio website template for showcasing personal work, résumé-style project history, and a professional online presence.",
-    image: "https://image.mux.com/IbR8LODgIyh00q00VFEAessfq01StnwBlBTHi016wVEFMCU/thumbnail.jpg?time=0",
+    image: "https://image.mux.com/IbR8LODgIyh00q00VFEAessfq01StnwBlBTHi016wVEFMCU/thumbnail.jpg?time=2",
     previewUrl: "https://portfoliona.framer.website/",
     getUrl: "https://framer.link/6uLAIxO",
     categories: ["Resume", "Personal", "Portfolio", "Free"],
@@ -91,7 +91,7 @@ const TEMPLATES: Template[] = [
     tagline: "Developer Portfolio Template",
     description:
       "A developer-focused portfolio template with a built-in blog layout — built for engineers and technical freelancers who want to showcase projects and writing together.",
-    image: "https://image.mux.com/7yOmXqMPwRS9s01WKtzgEkTLYll2eIuHW4NtcN7xGnu4/thumbnail.jpg?time=0",
+    image: "https://image.mux.com/7yOmXqMPwRS9s01WKtzgEkTLYll2eIuHW4NtcN7xGnu4/thumbnail.jpg?time=2",
     previewUrl: "https://devfolio.framer.media/",
     getUrl: "https://framer.link/x52CtuV",
     categories: ["Resume", "Blog", "Portfolio", "Free"],
