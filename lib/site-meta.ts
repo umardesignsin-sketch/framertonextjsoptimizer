@@ -8,7 +8,7 @@ export const SITE = {
   url: "https://framertonextjs.com",
   tagline: "Convert Framer sites to optimized Next.js",
   description:
-    "Convert any published Framer site into a fast, deployable Next.js project or optimized static bundle. Strips Framer's runtime, self-hosts images as WebP, inlines fonts, and runs an SEO pass for top Lighthouse scores — plus a visual editor to change text, links, and images and publish live.",
+    "Convert any published Framer site into a fast, deployable Next.js project or an optimized static bundle. Self-hosts images as WebP, self-hosts fonts, and runs a full SEO pass either way — plus a visual editor to change text, links, and images and publish live. Choose Hybrid to strip Framer's runtime for the highest Lighthouse score, or Pure Next.js to keep it fully intact for byte-for-byte fidelity.",
 } as const;
 
 /** Keywords worth ranking for (also a useful signal for answer engines). */
