@@ -39,6 +39,7 @@ publish live.
 - [Remove the Made in Framer badge](${SITE.url}/guides/remove-made-in-framer-badge): The two legitimate ways to remove the badge, compared.
 - [Blog](${SITE.url}/blog): Guides and updates, including a 10-real-template Lighthouse comparison and a breakdown of Framer's own accessibility gaps.
 - [Manifesto](${SITE.url}/manifesto): The project's stated principles — code ownership over subscriptions, pixel-perfect fidelity as non-negotiable, and publishing honest test results even when they don't flatter the product.
+- [Free web tools](${SITE.url}/tools): Meta tags & social preview checker, robots.txt generator — free, no signup.
 
 ## What it does
 - Converts Framer sites to Next.js (fidelity-first) or an optimized static bundle (speed-first)

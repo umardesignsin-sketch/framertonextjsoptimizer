@@ -30,6 +30,14 @@ const COLUMNS: { heading: string; links: { label: string; href: string }[] }[] =
       { label: "Pricing", href: "/pricing" },
     ],
   },
+  {
+    heading: "Tools",
+    links: [
+      { label: "All tools", href: "/tools" },
+      { label: "Meta tags checker", href: "/tools/meta-tags-checker" },
+      { label: "Robots.txt generator", href: "/tools/robots-txt-generator" },
+    ],
+  },
 ];
 
 export function Footer() {
@@ -72,7 +80,7 @@ export function Footer() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-x-10 gap-y-8 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-x-8 gap-y-8 sm:grid-cols-4">
           {COLUMNS.map((col) => (
             <div key={col.heading}>
               <div className="text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
