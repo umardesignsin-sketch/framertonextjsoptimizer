@@ -22,6 +22,12 @@ import {
   copyAsset,
   rewriteImageRefs,
 } from "./images";
+import {
+  collectFontUrls,
+  fontLocalPath,
+  ensureFontDisplaySwap,
+  removeFontPreconnects,
+} from "./fonts";
 import { platformConfigFiles } from "./platform-config";
 import type { ConvertReport, ConvertedFile } from "./types";
 
@@ -247,6 +253,14 @@ function processDocument(html: string, route: string, assetMap: Map<string, stri
   deferOffscreenMedia($);
   if (assetMap.size) rewriteImageRefs($, assetMap);
 
+  // Force font-display:swap on whatever @font-face rules remain (their
+  // src: url() was just rewritten to local paths above, sharing assetMap
+  // with images — rewriteImageRefs already handles CSS url() rewriting
+  // generically) and drop Framer's own Google Fonts preconnect/stylesheet
+  // links, which are dead weight once the actual font files are self-hosted.
+  ensureFontDisplaySwap($);
+  removeFontPreconnects($);
+
   ensureHtmlLang($);
   ensureIframeTitles($);
   ensureMainLandmark($);
@@ -259,13 +273,10 @@ function processDocument(html: string, route: string, assetMap: Map<string, stri
   // weight + a pointless privacy leak), unlike the runtime bundle itself.
   $('script[src^="https://events.framer.com/"]').remove();
 
-  // The runtime bundle and fonts still load from Framer's CDN (images are now
-  // self-hosted) — preconnecting shaves the DNS+TLS handshake off the very
-  // first request instead of paying it mid-render.
-  $("head").prepend(
-    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
-      '<link rel="preconnect" href="https://framerusercontent.com">'
-  );
+  // The runtime bundle itself still loads from Framer's CDN (images and
+  // fonts are now self-hosted) — preconnecting shaves the DNS+TLS handshake
+  // off the very first request instead of paying it mid-render.
+  $("head").prepend('<link rel="preconnect" href="https://framerusercontent.com">');
   $("head").append(CANONICAL_SCRIPT);
 
   return $.html();
@@ -407,7 +418,8 @@ full content, animations, interactivity.
 
 On top of that it applies a few fixes: site images are re-encoded to WebP and
 self-hosted under \`public/assets/img\` (fidelity-safe, and the biggest payload
-win on image-led sites), the above-the-fold hero image is marked
+win on image-led sites), fonts are self-hosted under \`public/assets/fonts\`
+with \`font-display: swap\` forced, the above-the-fold hero image is marked
 \`fetchpriority="high"\` for a faster LCP, canonical/og:url are repointed to the
 deploy domain (root-relative, upgraded to absolute in the browser so they never
 reference Framer's domain), and Framer's analytics beacon is removed. Pages are
@@ -475,14 +487,19 @@ export async function convertToNextJs(
   // ships assets under public/ so Next serves them from the deploy's own CDN.
   const MAX_IMAGES = 300;
   const imageUrls = new Set<string>();
+  const fontUrls = new Set<string>();
   for (const html of pageHtml.values()) {
     const $ = load(html);
-    collectImageUrls($, collectStyleText($)).forEach((u) => imageUrls.add(u));
+    const css = collectStyleText($);
+    collectImageUrls($, css).forEach((u) => imageUrls.add(u));
+    collectFontUrls(css).forEach((u) => fontUrls.add(u));
   }
-  const assetMap = new Map<string, string>(); // original URL -> /assets/img/<hash>.webp
+  const assetMap = new Map<string, string>(); // original URL -> /assets/img|fonts/<hash>.ext
   const assetFiles: ConvertedFile[] = [];
   let imgBefore = 0;
   let imgAfter = 0;
+  let imagesHosted = 0;
+  let fontsHosted = 0;
   const urls = [...imageUrls].slice(0, MAX_IMAGES);
   const capNote =
     imageUrls.size > urls.length ? `image cap hit: optimized ${urls.length} of ${imageUrls.size}` : null;
@@ -503,8 +520,32 @@ export async function convertToNextJs(
         assetFiles.push({ path: `public${result.localPath}`, binary: result.buffer });
         imgBefore += result.beforeBytes;
         imgAfter += result.afterBytes;
+        imagesHosted++;
       } catch {
         /* skip broken asset — its <img> keeps the original CDN URL */
+      }
+    });
+  }
+
+  // ---- Self-host fonts ----
+  // Framer inlines the @font-face rules themselves but leaves the actual
+  // .woff2 files on fonts.gstatic.com/framerusercontent.com — self-hosting
+  // removes that third-party connection entirely (on top of the preconnect
+  // hint) and lets font-display:swap be forced so text never blocks on it.
+  let fontBytes = 0;
+  if (fontUrls.size) {
+    onProgress(`Self-hosting ${fontUrls.size} font file(s)…`);
+    await mapLimit([...fontUrls], 6, async (url) => {
+      try {
+        const bin = await fetchBinary(url);
+        if (bin.status >= 400 || bin.buffer.length === 0) return;
+        const local = fontLocalPath(url);
+        assetMap.set(url, local);
+        assetFiles.push({ path: `public${local}`, binary: bin.buffer });
+        fontBytes += bin.buffer.length;
+        fontsHosted++;
+      } catch {
+        /* skip — the @font-face rule keeps its original CDN url() */
       }
     });
   }
@@ -557,12 +598,18 @@ export async function convertToNextJs(
       ...(imgBefore > 0
         ? [{ label: "Image payload", before: imgBefore, after: imgAfter, unit: "bytes" as const }]
         : []),
+      ...(fontBytes > 0
+        ? [{ label: "Font payload self-hosted", before: fontBytes, after: fontBytes, unit: "bytes" as const }]
+        : []),
     ],
     notes: [
       "pure Next.js App Router project — one statically-prerendered, CDN-cached route per Framer page",
       "renders identically to the original (Framer runtime kept)",
-      `images self-hosted & re-encoded to WebP under public/${assetMap.size ? ` (${assetMap.size} files)` : ""}`,
+      `images self-hosted & re-encoded to WebP under public/${imagesHosted ? ` (${imagesHosted} files)` : ""}`,
       "LCP hero image prioritized (fetchpriority=high); other images/embeds deferred (loading=lazy)",
+      ...(fontsHosted
+        ? [`fonts self-hosted (${fontsHosted} files), font-display:swap forced, Google Fonts preconnect removed`]
+        : []),
       "canonical URLs repointed to the deploy domain, Framer's analytics beacon removed",
       "accessibility gaps fixed: html[lang], iframe titles, one main landmark, unlabeled icon links",
       ...(capNote ? [capNote] : []),
