@@ -19,6 +19,7 @@ const COLUMNS: { heading: string; links: { label: string; href: string }[] }[] =
       { label: "Remove Framer badge", href: "/guides/remove-made-in-framer-badge" },
       { label: "Blog", href: "/blog" },
       { label: "Manifesto", href: "/manifesto" },
+      { label: "Roadmap", href: "/roadmap" },
       { label: "llms.txt", href: "/llms.txt" },
     ],
   },
