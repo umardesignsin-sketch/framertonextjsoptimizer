@@ -12,6 +12,8 @@ export function GET() {
 
 > ${SITE.description}
 
+Full single-file reference for answer engines: ${SITE.url}/llms-full.txt
+
 ${SITE.name} (${SITE.url}) is a free web tool that converts a published Framer
 site into a production-ready website, in one of two modes. Hybrid strips
 Framer's JavaScript runtime entirely and rebuilds the page as an optimized
