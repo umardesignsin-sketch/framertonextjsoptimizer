@@ -45,3 +45,9 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# Local tooling config (dev-server launch definition for the preview pane)
+.claude/
+
+# Session-local scratch / verification files (Lighthouse output, test scripts)
+scratch-*
