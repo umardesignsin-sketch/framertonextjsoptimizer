@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The CLI is a separate package with its own toolchain (tsconfig, build).
+    // It manages its own quality; the root Next lint shouldn't touch it —
+    // especially cli/dist, the generated esbuild bundle.
+    "cli/**",
   ]),
 ]);
 
