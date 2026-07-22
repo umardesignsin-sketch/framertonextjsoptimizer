@@ -113,3 +113,17 @@ model Deployment {
 
   @@index([siteId, createdAt])
 }
+
+/// First-touch signup attribution, keyed by the Supabase auth user id.
+/// Captured once at first sign-in (auth callback) — country from the CDN geo
+/// header, source/referrer/UTM from a first-touch cookie set on landing.
+model SignupMeta {
+  userId      String   @id
+  country     String?
+  source      String?
+  medium      String?
+  campaign    String?
+  referrer    String?
+  landingPath String?
+  createdAt   DateTime @default(now())
+}

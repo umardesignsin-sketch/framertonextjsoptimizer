@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Analytics } from "@vercel/analytics/next";
-import Script from "next/script";
+import { Analytics as VercelAnalytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { SITE, KEYWORDS, siteJsonLd, jsonLdScript } from "@/lib/site-meta";
+import { Analytics } from "@/components/Analytics";
 
-const GA_MEASUREMENT_ID = "G-RQ8X7MFJP6";
+// Falls back to the original hardcoded property so nothing breaks if the env
+// var isn't set; override per-environment with NEXT_PUBLIC_GA_ID.
+const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_ID || "G-RQ8X7MFJP6";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -96,20 +99,11 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col">
         {children}
-        <Analytics />
-        {/* Google tag (gtag.js) */}
-        <Script
-          src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
-          strategy="afterInteractive"
-        />
-        <Script id="ga-init" strategy="afterInteractive">
-          {`
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            gtag('js', new Date());
-            gtag('config', '${GA_MEASUREMENT_ID}');
-          `}
-        </Script>
+        <VercelAnalytics />
+        {/* GA4 — first-touch attribution + SPA-aware pageviews. */}
+        <Suspense fallback={null}>
+          <Analytics gaId={GA_MEASUREMENT_ID} />
+        </Suspense>
       </body>
     </html>
   );

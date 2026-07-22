@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { createSupabaseAdmin, supabaseAdminConfigured } from "@/lib/supabase/admin";
 import { db, dbConfigured } from "@/lib/db";
+import { signupMetaFor } from "@/lib/attribution";
+
+/** ISO 3166-1 alpha-2 → flag emoji (regional indicator pair). */
+function flag(cc: string): string {
+  if (!/^[A-Za-z]{2}$/.test(cc)) return "";
+  return String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+}
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -79,16 +86,26 @@ export default async function AdminUsersPage() {
     }
   }
 
+  // First-touch attribution (country + source) per signup.
+  const attr = await signupMetaFor(signups.map((s) => s.id));
+
   const total = signups.length;
   const verified = signups.filter((s) => s.verified).length;
-  const google = signups.filter((s) => s.provider === "google").length;
   const last7 = countRecent(signups, 7);
+
+  // Top acquisition source among users we have attribution for.
+  const sourceCounts = new Map<string, number>();
+  for (const s of signups) {
+    const src = attr.get(s.id)?.source;
+    if (src) sourceCounts.set(src, (sourceCounts.get(src) || 0) + 1);
+  }
+  const topSource = [...sourceCounts.entries()].sort((a, b) => b[1] - a[1])[0];
 
   const stats = [
     ["Total signups", total],
     ["New (7 days)", last7],
     ["Verified", verified],
-    ["via Google", google],
+    ["Top source", topSource ? `${topSource[0]} (${topSource[1]})` : "—"],
   ] as const;
 
   return (
@@ -115,7 +132,8 @@ export default async function AdminUsersPage() {
             <tr>
               <th className="px-4 py-2.5 font-medium">Email</th>
               <th className="px-4 py-2.5 font-medium">Method</th>
-              <th className="px-4 py-2.5 font-medium">Verified</th>
+              <th className="px-4 py-2.5 font-medium">Source</th>
+              <th className="px-4 py-2.5 font-medium">Country</th>
               <th className="px-4 py-2.5 font-medium">Sites</th>
               <th className="px-4 py-2.5 font-medium">Signed up</th>
               <th className="px-4 py-2.5 font-medium">Last seen</th>
@@ -124,23 +142,33 @@ export default async function AdminUsersPage() {
           <tbody className="divide-y divide-border">
             {signups.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">No signups yet.</td>
+                <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">No signups yet.</td>
               </tr>
             ) : (
-              signups.map((s) => (
+              signups.map((s) => {
+                const a = attr.get(s.id);
+                return (
                 <tr key={s.id}>
                   <td className="px-4 py-2.5">{s.email}</td>
                   <td className="px-4 py-2.5">
                     <span className="rounded-full border border-border-strong px-2 py-0.5 text-[11px] capitalize">{s.provider}</span>
                   </td>
-                  <td className="px-4 py-2.5">
-                    {s.verified ? <span className="text-emerald-600">✓</span> : <span className="text-muted-foreground">—</span>}
+                  <td className="px-4 py-2.5 text-muted-foreground">
+                    {a?.source ? <span className="text-foreground">{a.source}</span> : "—"}
+                  </td>
+                  <td className="px-4 py-2.5 whitespace-nowrap">
+                    {a?.country ? (
+                      <span title={a.country}>{flag(a.country)} {a.country}</span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-2.5">{siteCounts.get(s.id) ?? 0}</td>
                   <td className="px-4 py-2.5 text-muted-foreground">{fmt(s.createdAt)}</td>
                   <td className="px-4 py-2.5 text-muted-foreground">{fmt(s.lastSignInAt)}</td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>
