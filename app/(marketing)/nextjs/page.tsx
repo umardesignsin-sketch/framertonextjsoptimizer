@@ -59,6 +59,10 @@ const NEXTJS_FAQ: { q: string; a: string }[] = [
     q: "Is there a CLI or npm package?",
     a: "Yes. Run npx framer-to-nextjs <your-framer-url> in a terminal and the same converter writes the full Next.js project straight to disk — or the runtime-stripped static bundle with --mode hybrid. It works from any published Framer URL with no login or plugin, and being a normal npm package, it's scriptable in CI or a nightly rebuild job.",
   },
+  {
+    q: "Is the generated code clean, hand-editable React components?",
+    a: "No, and we'd rather say so than oversell it: each page ships as a single, byte-exact HTML string, because decomposing it into separate JSX components breaks Framer's runtime hydration (we measured this directly — 94 down to 62 mobile Performance). Every route.ts file does include an orientation comment with the page's nav links and heading outline. For genuinely clean components, the realistic move is refining the deployed export with an AI coding assistant afterward, extracting one static section at a time.",
+  },
 ];
 
 const NEXTJS_STEPS = [

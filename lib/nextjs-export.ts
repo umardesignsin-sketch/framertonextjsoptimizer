@@ -12,7 +12,7 @@
 // payload duplication, 36 vs 81 mobile Perf; decomposed JSX: React cannot
 // emit the HTML comment nodes Framer's hydration depends on, 94 -> 62).
 import { fetchText, fetchBinary, normalizeUrl } from "./fetch";
-import { load, detectFramer, extractMeta, collectStyleText } from "./parse";
+import { load, detectFramer, extractMeta, collectStyleText, type Doc } from "./parse";
 import { discoverPages, normalizeRoute } from "./discover";
 import { toRootRelative } from "./seo";
 import {
@@ -231,9 +231,56 @@ function fixUnlabeledLinks($: ReturnType<typeof load>): void {
  * appear-animation data, every class and attribute, and all visual styling —
  * is untouched, so the page renders identically to the source.
  */
-function processDocument(html: string, route: string, assetMap: Map<string, string>): string {
+const normWs = (s: string) => s.replace(/\s+/g, " ").trim();
+
+interface PageMap {
+  title: string;
+  navLinks: { text: string; href: string }[];
+  headings: { tag: string; text: string }[];
+}
+
+/**
+ * Read-only structural summary of a page — nav links + heading outline —
+ * used only to print an orientation comment above the HTML string constant
+ * in the generated route.ts (see routeHandler()). The served HTML is
+ * untouched; this never mutates $, only reads it. The goal: a developer
+ * opening the file gets an immediate map of what's inside a large minified
+ * HTML string, without needing to parse it by eye first.
+ */
+function extractPageMap($: Doc): PageMap {
+  const title = normWs($("title").first().text() || "");
+
+  const seenHrefs = new Set<string>();
+  const navLinks: { text: string; href: string }[] = [];
+  $("nav a[href], header a[href]").each((_, el) => {
+    const href = ($(el).attr("href") || "").trim();
+    const text = normWs($(el).text());
+    if (!href || !text || seenHrefs.has(href)) return;
+    seenHrefs.add(href);
+    navLinks.push({ text: text.slice(0, 40), href });
+  });
+
+  const headings: { tag: string; text: string }[] = [];
+  $("h1, h2, h3").each((_, el) => {
+    const text = normWs($(el).text());
+    if (!text) return;
+    const tag = (el as { tagName?: string }).tagName?.toLowerCase() || "h?";
+    headings.push({ tag, text: text.slice(0, 80) });
+  });
+
+  return { title, navLinks: navLinks.slice(0, 20), headings: headings.slice(0, 30) };
+}
+
+function processDocument(
+  html: string,
+  route: string,
+  assetMap: Map<string, string>
+): { html: string; map: PageMap } {
   const $ = load(html);
   const path = route || "/";
+  // Extracted early, before any attribute/asset rewriting — a read-only
+  // snapshot of nav links + heading outline for the orientation comment.
+  const map = extractPageMap($);
 
   $('link[rel="canonical"]').each((_, el) => {
     if (toRootRelative($(el).attr("href"))) $(el).attr("href", path);
@@ -279,7 +326,7 @@ function processDocument(html: string, route: string, assetMap: Map<string, stri
   $("head").prepend('<link rel="preconnect" href="https://framerusercontent.com">');
   $("head").append(CANONICAL_SCRIPT);
 
-  return $.html();
+  return { html: $.html(), map };
 }
 
 /**
@@ -313,13 +360,43 @@ function processDocument(html: string, route: string, assetMap: Map<string, stri
  * asset — near-zero TTFB on Vercel/Netlify, matching how Framer's own
  * hosting serves the original.
  */
-function routeHandler(html: string): string {
+// Template literals are the file format here, so any site content dropped
+// into a comment has to lose backticks/${...}/newlines or it breaks the
+// generated file (or worse, escapes the comment). Comments only — never
+// applied to the served HTML itself.
+function commentSafe(s: string): string {
+  return s.replace(/`/g, "'").replace(/\$\{/g, "$ {").replace(/\r?\n/g, " ");
+}
+
+/** Orientation comment: nav links + heading outline, so opening a route.ts
+ *  file gives a developer an immediate map of what's inside the HTML string
+ *  below, instead of a wall of minified markup with no landmarks. */
+function pageMapComment(map: PageMap): string {
+  const lines: string[] = [
+    "// Page map (orientation only — search this file for a title below to",
+    "// jump to that spot in the HTML string constant further down):",
+  ];
+  if (map.title) lines.push(`//   Title: "${commentSafe(map.title)}"`);
+  if (map.navLinks.length) {
+    const nav = map.navLinks.map((l) => `${commentSafe(l.text)} (${commentSafe(l.href)})`).join(" · ");
+    lines.push(`//   Nav: ${nav}`);
+  }
+  if (map.headings.length) {
+    const heads = map.headings.map((h) => `${h.tag} "${commentSafe(h.text)}"`).join(" · ");
+    lines.push(`//   Sections: ${heads}`);
+  }
+  return lines.join("\n");
+}
+
+function routeHandler(html: string, map: PageMap): string {
   return `// Auto-generated from the original Framer page. Served verbatim — including
 // the HTML comment nodes, which are Framer's React hydration (Suspense
 // boundary) markers: rendering this through JSX instead was tried and
 // reverted because React cannot emit comment nodes, and losing them forces
 // Framer's runtime into a slow client-side re-render (measured 94 -> 62
 // mobile Performance). See routeHandler() in lib/nextjs-export.ts.
+//
+${pageMapComment(map)}
 export const dynamic = "force-static";
 
 const HTML = ${JSON.stringify(html)};
@@ -560,8 +637,8 @@ export async function convertToNextJs(
   const previewFiles: ConvertedFile[] = [];
 
   for (const [route, html] of pageHtml.entries()) {
-    const processed = processDocument(html, route, assetMap);
-    files.push({ path: routeFilePath(route), content: routeHandler(processed) });
+    const { html: processed, map } = processDocument(html, route, assetMap);
+    files.push({ path: routeFilePath(route), content: routeHandler(processed, map) });
     const r = route.replace(/^\/+/, "").replace(/\/+$/, "");
     previewFiles.push({ path: r ? `.next-preview/${r}/index.html` : ".next-preview/index.html", content: processed });
   }
