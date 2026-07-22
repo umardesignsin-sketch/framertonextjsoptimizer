@@ -1,4 +1,8 @@
-// Network layer: fetch Framer SSR HTML and binary assets with browser-like headers.
+// Network layer: fetch Framer SSR HTML and binary assets with browser-like
+// headers. Every outbound fetch of a caller-supplied URL goes through
+// guardedFetch (lib/ssrf.ts), which refuses private/internal/cloud-metadata
+// targets and re-validates each redirect hop.
+import { guardedFetch, SsrfError } from "./ssrf";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -12,18 +16,17 @@ export interface FetchTextResult {
 }
 
 export async function fetchText(url: string): Promise<FetchTextResult> {
-  const res = await fetch(url, {
+  const { res, url: finalUrl } = await guardedFetch(url, {
     headers: {
       "User-Agent": UA,
       Accept:
         "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9",
     },
-    redirect: "follow",
   });
   const text = await res.text();
   return {
-    url: res.url || url,
+    url: finalUrl,
     status: res.status,
     text,
     contentType: res.headers.get("content-type") || "",
@@ -42,13 +45,12 @@ function delay(ms: number): Promise<void> {
 }
 
 async function fetchBinaryOnce(url: string): Promise<FetchBinaryResult> {
-  const res = await fetch(url, {
+  const { res, url: finalUrl } = await guardedFetch(url, {
     headers: { "User-Agent": UA, Accept: "*/*" },
-    redirect: "follow",
   });
   const arrayBuf = await res.arrayBuffer();
   return {
-    url: res.url || url,
+    url: finalUrl,
     status: res.status,
     buffer: Buffer.from(arrayBuf),
     contentType: res.headers.get("content-type") || "",
@@ -77,6 +79,8 @@ export async function fetchBinary(url: string, retries = 2): Promise<FetchBinary
       return result;
     } catch (err) {
       lastErr = err;
+      // A blocked (SSRF) host will never succeed — don't burn retries on it.
+      if (err instanceof SsrfError) throw err;
       if (attempt < retries) {
         await delay(250 * (attempt + 1));
         continue;

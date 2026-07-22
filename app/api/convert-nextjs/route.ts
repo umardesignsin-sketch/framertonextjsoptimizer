@@ -6,6 +6,7 @@ import { makeJobId, saveJob } from "@/lib/store";
 import { requireUser } from "@/lib/supabase/user";
 import { dbConfigured } from "@/lib/db";
 import { recordConversion } from "@/lib/sites";
+import { rateLimit, tooMany } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,10 @@ export async function POST(request: Request) {
   if (!user) {
     return Response.json({ error: "Please log in to convert a site." }, { status: 401 });
   }
+
+  // Conversions are expensive (crawl + image re-encode) — cap per user.
+  const rl = rateLimit(`convert:${user.id}`, 8, 60_000);
+  if (!rl.ok) return tooMany(rl.retryAfter);
 
   let body: { url?: string } = {};
   try {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchScores } from "@/lib/pagespeed";
+import { rateLimit, tooMany, clientIp } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,6 +8,9 @@ export const maxDuration = 60;
 
 // POST /api/scores  { url } -> { performance, seo } from PageSpeed.
 export async function POST(request: Request) {
+  const rl = rateLimit(`scores:${clientIp(request)}`, 15, 60_000);
+  if (!rl.ok) return tooMany(rl.retryAfter);
+
   const body = await request.json().catch(() => ({}));
   const url = typeof body?.url === "string" ? body.url : "";
   if (!url) return NextResponse.json({ error: "Missing url" }, { status: 400 });
