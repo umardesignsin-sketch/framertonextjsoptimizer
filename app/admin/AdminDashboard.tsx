@@ -1,14 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import type { JobMeta } from "@/lib/store";
+import Link from "next/link";
 
-function fmtBytes(n: number): string {
-  if (!n) return "—";
-  if (n > 1e6) return (n / 1e6).toFixed(1) + " MB";
-  if (n > 1e3) return (n / 1e3).toFixed(0) + " KB";
-  return n + " B";
+/** One conversion row — sourced from Postgres Site rows (see admin/page.tsx). */
+export interface AdminJob {
+  id: string;
+  sourceUrl: string;
+  createdAt: number;
+  outputKind: string;
+  ownerEmail: string;
 }
+
 function fmtDate(ms: number): string {
   try {
     return new Date(ms).toLocaleString("en-US");
@@ -17,7 +20,7 @@ function fmtDate(ms: number): string {
   }
 }
 
-export function AdminDashboard({ jobs, baseUrl }: { jobs: JobMeta[]; baseUrl: string }) {
+export function AdminDashboard({ jobs, baseUrl }: { jobs: AdminJob[]; baseUrl: string }) {
   const [rows, setRows] = useState(jobs);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [copied, setCopied] = useState<string>("");
@@ -55,18 +58,18 @@ export function AdminDashboard({ jobs, baseUrl }: { jobs: JobMeta[]; baseUrl: st
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Founders panel</h1>
         <div className="flex items-center gap-2.5">
-          <a
+          <Link
             href="/admin/users"
             className="rounded-lg border border-border-strong px-3 py-1.5 text-[13px] font-medium hover:border-foreground"
           >
             ◎ Signups
-          </a>
-          <a
+          </Link>
+          <Link
             href="/admin/blog"
             className="rounded-lg bg-foreground px-3 py-1.5 text-[13px] font-medium text-background hover:opacity-90"
           >
             ✍ Blog
-          </a>
+          </Link>
           <button
             onClick={logout}
             className="rounded-lg border border-border-strong px-3 py-1.5 text-[13px] hover:border-foreground"
@@ -159,7 +162,7 @@ export function AdminDashboard({ jobs, baseUrl }: { jobs: JobMeta[]; baseUrl: st
         <h2 className="font-medium">Conversions ({rows.length})</h2>
         {rows.length === 0 ? (
           <p className="mt-3 text-[13px] text-muted-foreground">
-            No conversions yet — or persistence (Vercel Blob) isn’t configured.
+            No conversions yet.
           </p>
         ) : (
           <div className="mt-3 overflow-x-auto rounded-xl border border-border">
@@ -168,8 +171,8 @@ export function AdminDashboard({ jobs, baseUrl }: { jobs: JobMeta[]; baseUrl: st
                 <tr>
                   <th className="px-3 py-2 font-medium">Source</th>
                   <th className="px-3 py-2 font-medium">When</th>
-                  <th className="px-3 py-2 font-medium">Files</th>
-                  <th className="px-3 py-2 font-medium">Size</th>
+                  <th className="px-3 py-2 font-medium">Mode</th>
+                  <th className="px-3 py-2 font-medium">Owner</th>
                   <th className="px-3 py-2 font-medium text-right">Actions</th>
                 </tr>
               </thead>
@@ -182,8 +185,20 @@ export function AdminDashboard({ jobs, baseUrl }: { jobs: JobMeta[]; baseUrl: st
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
                       {fmtDate(j.createdAt)}
                     </td>
-                    <td className="px-3 py-2">{j.fileCount}</td>
-                    <td className="whitespace-nowrap px-3 py-2">{fmtBytes(j.bytes)}</td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                          j.outputKind === "nextjs"
+                            ? "bg-violet-500/10 text-violet-600"
+                            : "bg-emerald-500/10 text-emerald-600"
+                        }`}
+                      >
+                        {j.outputKind}
+                      </span>
+                    </td>
+                    <td className="max-w-[180px] truncate whitespace-nowrap px-3 py-2 text-muted-foreground" title={j.ownerEmail}>
+                      {j.ownerEmail}
+                    </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right">
                       <a className="underline" href={`/api/preview/${j.id}/`} target="_blank" rel="noopener noreferrer">
                         Preview

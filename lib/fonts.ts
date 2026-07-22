@@ -23,7 +23,7 @@ export function ensureFontDisplaySwap($: Doc): number {
   let patched = 0;
   $("style").each((_, el) => {
     const $el = $(el);
-    let css = $el.html() || "";
+    const css = $el.html() || "";
     if (!css.includes("@font-face")) return;
     const next = css.replace(/@font-face\s*\{([^}]*)\}/gi, (whole, body) => {
       if (/font-display\s*:/i.test(body)) return whole;

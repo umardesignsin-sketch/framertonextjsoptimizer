@@ -4,10 +4,11 @@
 // instance, so an in-memory store does NOT survive between the convert call and
 // the later preview/download/deploy calls — that produced "Job expired".
 //
-// Fix: persist each bundle to Vercel Blob (durable + shared across instances)
-// when BLOB_READ_WRITE_TOKEN is configured, with an in-memory fast-path/cache.
-// With no token (local dev), it falls back to memory-only — unchanged behavior.
-import { put, list, del, get, head } from "@vercel/blob";
+// Fix: persist each bundle to durable object storage (shared across
+// instances) with an in-memory fast-path/cache. The backend — Cloudflare R2
+// or Vercel Blob — is picked from the environment by lib/blob-driver.ts;
+// with neither configured (local dev), it falls back to memory-only.
+import { activeDriver } from "./blob-driver";
 import { createHash } from "node:crypto";
 import { db, dbConfigured } from "./db";
 import type { ConvertReport, ConvertedFile } from "./types";
@@ -37,13 +38,6 @@ export interface JobMeta {
   createdAt: number;
   fileCount: number;
   bytes: number;
-}
-
-function blobEnabled(): boolean {
-  // @vercel/blob authenticates via EITHER an explicit BLOB_READ_WRITE_TOKEN OR
-  // OIDC (VERCEL_OIDC_TOKEN + BLOB_STORE_ID) — the newer connected-store model.
-  // Enable Blob if either is present so connected stores work without a token.
-  return !!(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID);
 }
 
 function gcMemory() {
@@ -116,28 +110,25 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R
 }
 
 async function serializeFiles(files: ConvertedFile[]): Promise<SerializedFile[]> {
+  const drv = activeDriver();
   return mapLimit(files, 8, async (f) => {
     if (!f.binary) return { path: f.path, content: f.content };
     const hash = createHash("sha1").update(f.binary).digest("hex") + extOf(f.path);
     const pathname = `${ASSET_PREFIX}${hash}`;
     try {
-      const exists = await head(pathname).catch(() => null);
+      if (!drv) return { path: f.path };
+      const exists = await drv.head(pathname);
       if (!exists) {
         // Content-addressed by hash — the bytes at this path can never
-        // change, so cache as long as Blob allows (unlike the per-job JSON,
-        // which is invalidated by TTL_MS instead).
-        await put(pathname, f.binary, {
-          access: "private",
-          addRandomSuffix: false,
-          contentType: "application/octet-stream",
-          cacheControlMaxAge: 31536000,
-        });
+        // change, so cache as long as the store allows (unlike the per-job
+        // JSON, which is invalidated by TTL_MS instead).
+        await drv.put(pathname, f.binary, "application/octet-stream", 31536000);
       }
       return { path: f.path, assetHash: hash };
     } catch (err) {
-      // Blob unavailable (e.g. transfer-limit pause) — this file just won't
-      // survive to a cold instance; the in-memory copy still works for the
-      // instance that did the conversion.
+      // Storage unavailable (e.g. transfer-limit pause) — this file just
+      // won't survive to a cold instance; the in-memory copy still works for
+      // the instance that did the conversion.
       console.error("[store] asset persist failed:", err);
       return { path: f.path };
     }
@@ -145,12 +136,12 @@ async function serializeFiles(files: ConvertedFile[]): Promise<SerializedFile[]>
 }
 
 async function deserializeFiles(files: SerializedFile[]): Promise<ConvertedFile[]> {
+  const drv = activeDriver();
   return mapLimit(files, 8, async (f) => {
     if (!f.assetHash) return { path: f.path, content: f.content };
     try {
-      const result = await get(`${ASSET_PREFIX}${f.assetHash}`, { access: "private" });
-      if (!result?.stream) return { path: f.path };
-      const buf = Buffer.from(await new Response(result.stream).arrayBuffer());
+      const buf = drv ? await drv.getBuffer(`${ASSET_PREFIX}${f.assetHash}`) : null;
+      if (!buf) return { path: f.path };
       return { path: f.path, binary: buf };
     } catch (err) {
       console.error("[store] asset fetch failed:", err);
@@ -181,15 +172,17 @@ async function deserialize(b: SerializedBundle): Promise<ConvertReport> {
   };
 }
 
-/** Best-effort: keep only the most recent MAX_JOBS bundles in Blob. */
+/** Best-effort: keep only the most recent MAX_JOBS bundles in storage. */
 async function trimBlob() {
   try {
-    const { blobs } = await list({ prefix: BLOB_PREFIX });
-    if (blobs.length <= MAX_JOBS) return;
-    const old = blobs
-      .sort((a, b) => +new Date(a.uploadedAt) - +new Date(b.uploadedAt))
-      .slice(0, blobs.length - MAX_JOBS);
-    await Promise.all(old.map((x) => del(x.url).catch(() => {})));
+    const drv = activeDriver();
+    if (!drv) return;
+    const objects = await drv.list(BLOB_PREFIX);
+    if (objects.length <= MAX_JOBS) return;
+    const old = objects
+      .sort((a, b) => +a.uploadedAt - +b.uploadedAt)
+      .slice(0, objects.length - MAX_JOBS);
+    await drv.del(old.map((x) => x.ref));
   } catch {
     /* non-fatal */
   }
@@ -200,17 +193,11 @@ export async function saveJob(id: string, report: ConvertReport): Promise<Job> {
   jobs.set(id, job);
   gcMemory();
 
-  if (blobEnabled()) {
+  const drv = activeDriver();
+  if (drv) {
     try {
       const payload = JSON.stringify(await serialize(report));
-      // Private store: blobs are read back with get({access:'private'}), which
-      // authenticates via OIDC (BLOB_STORE_ID + VERCEL_OIDC_TOKEN).
-      await put(`${BLOB_PREFIX}${id}.json`, payload, {
-        access: "private",
-        addRandomSuffix: false,
-        contentType: "application/json",
-        cacheControlMaxAge: TTL_MS / 1000,
-      });
+      await drv.put(`${BLOB_PREFIX}${id}.json`, payload, "application/json", TTL_MS / 1000);
       // Small metadata sidecar so the admin dashboard can list conversions
       // without downloading every full bundle.
       const meta: JobMeta = {
@@ -223,11 +210,7 @@ export async function saveJob(id: string, report: ConvertReport): Promise<Job> {
           0
         ),
       };
-      await put(`${META_PREFIX}${id}.json`, JSON.stringify(meta), {
-        access: "private",
-        addRandomSuffix: false,
-        contentType: "application/json",
-      });
+      await drv.put(`${META_PREFIX}${id}.json`, JSON.stringify(meta), "application/json");
       void trimBlob();
     } catch (err) {
       // Don't fail the conversion if the bundle can't be persisted; the warm
@@ -241,13 +224,13 @@ export async function saveJob(id: string, report: ConvertReport): Promise<Job> {
 export async function getJob(id: string): Promise<Job | undefined> {
   const cached = jobs.get(id);
   if (cached) return cached;
-  if (!blobEnabled()) return undefined;
+  const drv = activeDriver();
+  if (!drv) return undefined;
 
   try {
-    const result = await get(`${BLOB_PREFIX}${id}.json`, { access: "private" });
-    if (!result || result.statusCode !== 200 || !result.stream) return undefined;
-    const text = await new Response(result.stream).text();
-    const report = await deserialize(JSON.parse(text) as SerializedBundle);
+    const buf = await drv.getBuffer(`${BLOB_PREFIX}${id}.json`);
+    if (!buf) return undefined;
+    const report = await deserialize(JSON.parse(buf.toString("utf8")) as SerializedBundle);
     const job: Job = { id, report, fileIndex: indexFiles(report.files, report.previewFiles), createdAt: Date.now() };
     jobs.set(id, job); // populate per-instance cache
     return job;
@@ -300,7 +283,8 @@ export async function getOrRegenerateJob(
 
 /** List recent conversions (newest first) for the admin dashboard. */
 export async function listJobs(): Promise<JobMeta[]> {
-  if (!blobEnabled()) {
+  const drv = activeDriver();
+  if (!drv) {
     return [...jobs.values()]
       .map((j) => ({
         id: j.id,
@@ -312,13 +296,12 @@ export async function listJobs(): Promise<JobMeta[]> {
       .sort((a, b) => b.createdAt - a.createdAt);
   }
   try {
-    const { blobs } = await list({ prefix: META_PREFIX });
+    const objects = await drv.list(META_PREFIX);
     const metas = await Promise.all(
-      blobs.map(async (b) => {
+      objects.map(async (o) => {
         try {
-          const r = await get(b.pathname, { access: "private" });
-          if (!r || r.statusCode !== 200 || !r.stream) return null;
-          return JSON.parse(await new Response(r.stream).text()) as JobMeta;
+          const buf = await drv.getBuffer(o.pathname);
+          return buf ? (JSON.parse(buf.toString("utf8")) as JobMeta) : null;
         } catch {
           return null;
         }
@@ -332,16 +315,17 @@ export async function listJobs(): Promise<JobMeta[]> {
   }
 }
 
-/** Delete a conversion (bundle + metadata) from memory and Blob. */
+/** Delete a conversion (bundle + metadata) from memory and storage. */
 export async function deleteJob(id: string): Promise<void> {
   jobs.delete(id);
-  if (!blobEnabled()) return;
+  const drv = activeDriver();
+  if (!drv) return;
   try {
-    const [{ blobs: a }, { blobs: b }] = await Promise.all([
-      list({ prefix: `${BLOB_PREFIX}${id}.json` }),
-      list({ prefix: `${META_PREFIX}${id}.json` }),
+    const [a, b] = await Promise.all([
+      drv.list(`${BLOB_PREFIX}${id}.json`),
+      drv.list(`${META_PREFIX}${id}.json`),
     ]);
-    await Promise.all([...a, ...b].map((x) => del(x.url).catch(() => {})));
+    await drv.del([...a, ...b].map((x) => x.ref));
   } catch {
     /* non-fatal */
   }

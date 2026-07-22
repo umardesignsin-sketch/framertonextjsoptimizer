@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# …except the credential-free template documenting required vars
+!.env.example
 
 # vercel
 .vercel
@@ -42,9 +44,6 @@ next-env.d.ts
 
 # Netlify local state
 .netlify/
-
-.vercel
-.env*
 
 # Local tooling config (dev-server launch definition for the preview pane)
 .claude/
