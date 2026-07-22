@@ -98,14 +98,16 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
           </Link>
         </div>
 
-        {p.coverImage ? (
+        {/* On-page hero uses the generative cover — designed, distinct, and
+            not redundant with the H1 above. A genuinely hand-picked coverImage
+            (an uploaded photo/screenshot) still wins; the auto-generated OG
+            title-card (…/opengraph-image) does not, since it just repeats the
+            title. The OG card is still used for social-share meta above. */}
+        {p.coverImage && !p.coverImage.includes("/opengraph-image") ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={p.coverImage}
             alt={p.title}
-            // Cover images are 1200x630 (the OG-image standard ratio,
-            // ~1.91:1) — a 16:10 box with object-cover was cropping both
-            // edges and clipping the title text baked into the image.
             className="mt-10 aspect-[1200/630] w-full rounded-lg object-cover"
           />
         ) : (
