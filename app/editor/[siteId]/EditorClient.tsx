@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 
 // Mirror of lib/overrides.ts EditorEdit (not imported — that module pulls in
@@ -21,12 +21,104 @@ const FRAMES: { bp: string; w: number }[] = [
 const GAP = 72;
 const LABEL_H = 34;
 
-const TOOLS: { id: Tool; label: string; hint: string }[] = [
-  { id: "text", label: "Text", hint: "Click any text to edit it" },
-  { id: "link", label: "Link", hint: "Click a link to change where it goes" },
-  { id: "image", label: "Image", hint: "Click an image to swap it" },
-  { id: "preview", label: "Preview", hint: "Interact with the live site — effects run" },
+const TOOLS: { id: Tool; label: string; key: string; hint: string }[] = [
+  { id: "text", label: "Text", key: "T", hint: "Click any text to edit it" },
+  { id: "link", label: "Link", key: "L", hint: "Click a link to change where it goes" },
+  { id: "image", label: "Image", key: "I", hint: "Click an image to swap it" },
+  { id: "preview", label: "Preview", key: "P", hint: "Interact with the live site — effects run" },
 ];
+
+// ---- inline icon set (stroke = currentColor, sized by prop) ----------------
+const ICON_PATHS: Record<string, ReactNode> = {
+  text: (
+    <>
+      <path d="M4 7V5h16v2" />
+      <path d="M12 5v14" />
+      <path d="M9 19h6" />
+    </>
+  ),
+  link: (
+    <>
+      <path d="M10 13a5 5 0 0 0 7.54.54l2-2a5 5 0 0 0-7.07-7.07l-1.1 1.1" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-2 2a5 5 0 0 0 7.07 7.07l1.1-1.1" />
+    </>
+  ),
+  image: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <circle cx="8.5" cy="10.5" r="1.5" />
+      <path d="m21 16-5.5-5.5L6 20" />
+    </>
+  ),
+  preview: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m10 8.5 5.5 3.5-5.5 3.5z" />
+    </>
+  ),
+  desktop: (
+    <>
+      <rect x="2" y="4" width="20" height="13" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </>
+  ),
+  tablet: (
+    <>
+      <rect x="5" y="3" width="14" height="18" rx="2" />
+      <path d="M11 17.5h2" />
+    </>
+  ),
+  phone: (
+    <>
+      <rect x="7" y="2" width="10" height="20" rx="2.5" />
+      <path d="M11 18h2" />
+    </>
+  ),
+  home: <path d="m3 10.5 9-7.5 9 7.5V20a1 1 0 0 1-1 1h-5.5v-6h-5v6H4a1 1 0 0 1-1-1z" />,
+  page: (
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+    </>
+  ),
+  x: <path d="M18 6 6 18M6 6l12 12" />,
+  back: <path d="m12 19-7-7 7-7M5 12h14" />,
+  check: <path d="m5 13 4 4L19 7" />,
+  alert: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v5M12 16.5v.01" />
+    </>
+  ),
+  sparkle: <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.5 2.5M15.2 15.2l2.5 2.5M17.7 6.3l-2.5 2.5M8.8 15.2l-2.5 2.5" />,
+};
+
+function Icon({ name, size = 14, className }: { name: string; size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      {ICON_PATHS[name]}
+    </svg>
+  );
+}
+
+const BP_ICON: Record<string, string> = { Desktop: "desktop", Tablet: "tablet", Phone: "phone" };
+
+/** Cache-bust a preview path so frames reload (strips any previous r= bump). */
+function bumpRefresh(p: string): string {
+  const base = p.replace(/([?&])r=\d+&?/, (_m, sep) => (sep === "?" ? "?" : "")).replace(/[?&]$/, "");
+  return base + (base.includes("?") ? "&" : "?") + "r=" + Date.now();
+}
 
 /** Pointer events the editing shield swallows so the page's own listeners
  *  (cursor ripples, hover effects, custom cursors) never fire while editing.
@@ -137,8 +229,12 @@ export function EditorClient({
     value: string;
   } | null>(null);
   const [uploading, setUploading] = useState(false);
+  // Which breakpoint artboards are shown. All iframes stay mounted (hidden via
+  // CSS) so the wiring, measured heights, and refs stay stable.
+  const [visibleBps, setVisibleBps] = useState<Set<string>>(() => new Set(FRAMES.map((f) => f.bp)));
 
   const frameRefs = useRef<(HTMLIFrameElement | null)[]>([]);
+  const canvasRef = useRef<HTMLElement | null>(null);
   const toolRef = useRef(tool);
   const editsRef = useRef(edits);
   useEffect(() => {
@@ -189,6 +285,20 @@ export function EditorClient({
         scheduleSave(next);
         return next;
       });
+    },
+    [scheduleSave]
+  );
+
+  /** Remove a single edit and reload frames so the element reverts; the
+   *  remaining edits re-apply automatically once the frames re-wire. */
+  const removeEdit = useCallback(
+    (index: number) => {
+      setEdits((prev) => {
+        const next = prev.filter((_, i) => i !== index);
+        scheduleSave(next);
+        return next;
+      });
+      setPagePath((p) => bumpRefresh(p));
     },
     [scheduleSave]
   );
@@ -718,77 +828,159 @@ export function EditorClient({
     if (!confirm("Discard all unpublished changes and reload the original?")) return;
     setEdits([]);
     scheduleSave([]);
-    setPagePath((p) => p + (p.includes("?") ? "&" : "?") + "r=" + Date.now());
+    setPagePath((p) => bumpRefresh(p));
   }
 
-  const rowW = FRAMES.reduce((s, f) => s + f.w, 0) + GAP * (FRAMES.length - 1);
-  const rowH = Math.max(...heights) + LABEL_H;
+  function toggleBp(bp: string) {
+    setVisibleBps((prev) => {
+      const next = new Set(prev);
+      if (next.has(bp)) {
+        if (next.size === 1) return prev; // always keep one artboard visible
+        next.delete(bp);
+      } else {
+        next.add(bp);
+      }
+      return next;
+    });
+  }
+
+  const visFrames = FRAMES.filter((f) => visibleBps.has(f.bp));
+  const rowW = visFrames.reduce((s, f) => s + f.w, 0) + GAP * Math.max(0, visFrames.length - 1);
+  const rowH = Math.max(...FRAMES.map((f, i) => (visibleBps.has(f.bp) ? heights[i] : 0))) + LABEL_H;
   const activeHint = TOOLS.find((t) => t.id === tool)?.hint || "";
+
+  /** Zoom so the visible artboards fit the canvas width. */
+  const fitZoom = useCallback(() => {
+    const el = canvasRef.current;
+    if (!el || rowW === 0) return;
+    const avail = el.clientWidth - 128; // canvas padding
+    setZoom(Math.min(1, Math.max(0.1, +(avail / rowW).toFixed(2))));
+  }, [rowW]);
+
+  // Ctrl/Cmd + scroll zooms the canvas, like every design tool.
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      setZoom((z) => Math.min(1, Math.max(0.1, +(z - Math.sign(e.deltaY) * 0.05).toFixed(2))));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // Keyboard shortcuts: T/L/I/P switch tools, +/− zoom, 0 fits to width.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (dialog || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const k = e.key.toLowerCase();
+      if (k === "t") setTool("text");
+      else if (k === "l") setTool("link");
+      else if (k === "i") setTool("image");
+      else if (k === "p") setTool("preview");
+      else if (k === "=" || k === "+") setZoom((z) => Math.min(1, +(z + 0.05).toFixed(2)));
+      else if (k === "-") setZoom((z) => Math.max(0.1, +(z - 0.05).toFixed(2)));
+      else if (k === "0") fitZoom();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dialog, fitZoom]);
 
   return (
     <div className="flex h-screen flex-col bg-[#111113] text-neutral-200">
       {/* Top bar */}
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[#2a2a2e] bg-[#161618] px-3 text-[13px]">
-        <Link href="/dashboard" className="flex h-6 w-6 items-center justify-center rounded bg-[#2a2a2e] text-[13px] font-bold hover:bg-[#333]">
-          ←
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[#26262b] bg-[#161618] px-3 text-[13px]">
+        <Link
+          href="/dashboard"
+          title="Back to dashboard"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-neutral-400 transition-colors hover:bg-[#26262b] hover:text-white"
+        >
+          <Icon name="back" size={15} />
         </Link>
-        <div className="flex items-center gap-1 rounded bg-[#2a2a2e] px-2 py-1">
-          <span className="text-[12px] font-medium">Canvas</span>
-        </div>
-        <div className="mx-auto flex items-center gap-2 text-[12.5px] text-neutral-300">
-          <span className="font-medium">{siteName}</span>
-          <span className="text-neutral-500">· {pageLabel(pages.find((p) => p.path === pagePath)?.route || "/")}</span>
+        <div className="mx-auto flex min-w-0 items-center gap-2 text-[12.5px]">
+          <span className="truncate font-medium text-neutral-100">{siteName}</span>
+          <span className="text-neutral-600">/</span>
+          <span className="truncate text-neutral-400">
+            {pageLabel(pages.find((p) => p.path === pagePath)?.route || "/")}
+          </span>
         </div>
         {/* tools */}
-        <div className="flex gap-0.5 rounded-md bg-[#0e0e10] p-0.5">
+        <div className="flex gap-0.5 rounded-lg bg-[#0e0e10] p-0.5 ring-1 ring-[#26262b]">
           {TOOLS.map((t) => (
             <button
               key={t.id}
               onClick={() => setTool(t.id)}
-              title={t.hint}
-              className={`rounded px-2 py-1 text-[12px] ${
-                tool === t.id ? "bg-[#2a2a2e] font-medium text-white" : "text-neutral-400 hover:text-neutral-200"
+              title={`${t.hint} · ${t.key}`}
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] transition-colors ${
+                tool === t.id
+                  ? "bg-[#2c2c31] font-medium text-white shadow-sm"
+                  : "text-neutral-400 hover:text-neutral-200"
               }`}
             >
+              <Icon name={t.id} size={13} />
               {t.label}
             </button>
           ))}
         </div>
+        <span
+          className={`hidden w-14 text-right text-[11px] sm:block ${
+            saveState === "saving" ? "text-neutral-400" : "text-neutral-600"
+          }`}
+        >
+          {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}
+        </span>
         <button
           onClick={publish}
           disabled={publishing || edits.length === 0 || !canPublish}
           title={!canPublish ? "Deploy this site once with “Save deploy for live editing” checked." : ""}
-          className="rounded-md bg-blue-600 px-3.5 py-1.5 text-[12.5px] font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-[12.5px] font-medium text-white shadow-[0_0_0_1px_rgba(59,130,246,0.35),0_4px_12px_rgba(37,99,235,0.25)] transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
         >
-          {publishing ? "Publishing…" : "Publish"}
+          {publishing ? "Publishing…" : edits.length > 0 ? `Publish ${edits.length}` : "Publish"}
         </button>
       </header>
 
       {publishMsg && (
-        <div className={`px-4 py-1.5 text-[12px] ${publishMsg.ok ? "bg-emerald-900/40 text-emerald-300" : "bg-red-900/40 text-red-300"}`}>
+        <div
+          className={`flex items-center gap-2 border-b px-4 py-1.5 text-[12px] ${
+            publishMsg.ok
+              ? "border-emerald-900/50 bg-emerald-950/50 text-emerald-300"
+              : "border-red-900/50 bg-red-950/50 text-red-300"
+          }`}
+        >
+          <Icon name={publishMsg.ok ? "check" : "alert"} size={13} />
           {publishMsg.text}
           {publishMsg.url && (
-            <>
-              {" "}
-              <a href={publishMsg.url} target="_blank" rel="noopener noreferrer" className="underline">
-                {publishMsg.url}
-              </a>
-            </>
+            <a href={publishMsg.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+              {publishMsg.url}
+            </a>
           )}
+          <button
+            onClick={() => setPublishMsg(null)}
+            className="ml-auto rounded p-0.5 opacity-60 transition-opacity hover:opacity-100"
+            aria-label="Dismiss"
+          >
+            <Icon name="x" size={12} />
+          </button>
         </div>
       )}
 
       <div className="flex min-h-0 flex-1">
         {/* Left panel */}
-        <aside className="flex w-56 shrink-0 flex-col border-r border-[#2a2a2e] bg-[#161618]">
-          <div className="flex gap-4 border-b border-[#2a2a2e] px-3 py-2 text-[12.5px]">
+        <aside className="flex w-56 shrink-0 flex-col border-r border-[#26262b] bg-[#161618]">
+          <div className="flex gap-1 border-b border-[#26262b] p-1.5 text-[12px]">
             {(["pages", "layers", "assets"] as LeftTab[]).map((tb) => (
               <button
                 key={tb}
                 onClick={() => setLeftTab(tb)}
-                className={`capitalize ${leftTab === tb ? "font-medium text-white" : "text-neutral-500 hover:text-neutral-300"}`}
+                className={`rounded-md px-2 py-1 capitalize transition-colors ${
+                  leftTab === tb ? "bg-[#26262b] font-medium text-white" : "text-neutral-500 hover:text-neutral-300"
+                }`}
               >
                 {tb}
+                {tb === "pages" && <span className="ml-1 text-[10px] text-neutral-500">{pages.length}</span>}
               </button>
             ))}
           </div>
@@ -799,36 +991,55 @@ export function EditorClient({
                   <li key={p.route}>
                     <button
                       onClick={() => setPagePath(p.path)}
-                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left ${
-                        p.path === pagePath ? "bg-[#2a2a2e] text-white" : "text-neutral-300 hover:bg-[#1e1e21]"
+                      className={`group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
+                        p.path === pagePath ? "bg-[#26262b] text-white" : "text-neutral-400 hover:bg-[#1c1c1f] hover:text-neutral-200"
                       }`}
                     >
-                      <span className="text-neutral-500">{p.route === "/" ? "⌂" : "▤"}</span>
-                      {pageLabel(p.route)}
+                      <Icon
+                        name={p.route === "/" ? "home" : "page"}
+                        size={13}
+                        className={p.path === pagePath ? "text-blue-400" : "text-neutral-600 group-hover:text-neutral-400"}
+                      />
+                      <span className="truncate">{pageLabel(p.route)}</span>
                     </button>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="px-2 py-4 text-neutral-500">
+              <p className="px-2 py-4 leading-relaxed text-neutral-500">
                 {leftTab === "layers"
                   ? "Layer tree isn’t editable in this version — use the Text/Link/Image tools directly on the canvas."
                   : "Asset management is coming soon. Swap images with the Image tool."}
               </p>
             )}
           </div>
+          <div className="border-t border-[#26262b] px-3 py-2 text-[10.5px] leading-relaxed text-neutral-600">
+            <span className="text-neutral-500">Shortcuts</span> — T L I P tools · +/− zoom · 0 fit · Ctrl-scroll zoom
+          </div>
         </aside>
 
         {/* Canvas */}
-        <main className="relative min-w-0 flex-1 overflow-auto bg-[#0d0d0f]">
+        <main
+          ref={canvasRef}
+          className="relative min-w-0 flex-1 overflow-auto bg-[#0d0d0f]"
+          style={{
+            backgroundImage: "radial-gradient(circle, #1f1f24 1px, transparent 1px)",
+            backgroundSize: "26px 26px",
+          }}
+        >
           <div className="p-16" style={{ width: rowW * zoom + 128, height: rowH * zoom + 128 }}>
-            <div style={{ width: rowW, transform: `scale(${zoom})`, transformOrigin: "top left" }} className="flex" >
+            <div
+              style={{ width: rowW, columnGap: GAP, transform: `scale(${zoom})`, transformOrigin: "top left" }}
+              className="flex"
+            >
               {FRAMES.map((f, i) => (
-                <div key={f.bp} style={{ width: f.w, marginRight: i < FRAMES.length - 1 ? GAP : 0 }}>
-                  <div className="mb-2 flex items-center gap-2 text-[15px] text-neutral-400">
-                    <span>▷</span>
+                <div key={f.bp} style={{ width: f.w }} className={visibleBps.has(f.bp) ? "" : "hidden"}>
+                  <div className="mb-2 flex items-baseline gap-2.5 text-[15px] text-neutral-400">
+                    <Icon name={BP_ICON[f.bp]} size={15} className="translate-y-[2px] text-neutral-500" />
                     <span className="font-medium text-neutral-300">{f.bp}</span>
-                    <span className="text-neutral-600">{f.w}</span>
+                    <span className="text-[13px] text-neutral-600">
+                      {f.w} × {Math.round(heights[i])}
+                    </span>
                   </div>
                   <div
                     className="overflow-hidden rounded-md bg-white shadow-2xl ring-1 ring-black/40"
@@ -849,70 +1060,139 @@ export function EditorClient({
             </div>
           </div>
 
-          {/* zoom + hint bar */}
-          <div className="pointer-events-none sticky bottom-0 left-0 flex items-center justify-between px-4 py-2">
-            <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-[#2a2a2e] bg-[#161618]/95 px-2 py-1 text-[12px]">
-              <button onClick={() => setZoom((z) => Math.max(0.1, +(z - 0.05).toFixed(2)))} className="px-1 text-neutral-300 hover:text-white">
-                −
-              </button>
-              <span className="w-10 text-center text-neutral-400">{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom((z) => Math.min(1, +(z + 0.05).toFixed(2)))} className="px-1 text-neutral-300 hover:text-white">
-                +
-              </button>
-              <button onClick={() => setZoom(0.4)} className="ml-1 rounded px-1.5 text-neutral-500 hover:text-neutral-300">
-                Fit
-              </button>
+          {/* zoom + breakpoints + hint bar */}
+          <div className="pointer-events-none sticky bottom-0 left-0 flex items-center justify-between gap-3 px-4 py-2.5">
+            <div className="flex items-center gap-2">
+              <div className="pointer-events-auto flex items-center gap-1 rounded-lg border border-[#26262b] bg-[#161618]/95 px-1.5 py-1 text-[12px] shadow-lg backdrop-blur">
+                <button
+                  onClick={() => setZoom((z) => Math.max(0.1, +(z - 0.05).toFixed(2)))}
+                  title="Zoom out (−)"
+                  className="rounded px-1.5 py-0.5 text-neutral-300 transition-colors hover:bg-[#26262b] hover:text-white"
+                >
+                  −
+                </button>
+                <span className="w-10 text-center tabular-nums text-neutral-400">{Math.round(zoom * 100)}%</span>
+                <button
+                  onClick={() => setZoom((z) => Math.min(1, +(z + 0.05).toFixed(2)))}
+                  title="Zoom in (+)"
+                  className="rounded px-1.5 py-0.5 text-neutral-300 transition-colors hover:bg-[#26262b] hover:text-white"
+                >
+                  +
+                </button>
+                <button
+                  onClick={fitZoom}
+                  title="Fit to width (0)"
+                  className="ml-0.5 rounded px-1.5 py-0.5 text-neutral-500 transition-colors hover:bg-[#26262b] hover:text-neutral-200"
+                >
+                  Fit
+                </button>
+              </div>
+              <div className="pointer-events-auto flex items-center gap-0.5 rounded-lg border border-[#26262b] bg-[#161618]/95 p-1 shadow-lg backdrop-blur">
+                {FRAMES.map((f) => (
+                  <button
+                    key={f.bp}
+                    onClick={() => toggleBp(f.bp)}
+                    title={`${visibleBps.has(f.bp) ? "Hide" : "Show"} ${f.bp} (${f.w}px)`}
+                    className={`flex h-6 w-7 items-center justify-center rounded-md transition-colors ${
+                      visibleBps.has(f.bp)
+                        ? "bg-[#2c2c31] text-neutral-200"
+                        : "text-neutral-600 hover:text-neutral-400"
+                    }`}
+                  >
+                    <Icon name={BP_ICON[f.bp]} size={13} />
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="pointer-events-auto rounded-lg border border-[#2a2a2e] bg-[#161618]/95 px-3 py-1 text-[12px] text-neutral-400">
+            <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-[#26262b] bg-[#161618]/95 px-3 py-1.5 text-[12px] text-neutral-400 shadow-lg backdrop-blur">
+              <Icon name={tool} size={12} className="text-neutral-500" />
               {activeHint}
             </div>
           </div>
         </main>
 
         {/* Right panel */}
-        <aside className="flex w-64 shrink-0 flex-col border-l border-[#2a2a2e] bg-[#161618]">
-          <div className="flex items-center justify-between border-b border-[#2a2a2e] px-3 py-2 text-[12.5px]">
+        <aside className="flex w-64 shrink-0 flex-col border-l border-[#26262b] bg-[#161618]">
+          <div className="flex items-center justify-between border-b border-[#26262b] px-3 py-2 text-[12.5px]">
             <span className="font-medium text-white">Changes</span>
-            <span className="text-neutral-500">
-              {edits.length}
-              {saveState === "saving" ? " · saving…" : saveState === "saved" ? " · saved" : ""}
-            </span>
+            {edits.length > 0 && (
+              <span className="rounded-full bg-[#26262b] px-1.5 py-0.5 text-[10.5px] tabular-nums text-neutral-400">
+                {edits.length}
+              </span>
+            )}
           </div>
           <div className="flex-1 overflow-auto p-2 text-[12px]">
             {edits.length === 0 ? (
-              <p className="px-1 py-3 text-neutral-500">
-                No changes yet. Pick a tool and click text, a link, or an image on the canvas.
-              </p>
+              <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
+                <Icon name="sparkle" size={18} className="text-neutral-600" />
+                <p className="text-neutral-500">No changes yet.</p>
+                <p className="text-[11.5px] leading-relaxed text-neutral-600">
+                  Pick a tool and click on the canvas — text to rewrite it, a link to repoint it, an image
+                  to swap it. Every change lands here before you publish.
+                </p>
+              </div>
             ) : (
               <ul className="space-y-1">
                 {edits.map((e, i) => (
-                  <li key={i} className="rounded bg-[#1e1e21] px-2 py-1.5">
-                    <span className="mr-1.5 rounded bg-[#2a2a2e] px-1 py-0.5 text-[10px] uppercase text-neutral-400">
-                      {e.kind}
+                  <li key={i} className="group flex items-start gap-2 rounded-md bg-[#1c1c1f] px-2 py-2">
+                    <span
+                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded ${
+                        e.kind === "text"
+                          ? "bg-sky-500/15 text-sky-400"
+                          : e.kind === "link"
+                            ? "bg-violet-500/15 text-violet-400"
+                            : "bg-emerald-500/15 text-emerald-400"
+                      }`}
+                    >
+                      <Icon name={e.kind} size={11} />
                     </span>
-                    <span className="text-neutral-300">
-                      {e.kind === "text"
-                        ? `“${e.newText.slice(0, 24)}”`
-                        : e.kind === "link"
-                          ? e.newHref.slice(0, 30)
-                          : "image swapped"}
-                    </span>
+                    <div className="min-w-0 flex-1">
+                      {e.kind === "text" ? (
+                        <>
+                          <div className="truncate text-neutral-500 line-through">{e.oldText}</div>
+                          <div className="truncate text-neutral-200">{e.newText}</div>
+                        </>
+                      ) : e.kind === "link" ? (
+                        <>
+                          <div className="truncate text-neutral-500 line-through">{e.oldHref}</div>
+                          <div className="truncate text-neutral-200">{e.newHref}</div>
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={e.newSrc}
+                            alt=""
+                            className="h-8 w-12 shrink-0 rounded border border-[#26262b] object-cover"
+                          />
+                          <span className="text-neutral-300">Image replaced</span>
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => removeEdit(i)}
+                      title="Undo this change"
+                      className="mt-0.5 rounded p-0.5 text-neutral-600 opacity-0 transition-all hover:bg-[#26262b] hover:text-neutral-300 group-hover:opacity-100"
+                    >
+                      <Icon name="x" size={11} />
+                    </button>
                   </li>
                 ))}
               </ul>
             )}
           </div>
-          <div className="border-t border-[#2a2a2e] p-2">
+          <div className="border-t border-[#26262b] p-2">
             {edits.length > 0 && (
               <button
                 onClick={discardAll}
-                className="w-full rounded-md border border-[#2a2a2e] px-3 py-1.5 text-[12px] text-neutral-300 hover:border-neutral-500"
+                className="w-full rounded-md border border-[#26262b] px-3 py-1.5 text-[12px] text-neutral-400 transition-colors hover:border-neutral-600 hover:text-neutral-200"
               >
                 Discard all changes
               </button>
             )}
             {!canPublish && (
-              <p className="mt-2 text-[11.5px] text-amber-400/90">
+              <p className="mt-2 flex items-start gap-1.5 text-[11.5px] leading-relaxed text-amber-400/90">
+                <Icon name="alert" size={12} className="mt-0.5 shrink-0" />
                 Deploy this site once with “Save deploy for live editing” checked to enable Publish.
               </p>
             )}
@@ -922,14 +1202,21 @@ export function EditorClient({
 
       {dialog && (
         <div
-          className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4"
+          className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]"
           onClick={() => setDialog(null)}
         >
           <div
-            className="w-full max-w-md rounded-xl border border-[#2a2a2e] bg-[#1b1b1e] p-4 shadow-2xl"
+            className="w-full max-w-md rounded-2xl border border-[#2c2c31] bg-[#1b1b1e] p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-[14px] font-medium text-white">
+            <h3 className="flex items-center gap-2 text-[14px] font-medium text-white">
+              <span
+                className={`flex h-5 w-5 items-center justify-center rounded ${
+                  dialog.kind === "link" ? "bg-violet-500/15 text-violet-400" : "bg-emerald-500/15 text-emerald-400"
+                }`}
+              >
+                <Icon name={dialog.kind} size={11} />
+              </span>
               {dialog.kind === "link" ? "Change link" : "Change image"}
             </h3>
             <p className="mt-1 text-[12px] text-neutral-400">
