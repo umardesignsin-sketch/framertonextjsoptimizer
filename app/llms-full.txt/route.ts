@@ -94,6 +94,18 @@ time, in both modes:
 - Hybrid mode trades some complex page transitions for speed; choose Pure Next.js when exact fidelity matters more than the score.
 - It never requests your Framer login, password, or API key — it works from the public published URL only.
 
+## Command-line interface (npm package)
+
+The converter is also available as a free npm package named "framer-to-nextjs"
+(https://www.npmjs.com/package/framer-to-nextjs). Run:
+
+    npx framer-to-nextjs https://your-site.framer.website
+
+to write the full Next.js project straight to disk, or add "--mode hybrid" for
+the runtime-stripped static bundle. Like the web tool, it works from any
+published Framer URL — no Framer login, no plugin — and being a normal npm
+package it is scriptable in CI pipelines or scheduled rebuild jobs.
+
 ## Pricing
 
 Free. Converting, previewing, editing, and publishing are all included at no

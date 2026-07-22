@@ -55,6 +55,10 @@ const NEXTJS_FAQ: { q: string; a: string }[] = [
     q: "Will this make my site faster?",
     a: "Not necessarily, and we'd rather tell you that upfront than oversell it. This export keeps Framer's own runtime intact so animations and interactions stay exactly as authored — which means it carries over the same JS/image weight the original had. We tested this directly across 10 real templates and published the honest results. If maximum Lighthouse score matters more than pixel-perfect fidelity for your site, use the Hybrid HTML export instead, which strips the runtime and rebuilds for speed.",
   },
+  {
+    q: "Is there a CLI or npm package?",
+    a: "Yes. Run npx framer-to-nextjs <your-framer-url> in a terminal and the same converter writes the full Next.js project straight to disk — or the runtime-stripped static bundle with --mode hybrid. It works from any published Framer URL with no login or plugin, and being a normal npm package, it's scriptable in CI or a nightly rebuild job.",
+  },
 ];
 
 const NEXTJS_STEPS = [
@@ -126,6 +130,32 @@ function NextjsBenefits() {
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+function NextjsCli() {
+  return (
+    <section className="mt-16 border-t border-border pt-12">
+      <h2 className="text-2xl font-semibold tracking-tight">Prefer the terminal? There&apos;s a CLI</h2>
+      <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">
+        The same converter as an npm package — works from any published Framer URL, no login
+        here either. One command writes the full Next.js project to disk (or the
+        runtime-stripped static bundle with <code className="rounded bg-muted px-1 py-0.5 text-[13px]">--mode hybrid</code>):
+      </p>
+      <pre className="mt-4 overflow-x-auto rounded-lg border border-border bg-muted p-4 font-mono text-[13.5px]">npx framer-to-nextjs https://your-site.framer.website</pre>
+      <p className="mt-2 text-[13px] text-muted-foreground">
+        Free on{" "}
+        <a
+          href="https://www.npmjs.com/package/framer-to-nextjs"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-foreground underline underline-offset-2"
+        >
+          npm
+        </a>{" "}
+        — scriptable in CI, Makefiles, or a nightly rebuild job.
+      </p>
     </section>
   );
 }
@@ -366,6 +396,7 @@ function NextJsConverter() {
         )}
 
         <NextjsBenefits />
+        <NextjsCli />
 
         {/* How it works — matches the HowTo schema below */}
         <section className="mt-16 border-t border-border pt-12">
@@ -442,6 +473,7 @@ function NextjsSeoShell() {
           Loading converter…
         </section>
         <NextjsBenefits />
+        <NextjsCli />
         <section className="mt-16 border-t border-border pt-12">
           <h2 className="text-2xl font-semibold tracking-tight">How to convert Framer to Next.js</h2>
           <ol className="mt-4 grid gap-3 sm:grid-cols-2">

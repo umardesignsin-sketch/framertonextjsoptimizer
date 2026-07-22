@@ -52,6 +52,7 @@ publish live.
 - One-click deploy to Netlify or Vercel (or download the project)
 - Visual editor for text, links, and images across Desktop/Tablet/Phone
 - Handles multi-page sites and preserves URL structure
+- Also available as a CLI: \`npx framer-to-nextjs <url>\` (npm package "framer-to-nextjs") — same converter, scriptable, no login
 
 ## FAQ
 ${faq}
