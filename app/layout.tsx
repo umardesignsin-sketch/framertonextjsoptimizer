@@ -5,6 +5,7 @@ import { Analytics as VercelAnalytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { SITE, KEYWORDS, siteJsonLd, jsonLdScript } from "@/lib/site-meta";
 import { Analytics } from "@/components/Analytics";
+import { HelpBadge } from "@/components/HelpBadge";
 
 // Falls back to the original hardcoded property so nothing breaks if the env
 // var isn't set; override per-environment with NEXT_PUBLIC_GA_ID.
@@ -99,6 +100,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col">
         {children}
+        <HelpBadge />
         <VercelAnalytics />
         {/* GA4 — first-touch attribution + SPA-aware pageviews. */}
         <Suspense fallback={null}>

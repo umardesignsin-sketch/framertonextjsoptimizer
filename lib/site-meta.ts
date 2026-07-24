@@ -6,6 +6,8 @@ export const SITE = {
   name: "Framer → Next.js Optimizer",
   shortName: "Framer to Next.js",
   url: "https://framertonextjs.com",
+  /** Inbox the "Need help?" badge (components/HelpBadge.tsx) notifies. */
+  contactEmail: "framertonextjs@gmail.com",
   tagline: "Convert Framer sites to optimized Next.js",
   description:
     "Convert any published Framer site into a fast, deployable Next.js project or an optimized static bundle. Self-hosts images as WebP, self-hosts fonts, and runs a full SEO pass either way — plus a visual editor to change text, links, and images and publish live. Choose Hybrid to strip Framer's runtime for the highest Lighthouse score, or Pure Next.js to keep it fully intact for byte-for-byte fidelity.",

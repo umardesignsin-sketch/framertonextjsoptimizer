@@ -135,3 +135,18 @@ model SignupMeta {
   os          String?
   createdAt   DateTime @default(now())
 }
+
+/// "Need help?" badge submissions (site-wide, bottom-right). Always stored
+/// here regardless of whether email delivery is configured (RESEND_API_KEY)
+/// — the DB row is the durable record; email is a best-effort notification
+/// on top of it, not the source of truth.
+model ContactMessage {
+  id        String   @id @default(cuid())
+  email     String
+  message   String
+  /// Page the badge was opened from, for context (e.g. "/dashboard").
+  page      String?
+  /// True once an email notification was successfully sent for this row.
+  emailed   Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
