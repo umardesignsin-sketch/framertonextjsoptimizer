@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { UrlFunnelForm } from "@/components/UrlFunnelForm";
 import { jsonLdScript, SITE } from "@/lib/site-meta";
+import { Logo } from "@/components/Logo";
 
 // Primary money page for: "framer to html converter"
 // Also targets: framer to html, export framer to html, convert framer to html,
@@ -234,9 +235,7 @@ export default function FramerToHtmlPage() {
       <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3.5">
           <Link href="/" className="flex items-center gap-2.5">
-            <span className="flex h-6 w-6 items-center justify-center rounded bg-foreground text-[13px] font-bold text-background">
-              F
-            </span>
+            <Logo size={24} />
             <span className="text-[15px] font-semibold tracking-tight">
               Framer <span className="text-muted-foreground">→</span> Next.js Optimizer
             </span>
@@ -744,9 +743,7 @@ export default function FramerToHtmlPage() {
       <footer className="border-t border-border">
         <div className="mx-auto flex max-w-5xl flex-col gap-4 px-5 py-8 text-[13px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-5 w-5 items-center justify-center rounded bg-foreground text-[11px] font-bold text-background">
-              F
-            </span>
+            <Logo size={20} />
             <span>Framer to HTML Converter · {SITE.name}</span>
           </div>
           <nav className="flex flex-wrap gap-x-5 gap-y-2">

@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
 import { getPublishedPost } from "@/lib/blog";
+import { logoDataUri } from "@/lib/logo";
 
 export const runtime = "nodejs";
 export const alt = "Framer → Next.js Optimizer blog post";
@@ -8,7 +9,10 @@ export const contentType = "image/png";
 
 export default async function BlogOgImage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const post = await getPublishedPost(slug).catch(() => null);
+  const [post, logo] = await Promise.all([
+    getPublishedPost(slug).catch(() => null),
+    logoDataUri(),
+  ]);
   const title = post?.title || "Framer → Next.js Optimizer";
 
   return new ImageResponse(
@@ -26,22 +30,8 @@ export default async function BlogOgImage({ params }: { params: Promise<{ slug: 
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: 14,
-              background: "#ffffff",
-              color: "#0b0b0c",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 36,
-              fontWeight: 800,
-            }}
-          >
-            F
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={logo} width={56} height={56} alt="" />
           <div style={{ color: "#9ca3af", fontSize: 28, fontWeight: 600 }}>framertonextjs.com/blog</div>
         </div>
 

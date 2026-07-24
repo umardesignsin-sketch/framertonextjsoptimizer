@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import { logoDataUri } from "@/lib/logo";
 
 // Site-wide Open Graph / Twitter card image (1200×630), auto-wired by Next.js
 // into OG + Twitter metadata for every route under app/.
@@ -7,7 +8,8 @@ export const alt = "Framer to Next.js Optimizer — convert and optimize Framer 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-export default function OgImage() {
+export default async function OgImage() {
+  const logo = await logoDataUri();
   return new ImageResponse(
     (
       <div
@@ -23,22 +25,8 @@ export default function OgImage() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <div
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: 16,
-              background: "#ffffff",
-              color: "#0b0b0c",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 42,
-              fontWeight: 800,
-            }}
-          >
-            F
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={logo} width={64} height={64} alt="" />
           <div style={{ color: "#9ca3af", fontSize: 30, fontWeight: 600 }}>framertonextjs.com</div>
         </div>
 

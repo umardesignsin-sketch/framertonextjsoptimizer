@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Logo } from "@/components/Logo";
 
 const COLUMNS: { heading: string; links: { label: string; href: string }[] }[] = [
   {
@@ -71,9 +72,7 @@ export function Footer() {
       <div className="mt-12 flex flex-col gap-10 sm:flex-row sm:justify-between">
         <div className="max-w-xs">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-6 w-6 items-center justify-center rounded bg-accent text-[12px] font-bold text-accent-foreground">
-              F
-            </div>
+            <Logo size={24} />
             <span className="text-[14px] font-semibold tracking-tight">Framer → Next.js</span>
           </div>
           <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground">

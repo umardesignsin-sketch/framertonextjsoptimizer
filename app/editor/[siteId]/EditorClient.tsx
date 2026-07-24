@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { Logo } from "@/components/Logo";
 
 // Mirror of lib/overrides.ts EditorEdit (not imported — that module pulls in
 // cheerio, which shouldn't ship to the browser).
@@ -304,6 +305,17 @@ export function EditorClient({
   // CSS) so the wiring, measured heights, and refs stay stable.
   const [visibleBps, setVisibleBps] = useState<Set<string>>(() => new Set(FRAMES.map((f) => f.bp)));
   const [layerTree, setLayerTree] = useState<LayerTree | null>(null);
+  // Branded loading state: true from mount (and again on every page switch)
+  // until the first artboard has actually wired up, masking the blank/dark
+  // moment before the live site's iframes have anything to show. Reset
+  // during render (React's documented pattern for "adjust state when a prop
+  // changes") rather than in an effect, which would cause an extra render.
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [loadingForPath, setLoadingForPath] = useState(pagePath);
+  if (pagePath !== loadingForPath) {
+    setLoadingForPath(pagePath);
+    setInitialLoading(true);
+  }
 
   const frameRefs = useRef<(HTMLIFrameElement | null)[]>([]);
   const canvasRef = useRef<HTMLElement | null>(null);
@@ -556,6 +568,7 @@ export function EditorClient({
       const doc = frameRefs.current[index]?.contentDocument;
       if (!doc || !doc.body) return;
       if (doc.getElementById("fno-shield")) return; // already wired
+      setInitialLoading(false);
 
       // Editing shield: a transparent layer above the page that swallows all
       // pointer events while an editing tool is active. The page never sees
@@ -1483,6 +1496,18 @@ export function EditorClient({
             </>
           )}
         </aside>
+      </div>
+
+      {/* Branded loading splash — shown until the first artboard wires up,
+          fading out rather than popping so the canvas underneath doesn't
+          feel like it "snapped in." */}
+      <div
+        className={`pointer-events-none fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-[#0d0d0f] transition-opacity duration-500 ${
+          initialLoading ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        <Logo size={48} spinning />
+        <p className="text-[13px] text-neutral-500">Loading your site…</p>
       </div>
     </div>
   );

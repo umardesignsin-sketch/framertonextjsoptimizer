@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "./icons";
+import { Logo } from "@/components/Logo";
 
 const NAV = [
   { href: "/admin", label: "Dashboard", icon: "grid" as const },
@@ -21,9 +22,7 @@ export function AdminHeader() {
   return (
     <header className="sticky top-0 z-20 border-b border-border bg-background/90 backdrop-blur">
       <div className="mx-auto flex max-w-5xl items-center gap-2 px-4 py-3 sm:px-5">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent text-[13px] font-bold text-accent-foreground">
-          F
-        </div>
+        <Logo size={28} className="shrink-0" />
         <span className="hidden text-[13px] font-semibold tracking-tight text-foreground sm:inline">
           Founders panel
         </span>

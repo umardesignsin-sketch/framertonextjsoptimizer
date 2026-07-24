@@ -1,14 +1,13 @@
 import Link from "next/link";
 import { AuthNavLink } from "@/components/AuthNavLink";
+import { Logo } from "@/components/Logo";
 
 export function Header() {
   return (
     <header className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3">
         <Link href="/" className="flex items-center gap-2.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-[13px] font-bold text-accent-foreground">
-            F
-          </div>
+          <Logo size={28} />
           <span className="text-[15px] font-semibold tracking-tight">
             Framer <span className="text-muted-foreground">→</span> Next.js
           </span>
