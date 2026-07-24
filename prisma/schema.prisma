@@ -125,5 +125,13 @@ model SignupMeta {
   campaign    String?
   referrer    String?
   landingPath String?
+  /// Parsed from the User-Agent header at signup: "desktop" | "mobile" | "tablet".
+  device      String?
+  /// e.g. "Chrome", "Safari", "Firefox", "Edge". Best-effort UA sniffing —
+  /// browsers that deliberately present as Chrome for compatibility (Arc,
+  /// Brave in some configs) aren't distinguishable from the UA string alone.
+  browser     String?
+  /// e.g. "Windows", "macOS", "iOS", "Android", "Linux".
+  os          String?
   createdAt   DateTime @default(now())
 }

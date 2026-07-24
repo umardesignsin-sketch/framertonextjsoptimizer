@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
     await captureSignup(userId, {
       cookie: request.cookies.get(ATTR_COOKIE)?.value,
       country,
+      userAgent: request.headers.get("user-agent"),
     });
   }
   return response;

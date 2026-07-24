@@ -1,60 +1,12 @@
-import { createSupabaseAdmin, supabaseAdminConfigured } from "@/lib/supabase/admin";
+import { supabaseAdminConfigured } from "@/lib/supabase/admin";
 import { db, dbConfigured } from "@/lib/db";
 import { signupMetaFor } from "@/lib/attribution";
+import { loadAllSignups, flag, countRecent } from "@/lib/admin-signups";
 import { AdminHeader } from "../AdminHeader";
 import { Icon } from "../icons";
 
-/** ISO 3166-1 alpha-2 → flag emoji (regional indicator pair). */
-function flag(cc: string): string {
-  if (!/^[A-Za-z]{2}$/.test(cc)) return "";
-  return String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
-}
-
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-interface Signup {
-  id: string;
-  email: string;
-  provider: string;
-  verified: boolean;
-  createdAt: string;
-  lastSignInAt: string | null;
-}
-
-async function loadSignups(): Promise<Signup[]> {
-  const admin = createSupabaseAdmin();
-  const out: Signup[] = [];
-  for (let page = 1; page <= 10; page++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
-    if (error || !data?.users?.length) break;
-    for (const u of data.users) {
-      const identities = u.identities || [];
-      const provider =
-        identities.find((i) => i.provider === "google")
-          ? "google"
-          : identities[0]?.provider || (u.app_metadata?.provider as string) || "email";
-      out.push({
-        id: u.id,
-        email: u.email || "(no email)",
-        provider,
-        verified: !!u.email_confirmed_at || !!u.confirmed_at,
-        createdAt: u.created_at,
-        lastSignInAt: u.last_sign_in_at || null,
-      });
-    }
-    if (data.users.length < 200) break;
-  }
-  out.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  return out;
-}
-
-/** Count signups within the last N days. Kept out of component render so the
- *  clock read isn't flagged as impure. */
-function countRecent(signups: Signup[], days: number): number {
-  const cutoff = Date.now() - days * 864e5;
-  return signups.filter((s) => new Date(s.createdAt).getTime() >= cutoff).length;
-}
 
 /** Short, non-wrapping date — "Jul 23". Full date+time lives in the title
  *  attribute for anyone who needs it, so nothing forces a 3-line table cell. */
@@ -97,7 +49,7 @@ export default async function AdminUsersPage() {
     );
   }
 
-  const signups = await loadSignups().catch(() => []);
+  const signups = await loadAllSignups().catch(() => []);
 
   // Sites converted per user (engagement signal).
   const siteCounts = new Map<string, number>();

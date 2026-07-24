@@ -85,6 +85,33 @@ const PATHS: Record<string, ReactNode> = {
       <path d="m15 8 4 4-4 4" />
     </>
   ),
+  trending: (
+    <>
+      <path d="m3 17 6-6 4 4 8-8" />
+      <path d="M15 7h6v6" />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" />
+    </>
+  ),
+  monitor: (
+    <>
+      <rect x="3" y="4" width="18" height="13" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </>
+  ),
+  bot: (
+    <>
+      <rect x="4" y="8" width="16" height="12" rx="2.5" />
+      <path d="M12 8V4M9 4h6" />
+      <circle cx="9" cy="14" r="1.3" />
+      <circle cx="15" cy="14" r="1.3" />
+      <path d="M2 13h2M20 13h2" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 14, className }: { name: keyof typeof PATHS; size?: number; className?: string }) {
