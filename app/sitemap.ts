@@ -19,6 +19,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${siteUrl}/export-framer-site`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     { url: `${siteUrl}/nextjs`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     { url: `${siteUrl}/templates`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${siteUrl}/free-portfolio-website`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
     { url: `${siteUrl}/speed`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
     { url: `${siteUrl}/pricing`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${siteUrl}/manifesto`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },

@@ -16,6 +16,7 @@ const COLUMNS: { heading: string; links: { label: string; href: string }[] }[] =
     heading: "Resources",
     links: [
       { label: "Free Framer templates", href: "/templates" },
+      { label: "Free portfolio website", href: "/free-portfolio-website" },
       { label: "Self-host Framer", href: "/guides/self-host-framer" },
       { label: "Remove Framer badge", href: "/guides/remove-made-in-framer-badge" },
       { label: "Blog", href: "/blog" },
