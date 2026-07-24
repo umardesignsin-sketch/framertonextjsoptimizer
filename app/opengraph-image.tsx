@@ -3,7 +3,15 @@ import { logoDataUri } from "@/lib/logo";
 
 // Site-wide Open Graph / Twitter card image (1200×630), auto-wired by Next.js
 // into OG + Twitter metadata for every route under app/.
+//
+// force-dynamic on purpose: next/og's ImageResponse rendering hits an
+// intermittent native libvips crash on this stack ("colourspace: parameter
+// space not set" — a real GLib/VipsInterpretation error, not application
+// code) when Next tries to statically prerender it at BUILD time, which
+// fails the entire build/deploy. Rendering per-request instead means a rare
+// hiccup costs one failed image request, not a blocked deployment.
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 export const alt = "Framer to Next.js Optimizer — convert and optimize Framer sites";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";

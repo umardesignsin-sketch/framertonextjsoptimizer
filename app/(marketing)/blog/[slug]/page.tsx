@@ -29,6 +29,19 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!p) return { title: "Post not found" };
   const description = p.excerpt || autoExcerpt(p.content);
   const url = `/blog/${p.slug}`;
+  // A real, hand-picked cover wins; the "/opengraph-image" placeholder some
+  // posts store is self-referential — fall back to the site-wide OG image
+  // instead. There is deliberately NO per-post opengraph-image.tsx file
+  // (removed): Next.js's file-convention resolver for a dynamic-segment +
+  // route-group nested image route hits a native libvips crash on this
+  // stack ("colourspace: parameter space not set") independent of the
+  // route's own content — confirmed on the unmodified original file too —
+  // and, worse, Next always prefers that colocated file's URL over whatever
+  // this function returns, so setting a working URL here had no effect
+  // while the file existed. Without the file, this explicit fallback is
+  // what actually gets used.
+  const hasCustomCover = p.coverImage && !p.coverImage.includes("/opengraph-image");
+  const image = hasCustomCover ? (p.coverImage as string) : `${SITE.url}/opengraph-image`;
   return {
     title: p.title,
     description,
@@ -42,9 +55,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       modifiedTime: p.updatedAt.toISOString(),
       authors: [p.authorName || DEFAULT_AUTHOR],
       tags: p.tags,
-      images: p.coverImage ? [{ url: p.coverImage }] : undefined,
+      images: [{ url: image }],
     },
-    twitter: { card: "summary_large_image", title: p.title, description },
+    twitter: { card: "summary_large_image", title: p.title, description, images: [image] },
   };
 }
 

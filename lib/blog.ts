@@ -91,7 +91,10 @@ export function postJsonLd(p: PostRow) {
     "@type": "BlogPosting",
     headline: p.title,
     description: p.excerpt || autoExcerpt(p.content),
-    image: p.coverImage ? [p.coverImage] : [`${SITE.url}/blog/${p.slug}/opengraph-image`],
+    image:
+      p.coverImage && !p.coverImage.includes("/opengraph-image")
+        ? [p.coverImage]
+        : [`${SITE.url}/opengraph-image`],
     datePublished: published,
     dateModified: p.updatedAt.toISOString(),
     author: { "@type": "Organization", name: p.authorName || DEFAULT_AUTHOR, url: SITE.url },
