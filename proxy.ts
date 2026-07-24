@@ -53,7 +53,21 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  return res;
+  // Forward the identity this getUser() call already verified so page code
+  // (requireUser/getAuthUser) doesn't repeat the exact same network round
+  // trip to Supabase's Auth API on every request. Strip any client-supplied
+  // versions of these headers first — trusting them unverified would let a
+  // client spoof identity.
+  const forwardHeaders = new Headers(req.headers);
+  forwardHeaders.delete("x-fno-user-id");
+  forwardHeaders.delete("x-fno-user-email");
+  if (user) {
+    forwardHeaders.set("x-fno-user-id", user.id);
+    if (user.email) forwardHeaders.set("x-fno-user-email", user.email);
+  }
+  const finalRes = NextResponse.next({ request: { headers: forwardHeaders } });
+  res.cookies.getAll().forEach((c) => finalRes.cookies.set(c));
+  return finalRes;
 }
 
 export const config = {
