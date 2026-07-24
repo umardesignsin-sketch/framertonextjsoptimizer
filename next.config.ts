@@ -3,6 +3,13 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // sharp is a native addon — keep it out of the server bundle.
   serverExternalPackages: ["sharp"],
+  // Pin the workspace root explicitly. An unrelated package.json in the
+  // user's home directory (separate Remotion tooling) otherwise gets picked
+  // up by Turbopack's lockfile-based root inference, breaking module
+  // resolution for this project entirely.
+  turbopack: {
+    root: __dirname,
+  },
   async redirects() {
     return [
       // Old auto-generated blog slugs -> keyword slugs (SEO).
