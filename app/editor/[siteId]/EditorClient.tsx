@@ -9,7 +9,8 @@ import { Logo } from "@/components/Logo";
 type EditorEdit =
   | { kind: "text"; tag: string; oldText: string; newText: string; cls?: string }
   | { kind: "link"; oldHref: string; newHref: string }
-  | { kind: "image"; oldSrc: string; newSrc: string };
+  | { kind: "image"; oldSrc: string; newSrc: string }
+  | { kind: "visibility"; tag: string; matchAttr?: string; key: string; hidden: boolean };
 
 type Tool = "text" | "link" | "image" | "preview";
 type LeftTab = "pages" | "layers" | "assets";
@@ -19,6 +20,15 @@ interface LayerRow {
   label: string;
   sub?: string;
   el: HTMLElement;
+  /** Attribute the hide/show + rename match keys on (e.g. "href" for nav
+   *  links, "src" for images); undefined means match by text content
+   *  (headings). */
+  matchAttr?: string;
+  /** Nav labels and headings can be renamed inline; images can't (their
+   *  label is alt text/filename, not something with a matching edit kind —
+   *  use the Image tool to replace the file itself). */
+  renameable?: boolean;
+  hidden?: boolean;
 }
 interface LayerTree {
   nav: LayerRow[];
@@ -118,6 +128,26 @@ const ICON_PATHS: Record<string, ReactNode> = {
       <path d="M3 21v-5h5" />
     </>
   ),
+  pencil: (
+    <>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  eyeOff: (
+    <>
+      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-6.5 0-10-7-10-7a18.6 18.6 0 0 1 4.22-5.94" />
+      <path d="M9.9 4.24A10.4 10.4 0 0 1 12 4c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.16 3.19" />
+      <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+      <path d="m2 2 20 20" />
+    </>
+  ),
 };
 
 function Icon({ name, size = 14, className }: { name: string; size?: number; className?: string }) {
@@ -141,19 +171,35 @@ function Icon({ name, size = 14, className }: { name: string; size?: number; cla
 
 const BP_ICON: Record<string, string> = { Desktop: "desktop", Tablet: "tablet", Phone: "phone" };
 
-/** One collapsible section of the read-only Layers tree — nav links,
- *  heading outline, or images — styled after Framer's Layers panel
- *  (small icon + label, indented, row highlights on hover). */
+/** One collapsible section of the Layers tree — nav links, heading outline,
+ *  or images — styled after Framer's Layers panel (small icon + label,
+ *  indented, row highlights on hover). Rows jump-to-and-highlight on click;
+ *  renameable rows (nav + headings) get an inline rename pencil, and every
+ *  row gets a hide/show eye toggle. */
 function LayerGroup({
   title,
   icon,
   rows,
   onSelect,
+  onRename,
+  onToggleHide,
+  renamingEl,
+  renameValue,
+  onRenameChange,
+  onRenameCommit,
+  onRenameCancel,
 }: {
   title: string;
   icon: string;
   rows: LayerRow[];
   onSelect: (el: HTMLElement) => void;
+  onRename: (el: HTMLElement) => void;
+  onToggleHide: (el: HTMLElement, matchAttr?: string) => void;
+  renamingEl: HTMLElement | null;
+  renameValue: string;
+  onRenameChange: (value: string) => void;
+  onRenameCommit: () => void;
+  onRenameCancel: () => void;
 }) {
   if (rows.length === 0) return null;
   return (
@@ -164,23 +210,72 @@ function LayerGroup({
         <span className="text-neutral-700">{rows.length}</span>
       </div>
       <ul className="mt-1 space-y-0.5">
-        {rows.map((r, i) => (
-          <li key={i}>
-            <button
-              onClick={() => onSelect(r.el)}
-              className="group flex w-full items-center gap-1.5 rounded-md py-1 pl-3 pr-2 text-left transition-colors hover:bg-[#1c1c1f]"
-            >
-              {r.sub && r.icon === "heading" ? (
-                <span className="w-4 shrink-0 text-center text-[9.5px] font-bold uppercase text-neutral-600">
-                  {r.sub}
-                </span>
-              ) : (
-                <Icon name={r.icon} size={11} className="shrink-0 text-neutral-600 group-hover:text-neutral-400" />
-              )}
-              <span className="min-w-0 flex-1 truncate text-neutral-300">{r.label}</span>
-            </button>
-          </li>
-        ))}
+        {rows.map((r, i) => {
+          const isRenaming = renamingEl === r.el;
+          return (
+            <li key={i}>
+              <div
+                className={`group flex w-full items-center gap-1 rounded-md py-1 pl-3 pr-1 transition-colors hover:bg-[#1c1c1f] ${
+                  r.hidden ? "opacity-40" : ""
+                }`}
+              >
+                <button
+                  onClick={() => !isRenaming && onSelect(r.el)}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                >
+                  {r.sub && r.icon === "heading" ? (
+                    <span className="w-4 shrink-0 text-center text-[9.5px] font-bold uppercase text-neutral-600">
+                      {r.sub}
+                    </span>
+                  ) : (
+                    <Icon name={r.icon} size={11} className="shrink-0 text-neutral-600 group-hover:text-neutral-400" />
+                  )}
+                  {isRenaming ? (
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => onRenameChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === "Enter") onRenameCommit();
+                        else if (e.key === "Escape") onRenameCancel();
+                      }}
+                      onBlur={onRenameCommit}
+                      className="min-w-0 flex-1 rounded border border-blue-500/60 bg-[#0e0e10] px-1 py-0.5 text-[12px] text-neutral-100 outline-none"
+                    />
+                  ) : (
+                    <span className="min-w-0 flex-1 truncate text-neutral-300">{r.label}</span>
+                  )}
+                </button>
+                <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  {r.renameable && !isRenaming && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRename(r.el);
+                      }}
+                      title="Rename"
+                      className="rounded p-0.5 text-neutral-500 transition-colors hover:bg-[#26262b] hover:text-neutral-200"
+                    >
+                      <Icon name="pencil" size={11} />
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleHide(r.el, r.matchAttr);
+                    }}
+                    title={r.hidden ? "Show" : "Hide"}
+                    className="rounded p-0.5 text-neutral-500 transition-colors hover:bg-[#26262b] hover:text-neutral-200"
+                  >
+                    <Icon name={r.hidden ? "eyeOff" : "eye"} size={11} />
+                  </button>
+                </div>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -358,13 +453,19 @@ export function EditorClient({
             ? `text|${e.tag}|${e.oldText}`
             : e.kind === "link"
               ? `link|${e.oldHref}`
-              : `image|${e.oldSrc}`;
+              : e.kind === "image"
+                ? `image|${e.oldSrc}`
+                : `vis|${e.tag}|${e.matchAttr || ""}|${e.key}`;
         const key = idOf(edit);
         const filtered = prev.filter((e) => idOf(e) !== key);
         const isNoop =
           (edit.kind === "text" && norm(edit.newText) === norm(edit.oldText)) ||
           (edit.kind === "link" && edit.newHref === edit.oldHref) ||
-          (edit.kind === "image" && edit.newSrc === edit.oldSrc);
+          (edit.kind === "image" && edit.newSrc === edit.oldSrc) ||
+          // Toggling a layer back to visible always matches the natural,
+          // no-edit state — dropping it (rather than recording hidden:false)
+          // keeps the Changes list free of no-op entries.
+          (edit.kind === "visibility" && !edit.hidden);
         const next = isNoop ? filtered : [...filtered, edit];
         scheduleSave(next);
         return next;
@@ -475,6 +576,13 @@ export function EditorClient({
                 img.removeAttribute("sizes");
               }
             });
+          } else if (e.kind === "visibility") {
+            const els = doc.getElementsByTagName((e.tag || "*").toLowerCase());
+            for (let i = 0; i < els.length; i++) {
+              const el = els[i] as HTMLElement;
+              const match = e.matchAttr ? el.getAttribute(e.matchAttr) === e.key : norm(el.textContent || "") === e.key;
+              if (match) el.style.setProperty("display", e.hidden ? "none" : "", e.hidden ? "important" : "");
+            }
           }
         } catch {
           /* skip */
@@ -983,6 +1091,9 @@ export function EditorClient({
     const idx = FRAMES.findIndex((f) => visibleBps.has(f.bp));
     const doc = frameRefs.current[idx < 0 ? 0 : idx]?.contentDocument;
     if (!doc || !doc.body) return;
+    const view = doc.defaultView;
+    const isHidden = (el: HTMLElement) =>
+      el.style.display === "none" || (view ? view.getComputedStyle(el).display === "none" : false);
 
     const nav: LayerRow[] = [];
     const seenHrefs = new Set<string>();
@@ -991,14 +1102,21 @@ export function EditorClient({
       const text = norm(a.textContent || "");
       if (!href || !text || seenHrefs.has(href) || nav.length >= 15) return;
       seenHrefs.add(href);
-      nav.push({ icon: "link", label: text, el: a });
+      nav.push({ icon: "link", label: text, el: a, matchAttr: "href", renameable: true, hidden: isHidden(a) });
     });
 
     const headings: LayerRow[] = [];
     doc.querySelectorAll<HTMLElement>("h1, h2, h3").forEach((el) => {
       const text = norm(el.textContent || "");
       if (!text || headings.length >= 30) return;
-      headings.push({ icon: "heading", label: text, sub: el.tagName.toLowerCase(), el });
+      headings.push({
+        icon: "heading",
+        label: text,
+        sub: el.tagName.toLowerCase(),
+        el,
+        renameable: true,
+        hidden: isHidden(el),
+      });
     });
 
     const images: LayerRow[] = [];
@@ -1006,7 +1124,7 @@ export function EditorClient({
       if (images.length >= 20) return;
       const alt = norm(el.getAttribute("alt") || "");
       const name = (el.getAttribute("src") || "").split("/").pop()?.slice(0, 30) || "image";
-      images.push({ icon: "image", label: alt || name, sub: alt ? name : undefined, el });
+      images.push({ icon: "image", label: alt || name, sub: alt ? name : undefined, el, matchAttr: "src", hidden: isHidden(el) });
     });
 
     setLayerTree({ nav, headings, images });
@@ -1015,6 +1133,39 @@ export function EditorClient({
   useEffect(() => {
     if (leftTab === "layers") buildLayerTree();
   }, [leftTab, pagePath, buildLayerTree]);
+
+  // ---- inline layer rename (Layers panel pencil icon) ----
+  const [renaming, setRenaming] = useState<{ el: HTMLElement; value: string } | null>(null);
+  const startRename = useCallback((el: HTMLElement) => {
+    setRenaming({ el, value: norm(el.textContent || "") });
+  }, []);
+  const cancelRename = useCallback(() => setRenaming(null), []);
+  const commitRename = useCallback(() => {
+    if (!renaming) return;
+    const { el, value } = renaming;
+    const oldText = norm(el.textContent || "");
+    const newText = norm(value);
+    setRenaming(null);
+    if (!newText || newText === oldText) return;
+    setTextPreserving(el, newText, oldText);
+    recordEdit({ kind: "text", tag: el.tagName, oldText, newText, cls: framerClass(el) });
+    buildLayerTree();
+  }, [renaming, recordEdit, buildLayerTree]);
+
+  // ---- layer hide/show (Layers panel eye icon) ----
+  const toggleHideLayer = useCallback(
+    (el: HTMLElement, matchAttr?: string) => {
+      const key = matchAttr ? el.getAttribute(matchAttr) || "" : norm(el.textContent || "");
+      if (!key) return;
+      const view = el.ownerDocument?.defaultView;
+      const wasHidden = el.style.display === "none" || (view ? view.getComputedStyle(el).display === "none" : false);
+      const hidden = !wasHidden;
+      el.style.setProperty("display", hidden ? "none" : "", hidden ? "important" : "");
+      recordEdit({ kind: "visibility", tag: el.tagName, matchAttr, key, hidden });
+      buildLayerTree();
+    },
+    [recordEdit, buildLayerTree]
+  );
 
   /** Scroll the canvas so a live element (found via the layer tree) centers
    *  in view, and flash an outline on it. The iframe never scrolls
@@ -1176,16 +1327,30 @@ export function EditorClient({
                   <p className="px-1 py-2 leading-relaxed text-neutral-500">Loading page structure…</p>
                 ) : (
                   <>
-                    <LayerGroup title="Navigation" icon="nav" rows={layerTree.nav} onSelect={jumpTo} />
-                    <LayerGroup title="Sections" icon="heading" rows={layerTree.headings} onSelect={jumpTo} />
-                    <LayerGroup title="Images" icon="image" rows={layerTree.images} onSelect={jumpTo} />
+                    {(["nav", "headings", "images"] as const).map((groupKey) => (
+                      <LayerGroup
+                        key={groupKey}
+                        title={groupKey === "nav" ? "Navigation" : groupKey === "headings" ? "Sections" : "Images"}
+                        icon={groupKey === "nav" ? "nav" : groupKey === "headings" ? "heading" : "image"}
+                        rows={layerTree[groupKey]}
+                        onSelect={jumpTo}
+                        onRename={startRename}
+                        onToggleHide={toggleHideLayer}
+                        renamingEl={renaming?.el ?? null}
+                        renameValue={renaming?.value ?? ""}
+                        onRenameChange={(v) => setRenaming((r) => (r ? { ...r, value: v } : r))}
+                        onRenameCommit={commitRename}
+                        onRenameCancel={cancelRename}
+                      />
+                    ))}
                     {!layerTree.nav.length && !layerTree.headings.length && !layerTree.images.length && (
                       <p className="px-1 py-2 leading-relaxed text-neutral-500">Nothing detected on this page yet.</p>
                     )}
                   </>
                 )}
                 <p className="px-1 pt-1 text-[11px] leading-relaxed text-neutral-600">
-                  Read-only structure — click a row to jump to it on the canvas. Use the Text/Link/Image tools to edit.
+                  Click a row to jump to it. Pencil renames text, the eye hides/shows it. Use the Text/Link/Image
+                  tools on the canvas for anything else.
                 </p>
               </div>
             ) : (
@@ -1437,10 +1602,12 @@ export function EditorClient({
                           ? "bg-sky-500/15 text-sky-400"
                           : e.kind === "link"
                             ? "bg-violet-500/15 text-violet-400"
-                            : "bg-emerald-500/15 text-emerald-400"
+                            : e.kind === "image"
+                              ? "bg-emerald-500/15 text-emerald-400"
+                              : "bg-amber-500/15 text-amber-400"
                       }`}
                     >
-                      <Icon name={e.kind} size={11} />
+                      <Icon name={e.kind === "visibility" ? "eyeOff" : e.kind} size={11} />
                     </span>
                     <div className="min-w-0 flex-1">
                       {e.kind === "text" ? (
@@ -1453,7 +1620,7 @@ export function EditorClient({
                           <div className="truncate text-neutral-500 line-through">{e.oldHref}</div>
                           <div className="truncate text-neutral-200">{e.newHref}</div>
                         </>
-                      ) : (
+                      ) : e.kind === "image" ? (
                         <div className="flex items-center gap-2">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
@@ -1462,6 +1629,10 @@ export function EditorClient({
                             className="h-8 w-12 shrink-0 rounded border border-[#26262b] object-cover"
                           />
                           <span className="text-neutral-300">Image replaced</span>
+                        </div>
+                      ) : (
+                        <div className="truncate text-neutral-300">
+                          Hidden: <span className="text-neutral-400">{e.key}</span>
                         </div>
                       )}
                     </div>

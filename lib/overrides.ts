@@ -5,7 +5,8 @@
 // runtime re-renders the page from Framer's own JS data on load — so a static
 // HTML edit gets overwritten a moment after hydration. To make an edit stick,
 // we inject a small runtime script that re-applies each change (text, link
-// href, or image src) and keeps enforcing it via a MutationObserver.
+// href, image src, or a layer's hidden/shown state) and keeps enforcing it
+// via a MutationObserver.
 // Overrides come from two sources: buildOverrides() (diff of two documents,
 // used by any file transform) and editorOverrides() (edits captured live from
 // the visual editor's iframe DOM).
@@ -32,8 +33,10 @@ export interface Override {
    *  - "html": key = normalized innerHTML      → set innerHTML = h
    *  - "attr": key = attribute `a`'s value     → set attribute a = h (links)
    *  - "img":  key = src (or srcset contains k)→ set src = h, drop srcset/sizes
+   *  - "hide": key = attribute `a`'s value, or normalized textContent when `a`
+   *            is unset → toggle display:none. h is "1" (hidden) or "0" (shown).
    */
-  m: "txt" | "text" | "html" | "attr" | "img";
+  m: "txt" | "text" | "html" | "attr" | "img" | "hide";
   /** Normalized old content key the element must still show. */
   k: string;
   /** New value: innerHTML (text/html) or attribute value (attr/img). */
@@ -55,7 +58,8 @@ function escapeHtml(s: string): string {
 export type EditorEdit =
   | { kind: "text"; tag: string; oldText: string; newText: string; cls?: string }
   | { kind: "link"; oldHref: string; newHref: string }
-  | { kind: "image"; oldSrc: string; newSrc: string };
+  | { kind: "image"; oldSrc: string; newSrc: string }
+  | { kind: "visibility"; tag: string; matchAttr?: string; key: string; hidden: boolean };
 
 /** Turns editor-captured edits into runtime Override objects. */
 export function editorOverrides(edits: EditorEdit[]): Override[] {
@@ -73,6 +77,15 @@ export function editorOverrides(edits: EditorEdit[]): Override[] {
     } else if (e.kind === "image") {
       if (!e.oldSrc || e.oldSrc === e.newSrc) continue;
       out.push({ t: "img", m: "img", k: e.oldSrc, h: e.newSrc });
+    } else if (e.kind === "visibility") {
+      if (!e.key) continue;
+      out.push({
+        t: (e.tag || "").toLowerCase() || "*",
+        m: "hide",
+        k: e.matchAttr ? e.key : norm(e.key),
+        a: e.matchAttr,
+        h: e.hidden ? "1" : "0",
+      });
     }
   }
   return out;
@@ -208,6 +221,7 @@ for(var j=0;j<els.length;j++){var el=els[j];
 if(o.m==="attr"){if(el.getAttribute(o.a)===o.k){el.setAttribute(o.a,o.h);wrote=true;}}
 else if(o.m==="img"){var s=el.getAttribute("src"),ss=el.getAttribute("srcset")||"";if(s===o.k||ss.indexOf(o.k)>=0){el.setAttribute("src",o.h);el.removeAttribute("srcset");el.removeAttribute("sizes");wrote=true;}}
 else if(o.m==="txt"){if(nm(el.textContent||"")===o.k){setTxt(el,o.h,o.k);wrote=true;}}
+else if(o.m==="hide"){var mtch=o.a?(el.getAttribute(o.a)===o.k):(nm(el.textContent||"")===o.k);if(mtch){el.style.setProperty("display",o.h==="1"?"none":"",o.h==="1"?"important":"");wrote=true;}}
 else{var key=o.m==="text"?nm(el.textContent||""):nm(el.innerHTML||"");if(key===o.k){el.innerHTML=o.h;wrote=true;}}}}catch(e){}
 if(wrote)rounds[i]=(rounds[i]||0)+1;}
 }finally{applying=false}}
@@ -228,7 +242,7 @@ function isOverride(o: unknown): o is Override {
   return (
     !!x &&
     typeof x.t === "string" &&
-    (x.m === "txt" || x.m === "text" || x.m === "html" || x.m === "attr" || x.m === "img") &&
+    (x.m === "txt" || x.m === "text" || x.m === "html" || x.m === "attr" || x.m === "img" || x.m === "hide") &&
     typeof x.k === "string" &&
     typeof x.h === "string"
   );
