@@ -13,6 +13,18 @@ type EditorEdit =
 type Tool = "text" | "link" | "image" | "preview";
 type LeftTab = "pages" | "layers" | "assets";
 
+interface LayerRow {
+  icon: string;
+  label: string;
+  sub?: string;
+  el: HTMLElement;
+}
+interface LayerTree {
+  nav: LayerRow[];
+  headings: LayerRow[];
+  images: LayerRow[];
+}
+
 const FRAMES: { bp: string; w: number }[] = [
   { bp: "Desktop", w: 1280 },
   { bp: "Tablet", w: 834 },
@@ -91,6 +103,20 @@ const ICON_PATHS: Record<string, ReactNode> = {
     </>
   ),
   sparkle: <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.5 2.5M15.2 15.2l2.5 2.5M17.7 6.3l-2.5 2.5M8.8 15.2l-2.5 2.5" />,
+  nav: (
+    <>
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </>
+  ),
+  heading: <path d="M6 4v16M18 4v16M6 12h12" />,
+  refresh: (
+    <>
+      <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+      <path d="M3 21v-5h5" />
+    </>
+  ),
 };
 
 function Icon({ name, size = 14, className }: { name: string; size?: number; className?: string }) {
@@ -113,6 +139,51 @@ function Icon({ name, size = 14, className }: { name: string; size?: number; cla
 }
 
 const BP_ICON: Record<string, string> = { Desktop: "desktop", Tablet: "tablet", Phone: "phone" };
+
+/** One collapsible section of the read-only Layers tree — nav links,
+ *  heading outline, or images — styled after Framer's Layers panel
+ *  (small icon + label, indented, row highlights on hover). */
+function LayerGroup({
+  title,
+  icon,
+  rows,
+  onSelect,
+}: {
+  title: string;
+  icon: string;
+  rows: LayerRow[];
+  onSelect: (el: HTMLElement) => void;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 px-1 text-[10.5px] font-semibold uppercase tracking-wide text-neutral-600">
+        <Icon name={icon} size={10} />
+        {title}
+        <span className="text-neutral-700">{rows.length}</span>
+      </div>
+      <ul className="mt-1 space-y-0.5">
+        {rows.map((r, i) => (
+          <li key={i}>
+            <button
+              onClick={() => onSelect(r.el)}
+              className="group flex w-full items-center gap-1.5 rounded-md py-1 pl-3 pr-2 text-left transition-colors hover:bg-[#1c1c1f]"
+            >
+              {r.sub && r.icon === "heading" ? (
+                <span className="w-4 shrink-0 text-center text-[9.5px] font-bold uppercase text-neutral-600">
+                  {r.sub}
+                </span>
+              ) : (
+                <Icon name={r.icon} size={11} className="shrink-0 text-neutral-600 group-hover:text-neutral-400" />
+              )}
+              <span className="min-w-0 flex-1 truncate text-neutral-300">{r.label}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 /** Cache-bust a preview path so frames reload (strips any previous r= bump). */
 function bumpRefresh(p: string): string {
@@ -232,6 +303,7 @@ export function EditorClient({
   // Which breakpoint artboards are shown. All iframes stay mounted (hidden via
   // CSS) so the wiring, measured heights, and refs stay stable.
   const [visibleBps, setVisibleBps] = useState<Set<string>>(() => new Set(FRAMES.map((f) => f.bp)));
+  const [layerTree, setLayerTree] = useState<LayerTree | null>(null);
 
   const frameRefs = useRef<(HTMLIFrameElement | null)[]>([]);
   const canvasRef = useRef<HTMLElement | null>(null);
@@ -889,6 +961,79 @@ export function EditorClient({
     return () => window.removeEventListener("keydown", onKey);
   }, [dialog, fitZoom]);
 
+  /** Read-only structural summary of the live page — nav links, heading
+   *  outline, images — built from whichever artboard is currently visible.
+   *  Mirrors the orientation comment extracted for generated route.ts files
+   *  (lib/nextjs-export.ts), applied here to the live iframe DOM instead so
+   *  rows can jump-scroll to the real element on the canvas. */
+  const buildLayerTree = useCallback(() => {
+    const idx = FRAMES.findIndex((f) => visibleBps.has(f.bp));
+    const doc = frameRefs.current[idx < 0 ? 0 : idx]?.contentDocument;
+    if (!doc || !doc.body) return;
+
+    const nav: LayerRow[] = [];
+    const seenHrefs = new Set<string>();
+    doc.querySelectorAll<HTMLAnchorElement>("nav a[href], header a[href]").forEach((a) => {
+      const href = a.getAttribute("href") || "";
+      const text = norm(a.textContent || "");
+      if (!href || !text || seenHrefs.has(href) || nav.length >= 15) return;
+      seenHrefs.add(href);
+      nav.push({ icon: "link", label: text, el: a });
+    });
+
+    const headings: LayerRow[] = [];
+    doc.querySelectorAll<HTMLElement>("h1, h2, h3").forEach((el) => {
+      const text = norm(el.textContent || "");
+      if (!text || headings.length >= 30) return;
+      headings.push({ icon: "heading", label: text, sub: el.tagName.toLowerCase(), el });
+    });
+
+    const images: LayerRow[] = [];
+    doc.querySelectorAll<HTMLImageElement>("img").forEach((el) => {
+      if (images.length >= 20) return;
+      const alt = norm(el.getAttribute("alt") || "");
+      const name = (el.getAttribute("src") || "").split("/").pop()?.slice(0, 30) || "image";
+      images.push({ icon: "image", label: alt || name, sub: alt ? name : undefined, el });
+    });
+
+    setLayerTree({ nav, headings, images });
+  }, [visibleBps]);
+
+  useEffect(() => {
+    if (leftTab === "layers") buildLayerTree();
+  }, [leftTab, pagePath, buildLayerTree]);
+
+  /** Scroll the canvas so a live element (found via the layer tree) centers
+   *  in view, and flash an outline on it. The iframe never scrolls
+   *  internally (artboards render full-height, see wireFrame), so this
+   *  computes the element's painted position via getBoundingClientRect and
+   *  scrolls the outer canvas container instead. */
+  const jumpTo = useCallback((el: HTMLElement) => {
+    try {
+      const iframe = el.ownerDocument?.defaultView?.frameElement as HTMLIFrameElement | null;
+      const canvas = canvasRef.current;
+      if (!iframe || !canvas) return;
+      const iframeRect = iframe.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const scale = iframeRect.height / (iframe.offsetHeight || 1);
+      const targetViewportY = iframeRect.top + elRect.top * scale;
+      const canvasRect = canvas.getBoundingClientRect();
+      const delta = targetViewportY - canvasRect.top - canvasRect.height / 2 + (elRect.height * scale) / 2;
+      canvas.scrollBy({ top: delta, left: 0, behavior: "smooth" });
+
+      const prevOutline = el.style.outline;
+      const prevOffset = el.style.outlineOffset;
+      el.style.outline = "2.5px solid #3b82f6";
+      el.style.outlineOffset = "2px";
+      setTimeout(() => {
+        el.style.outline = prevOutline;
+        el.style.outlineOffset = prevOffset;
+      }, 1200);
+    } catch {
+      /* element may be stale after a reload — ignore */
+    }
+  }, []);
+
   return (
     <div className="flex h-screen flex-col bg-[#111113] text-neutral-200">
       {/* Top bar */}
@@ -1005,11 +1150,34 @@ export function EditorClient({
                   </li>
                 ))}
               </ul>
+            ) : leftTab === "layers" ? (
+              <div className="space-y-3">
+                <button
+                  onClick={buildLayerTree}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-md border border-[#26262b] px-2 py-1.5 text-[11.5px] text-neutral-400 transition-colors hover:border-neutral-600 hover:text-neutral-200"
+                >
+                  <Icon name="refresh" size={11} />
+                  Refresh from canvas
+                </button>
+                {!layerTree ? (
+                  <p className="px-1 py-2 leading-relaxed text-neutral-500">Loading page structure…</p>
+                ) : (
+                  <>
+                    <LayerGroup title="Navigation" icon="nav" rows={layerTree.nav} onSelect={jumpTo} />
+                    <LayerGroup title="Sections" icon="heading" rows={layerTree.headings} onSelect={jumpTo} />
+                    <LayerGroup title="Images" icon="image" rows={layerTree.images} onSelect={jumpTo} />
+                    {!layerTree.nav.length && !layerTree.headings.length && !layerTree.images.length && (
+                      <p className="px-1 py-2 leading-relaxed text-neutral-500">Nothing detected on this page yet.</p>
+                    )}
+                  </>
+                )}
+                <p className="px-1 pt-1 text-[11px] leading-relaxed text-neutral-600">
+                  Read-only structure — click a row to jump to it on the canvas. Use the Text/Link/Image tools to edit.
+                </p>
+              </div>
             ) : (
               <p className="px-2 py-4 leading-relaxed text-neutral-500">
-                {leftTab === "layers"
-                  ? "Layer tree isn’t editable in this version — use the Text/Link/Image tools directly on the canvas."
-                  : "Asset management is coming soon. Swap images with the Image tool."}
+                Asset management is coming soon. Swap images with the Image tool.
               </p>
             )}
           </div>
@@ -1111,8 +1279,123 @@ export function EditorClient({
           </div>
         </main>
 
-        {/* Right panel */}
+        {/* Right panel — an inline Inspector replaces the Changes list while
+            editing a link/image (Framer's canvas uses a persistent side
+            panel for this, never a modal popup over the canvas). */}
         <aside className="flex w-64 shrink-0 flex-col border-l border-[#26262b] bg-[#161618]">
+          {dialog ? (
+            <>
+              <div className="flex items-center gap-2 border-b border-[#26262b] px-3 py-2 text-[12.5px]">
+                <span
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded ${
+                    dialog.kind === "link" ? "bg-violet-500/15 text-violet-400" : "bg-emerald-500/15 text-emerald-400"
+                  }`}
+                >
+                  <Icon name={dialog.kind} size={11} />
+                </span>
+                <span className="font-medium text-white">{dialog.kind === "link" ? "Editing link" : "Editing image"}</span>
+                <button
+                  onClick={() => setDialog(null)}
+                  className="ml-auto rounded p-0.5 text-neutral-500 transition-colors hover:bg-[#26262b] hover:text-neutral-200"
+                  aria-label="Close"
+                >
+                  <Icon name="x" size={12} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-auto p-3 text-[12px]">
+                {dialog.kind === "link" ? (
+                  <div>
+                    <div className="text-[10.5px] font-semibold uppercase tracking-wide text-neutral-500">Link to</div>
+                    <input
+                      autoFocus
+                      value={dialog.value}
+                      onChange={(e) => setDialog((d) => (d ? { ...d, value: e.target.value } : d))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") applyDialog();
+                        if (e.key === "Escape") setDialog(null);
+                      }}
+                      placeholder="https://… or /path"
+                      className="mt-1.5 h-9 w-full rounded-lg border border-[#2a2a2e] bg-[#0e0e10] px-3 text-[13px] text-neutral-100 outline-none focus:border-blue-500"
+                    />
+                    <p className="mt-2 leading-relaxed text-neutral-500">A full URL, or a path like /contact.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-[10.5px] font-semibold uppercase tracking-wide text-neutral-500">Source</div>
+                      <label
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const f = e.dataTransfer.files?.[0];
+                          if (f) void handleDialogFile(f);
+                        }}
+                        className={`mt-1.5 flex min-h-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed px-3 py-3 text-center text-[12px] transition-colors ${
+                          uploading
+                            ? "border-blue-500/60 text-blue-300"
+                            : "border-[#3a3a3f] text-neutral-400 hover:border-blue-500/70 hover:text-neutral-200"
+                        }`}
+                      >
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/avif"
+                          className="hidden"
+                          disabled={uploading}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) void handleDialogFile(f);
+                            e.target.value = "";
+                          }}
+                        />
+                        {uploading ? (
+                          <span>Uploading…</span>
+                        ) : (
+                          <>
+                            <span className="font-medium text-neutral-300">Drop image or click</span>
+                            <span className="text-[11px] text-neutral-500">up to 8 MB</span>
+                          </>
+                        )}
+                      </label>
+                    </div>
+                    {dialog.value && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={dialog.value} alt="" className="max-h-28 w-full rounded border border-[#26262b] object-contain" />
+                    )}
+                    <div>
+                      <div className="text-[10.5px] font-semibold uppercase tracking-wide text-neutral-500">Image URL</div>
+                      <input
+                        value={dialog.value}
+                        onChange={(e) => setDialog((d) => (d ? { ...d, value: e.target.value } : d))}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") applyDialog();
+                          if (e.key === "Escape") setDialog(null);
+                        }}
+                        placeholder="https://…/image.jpg"
+                        className="mt-1.5 h-9 w-full rounded-lg border border-[#2a2a2e] bg-[#0e0e10] px-3 text-[13px] text-neutral-100 outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 border-t border-[#26262b] p-2">
+                <button
+                  onClick={() => setDialog(null)}
+                  className="flex-1 rounded-lg border border-[#2a2a2e] px-3 py-1.5 text-[13px] text-neutral-300 transition-colors hover:border-neutral-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={applyDialog}
+                  className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-blue-500"
+                >
+                  Apply
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
           <div className="flex items-center justify-between border-b border-[#26262b] px-3 py-2 text-[12.5px]">
             <span className="font-medium text-white">Changes</span>
             {edits.length > 0 && (
@@ -1197,94 +1480,10 @@ export function EditorClient({
               </p>
             )}
           </div>
+            </>
+          )}
         </aside>
       </div>
-
-      {dialog && (
-        <div
-          className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]"
-          onClick={() => setDialog(null)}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl border border-[#2c2c31] bg-[#1b1b1e] p-5 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="flex items-center gap-2 text-[14px] font-medium text-white">
-              <span
-                className={`flex h-5 w-5 items-center justify-center rounded ${
-                  dialog.kind === "link" ? "bg-violet-500/15 text-violet-400" : "bg-emerald-500/15 text-emerald-400"
-                }`}
-              >
-                <Icon name={dialog.kind} size={11} />
-              </span>
-              {dialog.kind === "link" ? "Change link" : "Change image"}
-            </h3>
-            <p className="mt-1 text-[12px] text-neutral-400">
-              {dialog.kind === "link"
-                ? "Where should this link go? A URL or a path like /contact."
-                : "Drop an image file, browse, or paste a public image URL."}
-            </p>
-            {dialog.kind === "image" && (
-              <label
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const f = e.dataTransfer.files?.[0];
-                  if (f) void handleDialogFile(f);
-                }}
-                className={`mt-3 flex min-h-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed px-3 py-4 text-center text-[12.5px] transition-colors ${
-                  uploading
-                    ? "border-blue-500/60 text-blue-300"
-                    : "border-[#3a3a3f] text-neutral-400 hover:border-blue-500/70 hover:text-neutral-200"
-                }`}
-              >
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/avif"
-                  className="hidden"
-                  disabled={uploading}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) void handleDialogFile(f);
-                    e.target.value = "";
-                  }}
-                />
-                {uploading ? (
-                  <span>Uploading…</span>
-                ) : (
-                  <>
-                    <span className="font-medium text-neutral-300">Drop an image here or click to browse</span>
-                    <span className="text-[11.5px] text-neutral-500">PNG, JPG, WebP, GIF, SVG · up to 8 MB</span>
-                  </>
-                )}
-              </label>
-            )}
-            {dialog.kind === "image" && dialog.value && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={dialog.value} alt="" className="mt-2 max-h-32 rounded border border-[#2a2a2e] object-contain" />
-            )}
-            <input
-              autoFocus
-              value={dialog.value}
-              onChange={(e) => setDialog((d) => (d ? { ...d, value: e.target.value } : d))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") applyDialog();
-                if (e.key === "Escape") setDialog(null);
-              }}
-              placeholder={dialog.kind === "link" ? "https://… or /path" : "https://…/image.jpg"}
-              className="mt-3 h-10 w-full rounded-lg border border-[#2a2a2e] bg-[#0e0e10] px-3 text-[13px] text-neutral-100 outline-none focus:border-blue-500"
-            />
-            <div className="mt-3 flex justify-end gap-2">
-              <button onClick={() => setDialog(null)} className="rounded-lg border border-[#2a2a2e] px-3 py-1.5 text-[13px] text-neutral-300">
-                Cancel
-              </button>
-              <button onClick={applyDialog} className="rounded-lg bg-blue-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-blue-500">
-                Apply
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
