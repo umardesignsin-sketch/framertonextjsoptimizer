@@ -30,6 +30,8 @@ const COLUMNS: { heading: string; links: { label: string; href: string }[] }[] =
     links: [
       { label: "vs NoCodeXport", href: "/vs/nocodexport" },
       { label: "vs ConvertFramer", href: "/vs/convertframer" },
+      { label: "Framer vs WordPress", href: "/vs/wordpress" },
+      { label: "Framer vs Webflow", href: "/vs/webflow" },
       { label: "Pricing", href: "/pricing" },
     ],
   },

@@ -29,6 +29,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${siteUrl}/tools/robots-txt-generator`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
     { url: `${siteUrl}/vs/nocodexport`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
     { url: `${siteUrl}/vs/convertframer`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${siteUrl}/vs/wordpress`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${siteUrl}/vs/webflow`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
     { url: `${siteUrl}/guides/self-host-framer`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
     { url: `${siteUrl}/guides/remove-made-in-framer-badge`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${siteUrl}/blog`, lastModified: now, changeFrequency: "weekly", priority: 0.8 },
