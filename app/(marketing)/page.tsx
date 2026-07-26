@@ -1093,7 +1093,7 @@ function AboutSection() {
     <section className="mt-24 border-t border-border pt-12">
       <h2 className="text-2xl font-semibold tracking-tight">What is the Framer → Next.js Optimizer?</h2>
       <p className="mt-3 max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
-        The Framer → Next.js Optimizer is a free tool that converts any published{" "}
+        The Framer → Next.js Optimizer is a free Framer to Next.js converter that turns any published{" "}
         <a href="https://www.framer.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Framer</a>{" "}
         site into a fast, deployable website. It captures your Framer pages, removes Framer&apos;s heavy
         JavaScript runtime, self-hosts and re-encodes images to{" "}
@@ -1118,7 +1118,9 @@ function AboutSection() {
         <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Vercel</a>{" "}
         in one click — or open a converted site in the{" "}
         <Link href="/nextjs" className="text-foreground underline underline-offset-2">Next.js project export</Link>{" "}
-        and take the code with you.
+        and take the code with you. Looking at other Framer to Next.js converter options? See how this
+        one compares to{" "}
+        <Link href="/vs/convertframer" className="text-foreground underline underline-offset-2">ConvertFramer</Link>.
       </p>
     </section>
   );

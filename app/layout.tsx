@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     template: "%s — Framer → Next.js Optimizer",
   },
   description:
-    "Convert any Framer website into production-ready Next.js or clean static HTML — strip Framer lock-in, boost Lighthouse & SEO, host anywhere. Free.",
+    "The free Framer to Next.js converter — turn any published Framer site into a production-ready Next.js project or clean static HTML. Strip Framer lock-in, boost Lighthouse & SEO, host anywhere.",
   applicationName: SITE.name,
   keywords: KEYWORDS,
   authors: [{ name: SITE.name, url: SITE.url }],
@@ -70,14 +70,14 @@ export const metadata: Metadata = {
     siteName: SITE.name,
     title: "Framer to Next.js Converter | Export Framer Sites",
     description:
-      "Convert any Framer website into production-ready Next.js or clean static HTML — strip Framer lock-in, boost Lighthouse & SEO, host anywhere. Free.",
+      "The free Framer to Next.js converter — turn any published Framer site into a production-ready Next.js project or clean static HTML. Strip Framer lock-in, boost Lighthouse & SEO, host anywhere.",
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
     title: "Framer to Next.js Converter | Export Framer Sites",
     description:
-      "Convert any Framer website into production-ready Next.js or clean static HTML — strip Framer lock-in, boost Lighthouse & SEO, host anywhere. Free.",
+      "The free Framer to Next.js converter — turn any published Framer site into a production-ready Next.js project or clean static HTML. Strip Framer lock-in, boost Lighthouse & SEO, host anywhere.",
   },
 };
 
