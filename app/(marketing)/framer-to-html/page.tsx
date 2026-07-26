@@ -25,6 +25,8 @@ export const metadata: Metadata = {
     "export framer site",
     "framer static html",
     "framer html export tool",
+    "move from framer to html",
+    "moving from framer to html",
   ],
   alternates: { canonical: "/framer-to-html" },
   openGraph: {
@@ -100,6 +102,10 @@ const FAQ: { q: string; a: string }[] = [
   {
     q: "Framer to HTML vs Framer to Next.js — which should I pick?",
     a: "Pick the Framer to HTML converter when you want the fastest static site and simple hosting. Pick Framer to Next.js when you need a real App Router codebase with exact Framer runtime fidelity. You can run both and compare.",
+  },
+  {
+    q: "How do I move from Framer to HTML entirely — not just export the files?",
+    a: "Moving off Framer is four steps: export the HTML (this converter), host it somewhere else (Netlify, Vercel, Cloudflare Pages, or any static host), point your domain at the new host, and redirect any URLs that changed so search rankings carry over. The converter handles step one automatically and preserves your URL structure, which covers most of step four for free.",
   },
   {
     q: "What if a page fails to convert?",
@@ -491,6 +497,18 @@ export default function FramerToHtmlPage() {
                     </Link>
                   </td>
                 </tr>
+                <tr>
+                  <td className="px-4 py-3 font-medium text-foreground">move from framer to html</td>
+                  <td className="px-4 py-3">
+                    Export + host + DNS + redirects — the full path is in{" "}
+                    <Link
+                      href="/blog/how-to-move-from-framer-to-html-without-losing-your-design-or-your-rankings"
+                      className="text-foreground underline"
+                    >
+                      this guide
+                    </Link>
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -695,6 +713,10 @@ export default function FramerToHtmlPage() {
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {[
               ["How do I convert Framer to HTML? Step-by-step", "/blog/how-do-i-convert-framer-to-html"],
+              [
+                "How to move from Framer to HTML (without losing rankings)",
+                "/blog/how-to-move-from-framer-to-html-without-losing-your-design-or-your-rankings",
+              ],
               ["Is there a free Framer to HTML converter?", "/blog/free-framer-to-html-converter"],
               ["Framer to HTML conversion problems (and fixes)", "/blog/framer-to-html-conversion-problems"],
               ["The Framer to HTML export checklist", "/blog/framer-to-html-checklist"],
