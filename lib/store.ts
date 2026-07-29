@@ -23,7 +23,14 @@ export interface Job {
 const g = globalThis as unknown as { __framerJobs?: Map<string, Job> };
 const jobs: Map<string, Job> = (g.__framerJobs ??= new Map());
 
-const MAX_JOBS = 25;
+// Was 25 — far too small at real traffic volume. Once a job aged out of this
+// cap, the next preview/download/deploy silently triggered a FULL
+// reconversion (re-fetch + re-parse + re-Sharp-encode every image) instead of
+// a cache hit, which is what actually burned through the Vercel Hobby plan's
+// Fluid Active CPU allowance. Binary assets are content-addressed and shared
+// across jobs (see serializeFiles), so raising this only costs a bit more
+// small per-job JSON metadata storage, not the expensive images.
+const MAX_JOBS = 1000;
 const TTL_MS = 1000 * 60 * 60; // 1h (in-memory cache)
 const BLOB_PREFIX = "jobs/";
 const META_PREFIX = "meta/"; // small per-job metadata for the admin dashboard
