@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
+// Type-only — erased at compile time under isolatedModules, so this never
+// pulls lib/collections-detect.ts's cheerio-dependent code into the client
+// bundle (unlike a value import of the module itself).
+import type { FieldSlot } from "@/lib/collections-detect";
 
 // Mirror of lib/overrides.ts EditorEdit (not imported — that module pulls in
 // cheerio, which shouldn't ship to the browser).
@@ -12,8 +16,46 @@ type EditorEdit =
   | { kind: "image"; oldSrc: string; newSrc: string }
   | { kind: "visibility"; tag: string; matchAttr?: string; key: string; hidden: boolean };
 
-type Tool = "text" | "link" | "image" | "preview";
-type LeftTab = "pages" | "layers" | "assets";
+export interface EditorCollection {
+  id: string;
+  name: string;
+  routePrefix: string;
+  confidence: number;
+  fields: FieldSlot[];
+  items: { id: string; slug: string; fields: Record<string, string> }[];
+}
+
+/** Best-effort human label for a collection item: first text field's value,
+ *  falling back to the slug when no text field has content yet. */
+function itemLabel(collection: EditorCollection, item: EditorCollection["items"][number]): string {
+  const titleField = collection.fields.find((f) => f.type === "text" && f.scope === "body");
+  const value = titleField ? item.fields[titleField.key] : undefined;
+  return value?.trim() || item.slug;
+}
+
+// A single "select" tool replaces the old text/link/image trio: clicking any
+// element now resolves what it is (image > link > text, innermost/topmost
+// under the cursor wins) and shows a contextual toolbar for it instead of
+// requiring the right tool pre-armed. Preview is the only other mode (hides
+// the editing shield so the page runs live, untouched).
+type Tool = "select" | "preview";
+type LeftTab = "pages" | "layers" | "assets" | "collections";
+
+/** What clicking an element in "select" mode resolved to. */
+type SelectedKind = "text" | "link" | "image";
+interface Selected {
+  el: HTMLElement;
+  kind: SelectedKind;
+  /** Attribute the hide/show match key comes from ("href"/"src"); text
+   *  elements match by their own text content instead (matchAttr unset). */
+  matchAttr?: string;
+}
+interface SelectedRect {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
 
 interface LayerRow {
   icon: string;
@@ -33,6 +75,7 @@ interface LayerRow {
 interface LayerTree {
   nav: LayerRow[];
   headings: LayerRow[];
+  buttons: LayerRow[];
   images: LayerRow[];
 }
 
@@ -45,14 +88,19 @@ const GAP = 72;
 const LABEL_H = 34;
 
 const TOOLS: { id: Tool; label: string; key: string; hint: string }[] = [
-  { id: "text", label: "Text", key: "T", hint: "Click any text to edit it" },
-  { id: "link", label: "Link", key: "L", hint: "Click a link to change where it goes" },
-  { id: "image", label: "Image", key: "I", hint: "Click an image to swap it" },
+  { id: "select", label: "Select", key: "V", hint: "Click any text, link, or image to edit it" },
   { id: "preview", label: "Preview", key: "P", hint: "Interact with the live site — effects run" },
 ];
 
 // ---- inline icon set (stroke = currentColor, sized by prop) ----------------
 const ICON_PATHS: Record<string, ReactNode> = {
+  select: <path d="M4 3.5 19 10l-6.5 2 2 6.5z" />,
+  button: (
+    <>
+      <rect x="3" y="8" width="18" height="8" rx="4" />
+      <path d="M8 12h.01M12 12h.01M16 12h.01" />
+    </>
+  ),
   text: (
     <>
       <path d="M4 7V5h16v2" />
@@ -281,6 +329,81 @@ function LayerGroup({
   );
 }
 
+/** Floating pill of contextual actions for whatever's currently selected —
+ *  the "click any element, see one panel" replacement for pre-arming a
+ *  Text/Link/Image tool. No click-away catcher needed: the shield's own
+ *  click handler already clears/reassigns selection on every click (empty
+ *  space -> null, a different element -> that element), so clicking through
+ *  to the canvas underneath just works without an extra dismiss step. */
+function SelectionToolbar({
+  kind,
+  rect,
+  hidden,
+  onEditText,
+  onEditLink,
+  onReplaceImage,
+  onToggleHide,
+}: {
+  kind: SelectedKind;
+  rect: SelectedRect;
+  hidden: boolean;
+  onEditText: () => void;
+  onEditLink: () => void;
+  onReplaceImage: () => void;
+  onToggleHide: () => void;
+}) {
+  const TOOLBAR_H = 34;
+  const HEADER_H = 52;
+  const above = rect.top - TOOLBAR_H - 8 >= HEADER_H;
+  const top = above ? rect.top - TOOLBAR_H - 8 : rect.top + rect.height + 8;
+  const viewportW = typeof window !== "undefined" ? window.innerWidth : 1200;
+  const left = Math.min(Math.max(rect.left, 8), viewportW - 260);
+
+  return (
+    <div
+      className="fixed z-50 flex items-center gap-1 rounded-lg border border-[#2a2a2e] bg-[#1c1c1f] px-1.5 py-1 text-[12px] text-neutral-300 shadow-xl"
+      style={{ top, left }}
+    >
+      {(kind === "text" || kind === "link") && (
+        <button
+          onClick={onEditText}
+          className="flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-[#2a2a2e] hover:text-white"
+        >
+          <Icon name="text" size={12} />
+          Edit Text
+        </button>
+      )}
+      {kind === "link" && (
+        <button
+          onClick={onEditLink}
+          className="flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-[#2a2a2e] hover:text-white"
+        >
+          <Icon name="link" size={12} />
+          Edit Link
+        </button>
+      )}
+      {kind === "image" && (
+        <button
+          onClick={onReplaceImage}
+          className="flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-[#2a2a2e] hover:text-white"
+        >
+          <Icon name="image" size={12} />
+          Replace
+        </button>
+      )}
+      <div className="mx-0.5 h-4 w-px bg-[#2a2a2e]" />
+      <button
+        onClick={onToggleHide}
+        title={hidden ? "Show" : "Hide"}
+        className="flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-[#2a2a2e] hover:text-white"
+      >
+        <Icon name={hidden ? "eyeOff" : "eye"} size={12} />
+        {hidden ? "Show" : "Hide"}
+      </button>
+    </div>
+  );
+}
+
 /** Cache-bust a preview path so frames reload (strips any previous r= bump). */
 function bumpRefresh(p: string): string {
   const base = p.replace(/([?&])r=\d+&?/, (_m, sep) => (sep === "?" ? "?" : "")).replace(/[?&]$/, "");
@@ -370,6 +493,7 @@ export function EditorClient({
   pages,
   initialEdits,
   canPublish,
+  collections,
 }: {
   siteId: string;
   siteName: string;
@@ -377,9 +501,16 @@ export function EditorClient({
   pages: { route: string; path: string }[];
   initialEdits: EditorEdit[];
   canPublish: boolean;
+  collections: EditorCollection[];
 }) {
-  const [tool, setTool] = useState<Tool>("text");
+  const [tool, setTool] = useState<Tool>("select");
   const [leftTab, setLeftTab] = useState<LeftTab>("pages");
+  // Current selection (canvas click or Layers row) + its on-screen rect for
+  // positioning the floating contextual toolbar. Kept separate from `tool`
+  // since selecting doesn't change mode — only preview does.
+  const [selected, setSelected] = useState<Selected | null>(null);
+  const [selRect, setSelRect] = useState<SelectedRect | null>(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [pagePath, setPagePath] = useState(pages[0]?.path || "");
   const [edits, setEdits] = useState<EditorEdit[]>(initialEdits);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
@@ -652,6 +783,84 @@ export function EditorClient({
     const orig = img.getAttribute("data-fno-orig-src") ?? (img.getAttribute("src") || "");
     setDialog({ kind: "image", el: img, orig, value: img.getAttribute("src") || orig });
   }, []);
+
+  /** An element's on-screen rect in the OUTER document's viewport coordinate
+   *  space — same math as jumpTo below, but returned instead of used to
+   *  scroll, so the floating selection toolbar can position itself with
+   *  `position: fixed` (viewport-relative, so no separate canvas-scroll
+   *  offset accounting needed). */
+  const computeScreenRect = useCallback((el: HTMLElement): SelectedRect | null => {
+    const iframe = el.ownerDocument?.defaultView?.frameElement as HTMLIFrameElement | null;
+    if (!iframe) return null;
+    const iframeRect = iframe.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const scale = iframeRect.height / (iframe.offsetHeight || 1);
+    return {
+      top: iframeRect.top + elRect.top * scale,
+      left: iframeRect.left + elRect.left * scale,
+      width: elRect.width * scale,
+      height: elRect.height * scale,
+    };
+  }, []);
+
+  /** Select an element for the floating contextual toolbar (canvas click or
+   *  a Layers row). `matchAttr` can be passed explicitly (Layers rows already
+   *  know it); canvas clicks omit it and get the default for `kind`. */
+  const selectElement = useCallback(
+    (el: HTMLElement, kind: SelectedKind, matchAttr?: string) => {
+      setSelected({
+        el,
+        kind,
+        matchAttr: matchAttr ?? (kind === "link" ? "href" : kind === "image" ? "src" : undefined),
+      });
+      setSelRect(computeScreenRect(el));
+    },
+    [computeScreenRect]
+  );
+
+  // Keep the floating toolbar glued to its element while the canvas scrolls
+  // or zooms — computeScreenRect already reflects both live (it's just
+  // getBoundingClientRect math), this just re-runs it on demand.
+  useEffect(() => {
+    if (!selected) return;
+    const recompute = () => setSelRect(computeScreenRect(selected.el));
+    recompute();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        recompute();
+      });
+    };
+    canvas.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      canvas.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [selected, zoom, computeScreenRect]);
+
+  // A selection only makes sense for the page/tool it was made on — clear it
+  // on page switch or when leaving Select for Preview. Adjusted during render
+  // (React's documented pattern for "reset state when a prop/value changes")
+  // rather than an effect, same as initialLoading/loadingForPath above.
+  const [selectionForPage, setSelectionForPage] = useState(pagePath);
+  if (pagePath !== selectionForPage) {
+    setSelectionForPage(pagePath);
+    if (selected) setSelected(null);
+    if (selRect) setSelRect(null);
+  }
+  const [selectionForTool, setSelectionForTool] = useState(tool);
+  if (tool !== selectionForTool) {
+    setSelectionForTool(tool);
+    if (tool === "preview") {
+      if (selected) setSelected(null);
+      if (selRect) setSelRect(null);
+    }
+  }
+
   const applyDialog = useCallback(() => {
     if (!dialog) return;
     const value = dialog.value.trim();
@@ -668,6 +877,8 @@ export function EditorClient({
       recordEdit({ kind: "image", oldSrc: dialog.orig, newSrc: value });
     }
     setDialog(null);
+    setSelected(null);
+    setSelRect(null);
   }, [dialog, recordEdit]);
 
   // ---- wire a frame's document on load ----
@@ -705,19 +916,18 @@ export function EditorClient({
         return els.filter((el) => el !== shield);
       };
 
-      // Resolve the first element in the stack the active tool can act on.
-      const resolveTarget = (x: number, y: number): HTMLElement | null => {
-        const t = toolRef.current;
+      // Resolve the innermost/topmost thing under the cursor the unified
+      // Select tool can act on — image > link > text, no tool pre-arming
+      // needed. Priority means clicking the exact pixel of an image inside a
+      // link selects the image; clicking the link's text elsewhere selects
+      // the link (with a separate "Edit Text" action for its label).
+      const resolveTarget = (x: number, y: number): { el: HTMLElement; kind: SelectedKind } | null => {
         for (const el of pickStack(x, y)) {
-          const m =
-            t === "text"
-              ? textContainer(el)
-              : t === "link"
-                ? (el.closest("a") as HTMLElement | null)
-                : t === "image"
-                  ? ((el.tagName === "IMG" ? el : el.closest("img")) as HTMLElement | null)
-                  : null;
-          if (m) return m;
+          if (el.tagName === "IMG") return { el, kind: "image" };
+          const a = el.closest("a") as HTMLElement | null;
+          if (a) return { el: a, kind: "link" };
+          const tc = textContainer(el);
+          if (tc) return { el: tc, kind: "text" };
         }
         return null;
       };
@@ -729,13 +939,14 @@ export function EditorClient({
       shield.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const t = toolRef.current;
-        if (t === "preview") return;
-        const target = resolveTarget(e.clientX, e.clientY);
-        if (!target) return;
-        if (t === "text") beginTextEdit(target, doc);
-        else if (t === "link") editLink(target as HTMLAnchorElement);
-        else if (t === "image") editImage(target as HTMLImageElement);
+        if (toolRef.current === "preview") return;
+        const hit = resolveTarget(e.clientX, e.clientY);
+        if (!hit) {
+          setSelected(null);
+          setSelRect(null);
+          return;
+        }
+        selectElement(hit.el, hit.kind);
       });
 
       let hovered: HTMLElement | null = null;
@@ -748,8 +959,8 @@ export function EditorClient({
         if (toolRef.current === "preview") return;
         const cand = resolveTarget(e.clientX, e.clientY);
         if (cand) {
-          cand.style.outline = "1.5px dashed rgba(37,99,235,0.7)";
-          hovered = cand;
+          cand.el.style.outline = "1.5px dashed rgba(37,99,235,0.7)";
+          hovered = cand.el;
         }
       });
 
@@ -957,7 +1168,7 @@ export function EditorClient({
         subtree: true,
       });
     },
-    [applyAll, beginTextEdit, editImage, editLink, uploadAndSwap]
+    [applyAll, uploadAndSwap, selectElement]
   );
 
   useEffect(() => {
@@ -1063,17 +1274,16 @@ export function EditorClient({
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
-  // Keyboard shortcuts: T/L/I/P switch tools, +/− zoom, 0 fits to width.
+  // Keyboard shortcuts: V/P switch tools, Escape deselects, +/− zoom, 0 fits.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (dialog || e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       const k = e.key.toLowerCase();
-      if (k === "t") setTool("text");
-      else if (k === "l") setTool("link");
-      else if (k === "i") setTool("image");
+      if (k === "v") setTool("select");
       else if (k === "p") setTool("preview");
+      else if (k === "escape") setSelected(null);
       else if (k === "=" || k === "+") setZoom((z) => Math.min(1, +(z + 0.05).toFixed(2)));
       else if (k === "-") setZoom((z) => Math.max(0.1, +(z - 0.05).toFixed(2)));
       else if (k === "0") fitZoom();
@@ -1119,6 +1329,29 @@ export function EditorClient({
       });
     });
 
+    // CTAs/buttons outside nav — a real coverage gap before: a page's
+    // "Book a call" or "Get started" button had no entry anywhere in the
+    // Layers panel, only reachable by hunting for it on the canvas.
+    const buttons: LayerRow[] = [];
+    const seenButtonKeys = new Set<string>();
+    doc.querySelectorAll<HTMLElement>("a, button").forEach((el) => {
+      if (el.closest("nav, header")) return; // already covered by the nav group
+      const text = norm(el.textContent || "");
+      if (!text || buttons.length >= 15) return;
+      const href = el.tagName === "A" ? el.getAttribute("href") || "" : "";
+      const key = href || text;
+      if (seenButtonKeys.has(key)) return;
+      seenButtonKeys.add(key);
+      buttons.push({
+        icon: "button",
+        label: text,
+        el,
+        matchAttr: href ? "href" : undefined,
+        renameable: true,
+        hidden: isHidden(el),
+      });
+    });
+
     const images: LayerRow[] = [];
     doc.querySelectorAll<HTMLImageElement>("img").forEach((el) => {
       if (images.length >= 20) return;
@@ -1127,12 +1360,16 @@ export function EditorClient({
       images.push({ icon: "image", label: alt || name, sub: alt ? name : undefined, el, matchAttr: "src", hidden: isHidden(el) });
     });
 
-    setLayerTree({ nav, headings, images });
+    setLayerTree({ nav, headings, buttons, images });
   }, [visibleBps]);
 
+  // Rebuilds on every edit too (not just tab-open/page-switch) — previously
+  // the list only synced when you clicked "Refresh from canvas" by hand, so
+  // a rename or hide done straight on the canvas left the Layers list stale
+  // until you remembered to refresh it.
   useEffect(() => {
     if (leftTab === "layers") buildLayerTree();
-  }, [leftTab, pagePath, buildLayerTree]);
+  }, [leftTab, pagePath, edits, buildLayerTree]);
 
   // ---- inline layer rename (Layers panel pencil icon) ----
   const [renaming, setRenaming] = useState<{ el: HTMLElement; value: string } | null>(null);
@@ -1166,6 +1403,16 @@ export function EditorClient({
     },
     [recordEdit, buildLayerTree]
   );
+
+  /** Same toggle, driven by the floating selection toolbar instead of a
+   *  Layers row — reuses toggleHideLayer's key/edit logic exactly, then
+   *  clears the selection since the toolbar's job is done. */
+  const toggleHideSelected = useCallback(() => {
+    if (!selected) return;
+    toggleHideLayer(selected.el, selected.matchAttr);
+    setSelected(null);
+    setSelRect(null);
+  }, [selected, toggleHideLayer]);
 
   /** Scroll the canvas so a live element (found via the layer tree) centers
    *  in view, and flash an outline on it. The iframe never scrolls
@@ -1280,18 +1527,23 @@ export function EditorClient({
         {/* Left panel */}
         <aside className="flex w-56 shrink-0 flex-col border-r border-[#26262b] bg-[#161618]">
           <div className="flex gap-1 border-b border-[#26262b] p-1.5 text-[12px]">
-            {(["pages", "layers", "assets"] as LeftTab[]).map((tb) => (
-              <button
-                key={tb}
-                onClick={() => setLeftTab(tb)}
-                className={`rounded-md px-2 py-1 capitalize transition-colors ${
-                  leftTab === tb ? "bg-[#26262b] font-medium text-white" : "text-neutral-500 hover:text-neutral-300"
-                }`}
-              >
-                {tb}
-                {tb === "pages" && <span className="ml-1 text-[10px] text-neutral-500">{pages.length}</span>}
-              </button>
-            ))}
+            {(["pages", "layers", "assets", ...(collections.length ? ["collections" as const] : [])] as LeftTab[]).map(
+              (tb) => (
+                <button
+                  key={tb}
+                  onClick={() => setLeftTab(tb)}
+                  className={`rounded-md px-2 py-1 capitalize transition-colors ${
+                    leftTab === tb ? "bg-[#26262b] font-medium text-white" : "text-neutral-500 hover:text-neutral-300"
+                  }`}
+                >
+                  {tb}
+                  {tb === "pages" && <span className="ml-1 text-[10px] text-neutral-500">{pages.length}</span>}
+                  {tb === "collections" && (
+                    <span className="ml-1 text-[10px] text-neutral-500">{collections.length}</span>
+                  )}
+                </button>
+              )
+            )}
           </div>
           <div className="flex-1 overflow-auto p-2 text-[12.5px]">
             {leftTab === "pages" ? (
@@ -1327,13 +1579,35 @@ export function EditorClient({
                   <p className="px-1 py-2 leading-relaxed text-neutral-500">Loading page structure…</p>
                 ) : (
                   <>
-                    {(["nav", "headings", "images"] as const).map((groupKey) => (
+                    {(["nav", "headings", "buttons", "images"] as const).map((groupKey) => (
                       <LayerGroup
                         key={groupKey}
-                        title={groupKey === "nav" ? "Navigation" : groupKey === "headings" ? "Sections" : "Images"}
-                        icon={groupKey === "nav" ? "nav" : groupKey === "headings" ? "heading" : "image"}
+                        title={
+                          groupKey === "nav"
+                            ? "Navigation"
+                            : groupKey === "headings"
+                              ? "Sections"
+                              : groupKey === "buttons"
+                                ? "Buttons"
+                                : "Images"
+                        }
+                        icon={
+                          groupKey === "nav"
+                            ? "nav"
+                            : groupKey === "headings"
+                              ? "heading"
+                              : groupKey === "buttons"
+                                ? "button"
+                                : "image"
+                        }
                         rows={layerTree[groupKey]}
-                        onSelect={jumpTo}
+                        onSelect={(el) => {
+                          jumpTo(el);
+                          const row = layerTree[groupKey].find((r) => r.el === el);
+                          const kind: SelectedKind =
+                            groupKey === "images" ? "image" : row?.matchAttr === "href" ? "link" : "text";
+                          selectElement(el, kind, row?.matchAttr);
+                        }}
                         onRename={startRename}
                         onToggleHide={toggleHideLayer}
                         renamingEl={renaming?.el ?? null}
@@ -1343,15 +1617,85 @@ export function EditorClient({
                         onRenameCancel={cancelRename}
                       />
                     ))}
-                    {!layerTree.nav.length && !layerTree.headings.length && !layerTree.images.length && (
-                      <p className="px-1 py-2 leading-relaxed text-neutral-500">Nothing detected on this page yet.</p>
-                    )}
+                    {!layerTree.nav.length &&
+                      !layerTree.headings.length &&
+                      !layerTree.buttons.length &&
+                      !layerTree.images.length && (
+                        <p className="px-1 py-2 leading-relaxed text-neutral-500">Nothing detected on this page yet.</p>
+                      )}
                   </>
                 )}
                 <p className="px-1 pt-1 text-[11px] leading-relaxed text-neutral-600">
-                  Click a row to jump to it. Pencil renames text, the eye hides/shows it. Use the Text/Link/Image
-                  tools on the canvas for anything else.
+                  Click a row to jump to it and select it — the same toolbar you&apos;d get by clicking it on the
+                  canvas pops up. Pencil renames inline, the eye hides/shows it.
                 </p>
+              </div>
+            ) : leftTab === "collections" ? (
+              <div className="space-y-2">
+                {(() => {
+                  const selectedCollection = collections.find((c) => c.id === selectedCollectionId) || null;
+                  if (!collections.length) {
+                    return (
+                      <p className="px-1 py-2 leading-relaxed text-neutral-500">
+                        No CMS Collections detected on this site.
+                      </p>
+                    );
+                  }
+                  if (selectedCollection) {
+                    return (
+                      <>
+                        <button
+                          onClick={() => setSelectedCollectionId(null)}
+                          className="flex items-center gap-1 px-1 py-1 text-[11.5px] text-neutral-400 transition-colors hover:text-neutral-200"
+                        >
+                          <Icon name="back" size={11} />
+                          Collections
+                        </button>
+                        <div className="px-1 pb-1 text-[11px] text-neutral-500">
+                          {selectedCollection.routePrefix} · {selectedCollection.items.length} item
+                          {selectedCollection.items.length === 1 ? "" : "s"}
+                        </div>
+                        <ul className="space-y-0.5">
+                          {selectedCollection.items.map((item) => (
+                            <li
+                              key={item.id}
+                              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-neutral-300"
+                            >
+                              <Icon name="page" size={13} className="text-neutral-600" />
+                              <span className="truncate">{itemLabel(selectedCollection, item)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {!selectedCollection.items.length && (
+                          <p className="px-1 py-2 leading-relaxed text-neutral-500">No items yet.</p>
+                        )}
+                        <p className="px-1 pt-2 text-[11px] leading-relaxed text-neutral-600">
+                          Read-only for now — adding, editing, and publishing items is coming soon.
+                        </p>
+                      </>
+                    );
+                  }
+                  return (
+                    <ul className="space-y-0.5">
+                      {collections.map((c) => (
+                        <li key={c.id}>
+                          <button
+                            onClick={() => setSelectedCollectionId(c.id)}
+                            className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-neutral-400 transition-colors hover:bg-[#1c1c1f] hover:text-neutral-200"
+                          >
+                            <Icon
+                              name="page"
+                              size={13}
+                              className="text-neutral-600 group-hover:text-neutral-400"
+                            />
+                            <span className="truncate">{c.name}</span>
+                            <span className="ml-auto shrink-0 text-[10px] text-neutral-500">{c.items.length}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  );
+                })()}
               </div>
             ) : (
               <p className="px-2 py-4 leading-relaxed text-neutral-500">
@@ -1360,7 +1704,8 @@ export function EditorClient({
             )}
           </div>
           <div className="border-t border-[#26262b] px-3 py-2 text-[10.5px] leading-relaxed text-neutral-600">
-            <span className="text-neutral-500">Shortcuts</span> — T L I P tools · +/− zoom · 0 fit · Ctrl-scroll zoom
+            <span className="text-neutral-500">Shortcuts</span> — V/P tools · Esc deselect · +/− zoom · 0 fit ·
+            Ctrl-scroll zoom
           </div>
         </aside>
 
@@ -1456,6 +1801,42 @@ export function EditorClient({
             </div>
           </div>
         </main>
+
+        {/* Floating contextual toolbar — appears on any canvas/Layers-row
+            selection, offering exactly the actions that element supports
+            (text/link/image + hide, per selected.kind) instead of requiring
+            a tool pre-armed before clicking. position:fixed is viewport-
+            relative like the getBoundingClientRect math in
+            computeScreenRect/jumpTo, so no ancestor-scroll offset needed —
+            safe here since no ancestor between this and <body> has its own
+            transform (the zoom scale lives deeper, inside <main>). */}
+        {selected && selRect && (
+          <SelectionToolbar
+            kind={selected.kind}
+            rect={selRect}
+            hidden={
+              selected.el.style.display === "none" ||
+              selected.el.ownerDocument?.defaultView?.getComputedStyle(selected.el).display === "none"
+            }
+            onEditText={() => {
+              const doc = selected.el.ownerDocument;
+              if (doc) beginTextEdit(selected.el, doc);
+              setSelected(null);
+              setSelRect(null);
+            }}
+            onEditLink={() => {
+              editLink(selected.el as HTMLAnchorElement);
+              setSelected(null);
+              setSelRect(null);
+            }}
+            onReplaceImage={() => {
+              editImage(selected.el as HTMLImageElement);
+              setSelected(null);
+              setSelRect(null);
+            }}
+            onToggleHide={toggleHideSelected}
+          />
+        )}
 
         {/* Right panel — an inline Inspector replaces the Changes list while
             editing a link/image (Framer's canvas uses a persistent side
