@@ -97,7 +97,15 @@ export async function assertPublicUrl(raw: string): Promise<URL> {
 
   let addrs: { address: string }[];
   try {
-    addrs = await dns.lookup(host, { all: true });
+    // dns.lookup() has no built-in timeout — a nameserver that never
+    // responds would hang this indefinitely, same failure mode as the
+    // unbounded fetch below this validates for.
+    addrs = await Promise.race([
+      dns.lookup(host, { all: true }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("DNS lookup timed out")), 5_000)
+      ),
+    ]);
   } catch {
     throw new SsrfError("Host could not be resolved");
   }
@@ -118,6 +126,17 @@ export interface GuardedResponse {
   url: string;
 }
 
+// No per-request timeout here used to mean a hung connection (DNS stall, a
+// target that accepts the TCP connection but never responds, etc.) blocked
+// the whole conversion forever. On Vercel that was accidentally bounded by
+// the platform's own function execution limit, which killed the request and
+// surfaced a timeout error; Railway runs this as a persistent server with no
+// such limit, so the exact same hang now stalls indefinitely instead of
+// failing fast — confirmed live as a conversion stuck "processing" for 10+
+// minutes after the move. Every caller goes through this one function, so
+// bounding it here covers the whole pipeline in one place.
+const FETCH_TIMEOUT_MS = 20_000;
+
 /**
  * SSRF-safe fetch: validates the target, then follows redirects MANUALLY,
  * re-validating each hop (fetch's own redirect:"follow" would chase an
@@ -131,7 +150,11 @@ export async function guardedFetch(
   let url = input;
   for (let hop = 0; hop <= maxRedirects; hop++) {
     await assertPublicUrl(url);
-    const res = await fetch(url, { ...init, redirect: "manual" });
+    const res = await fetch(url, {
+      ...init,
+      redirect: "manual",
+      signal: init.signal ?? AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
     const loc = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
     if (loc) {
       if (hop === maxRedirects) throw new SsrfError("Too many redirects");
