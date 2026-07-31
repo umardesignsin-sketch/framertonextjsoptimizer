@@ -14,7 +14,8 @@ type EditorEdit =
   | { kind: "text"; tag: string; oldText: string; newText: string; cls?: string }
   | { kind: "link"; oldHref: string; newHref: string }
   | { kind: "image"; oldSrc: string; newSrc: string }
-  | { kind: "visibility"; tag: string; matchAttr?: string; key: string; hidden: boolean };
+  | { kind: "visibility"; tag: string; matchAttr?: string; key: string; hidden: boolean }
+  | { kind: "size"; tag: string; name: string; width?: string; height?: string };
 
 export interface EditorCollection {
   id: string;
@@ -42,13 +43,29 @@ type Tool = "select" | "preview";
 type LeftTab = "pages" | "layers" | "assets" | "collections";
 
 /** What clicking an element in "select" mode resolved to. */
-type SelectedKind = "text" | "link" | "image";
+type SelectedKind = "text" | "link" | "image" | "container";
 interface Selected {
   el: HTMLElement;
   kind: SelectedKind;
-  /** Attribute the hide/show match key comes from ("href"/"src"); text
-   *  elements match by their own text content instead (matchAttr unset). */
+  /** Attribute the hide/show (+ size) match key comes from ("href"/"src"/
+   *  "data-framer-name"); text elements match by their own text content
+   *  instead (matchAttr unset). */
   matchAttr?: string;
+  /** kind:"container" only — its current width/height (an existing inline
+   *  override if one's already applied, else the rendered size), seeding the
+   *  resize toolbar's inputs so they open showing reality, not blank. */
+  size?: { width: string; height: string };
+}
+
+/** The size to seed the resize toolbar with: an existing inline override if
+ *  one's already applied (so re-opening the toolbar shows what you set, not
+ *  the pre-override render), else the element's current rendered size. */
+function readContainerSize(el: HTMLElement): { width: string; height: string } {
+  const rect = el.getBoundingClientRect();
+  return {
+    width: el.style.width || `${Math.round(rect.width)}px`,
+    height: el.style.height || `${Math.round(rect.height)}px`,
+  };
 }
 interface SelectedRect {
   top: number;
@@ -92,6 +109,10 @@ const LAYER_SKIP_TAGS = /^(SCRIPT|STYLE|NOSCRIPT|LINK|META|TEMPLATE|BR|HR|PATH|D
 const LAYER_SECTION_TAGS = /^(HEADER|NAV|MAIN|FOOTER|SECTION|ARTICLE|ASIDE|FORM)$/;
 /** Containers Framer treats as shared components across pages. */
 const LAYER_SHARED_TAGS = /^(HEADER|NAV|FOOTER)$/;
+/** Tags eligible for the resize toolbar — deliberately excludes A/IMG/text
+ *  tags, which the click-priority order (image > link > text > container)
+ *  already claims first; this only ever matches a plain layout wrapper. */
+const RESIZABLE_TAGS = /^(DIV|SECTION|HEADER|FOOTER|NAV|MAIN|ARTICLE|ASIDE|FORM)$/;
 const LAYER_MAX_NODES = 500;
 const LAYER_MAX_DEPTH = 14;
 
@@ -301,6 +322,7 @@ function layerKind(el: HTMLElement): SelectedKind | "group" {
   if (tag === "IMG") return "image";
   if (tag === "A") return "link";
   if (/^(H[1-6]|P|BUTTON|LI|SPAN)$/.test(tag) && norm(el.textContent || "")) return "text";
+  if (RESIZABLE_TAGS.test(tag) && (el.getAttribute("data-framer-name") || "").trim()) return "container";
   return "group";
 }
 
@@ -499,29 +521,49 @@ function LayerRows(props: LayerRowsProps) {
  *  click handler already clears/reassigns selection on every click (empty
  *  space -> null, a different element -> that element), so clicking through
  *  to the canvas underneath just works without an extra dismiss step. */
+/** Strips a trailing "px" for display in the compact number inputs — typed
+ *  values are re-suffixed with "px" on commit unless they already carry a
+ *  unit (%, vw, auto, etc.), so "420" and "420px" both work as input. */
+function displayDim(v: string): string {
+  return v.replace(/px$/, "");
+}
+function normalizeDim(raw: string): string {
+  const v = raw.trim();
+  if (!v || v === "auto" || /[a-z%]/i.test(v)) return v; // already unitless keyword or has its own unit
+  return `${v}px`;
+}
+
 function SelectionToolbar({
   kind,
   rect,
   hidden,
+  size,
   onEditText,
   onEditLink,
   onReplaceImage,
   onToggleHide,
+  onResize,
 }: {
   kind: SelectedKind;
   rect: SelectedRect;
   hidden: boolean;
+  size?: { width: string; height: string };
   onEditText: () => void;
   onEditLink: () => void;
   onReplaceImage: () => void;
   onToggleHide: () => void;
+  onResize: (width: string, height: string) => void;
 }) {
+  const [w, setW] = useState(size ? displayDim(size.width) : "");
+  const [h, setH] = useState(size ? displayDim(size.height) : "");
+  const commit = () => onResize(normalizeDim(w), normalizeDim(h));
+
   const TOOLBAR_H = 34;
   const HEADER_H = 52;
   const above = rect.top - TOOLBAR_H - 8 >= HEADER_H;
   const top = above ? rect.top - TOOLBAR_H - 8 : rect.top + rect.height + 8;
   const viewportW = typeof window !== "undefined" ? window.innerWidth : 1200;
-  const left = Math.min(Math.max(rect.left, 8), viewportW - 260);
+  const left = Math.min(Math.max(rect.left, 8), viewportW - 300);
 
   return (
     <div
@@ -554,6 +596,37 @@ function SelectionToolbar({
           <Icon name="image" size={12} />
           Replace
         </button>
+      )}
+      {kind === "container" && (
+        <>
+          <Icon name="box" size={12} className="ml-0.5 text-neutral-500" />
+          <label className="flex items-center gap-1">
+            <span className="text-neutral-500">W</span>
+            <input
+              value={w}
+              onChange={(e) => setW(e.target.value)}
+              onBlur={commit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              placeholder="auto"
+              className="w-14 rounded border border-[#333338] bg-[#0e0e10] px-1.5 py-1 text-[12px] text-neutral-100 outline-none focus:border-blue-500"
+            />
+          </label>
+          <label className="flex items-center gap-1">
+            <span className="text-neutral-500">H</span>
+            <input
+              value={h}
+              onChange={(e) => setH(e.target.value)}
+              onBlur={commit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              placeholder="auto"
+              className="w-14 rounded border border-[#333338] bg-[#0e0e10] px-1.5 py-1 text-[12px] text-neutral-100 outline-none focus:border-blue-500"
+            />
+          </label>
+        </>
       )}
       <div className="mx-0.5 h-4 w-px bg-[#2a2a2e]" />
       <button
@@ -805,13 +878,16 @@ export function EditorClient({
               ? `link|${e.oldHref}`
               : e.kind === "image"
                 ? `image|${e.oldSrc}`
-                : `vis|${e.tag}|${e.matchAttr || ""}|${e.key}`;
+                : e.kind === "size"
+                  ? `size|${e.tag}|${e.name}`
+                  : `vis|${e.tag}|${e.matchAttr || ""}|${e.key}`;
         const key = idOf(edit);
         const filtered = prev.filter((e) => idOf(e) !== key);
         const isNoop =
           (edit.kind === "text" && norm(edit.newText) === norm(edit.oldText)) ||
           (edit.kind === "link" && edit.newHref === edit.oldHref) ||
           (edit.kind === "image" && edit.newSrc === edit.oldSrc) ||
+          (edit.kind === "size" && edit.width === undefined && edit.height === undefined) ||
           // Toggling a layer back to visible always matches the natural,
           // no-edit state — dropping it (rather than recording hidden:false)
           // keeps the Changes list free of no-op entries.
@@ -1022,6 +1098,11 @@ export function EditorClient({
     };
   }, []);
 
+  // Bumped on every selection so the resize toolbar's width/height inputs
+  // (local state, for a smooth typing feel) reset cleanly via a React `key`
+  // instead of trying to sync controlled inputs against a changing prop.
+  const [selectionId, setSelectionId] = useState(0);
+
   /** Select an element for the floating contextual toolbar (canvas click or
    *  a Layers row). `matchAttr` can be passed explicitly (Layers rows already
    *  know it); canvas clicks omit it and get the default for `kind`. */
@@ -1030,9 +1111,13 @@ export function EditorClient({
       setSelected({
         el,
         kind,
-        matchAttr: matchAttr ?? (kind === "link" ? "href" : kind === "image" ? "src" : undefined),
+        matchAttr:
+          matchAttr ??
+          (kind === "link" ? "href" : kind === "image" ? "src" : kind === "container" ? "data-framer-name" : undefined),
+        size: kind === "container" ? readContainerSize(el) : undefined,
       });
       setSelRect(computeScreenRect(el));
+      setSelectionId((n) => n + 1);
     },
     [computeScreenRect]
   );
@@ -1147,6 +1232,12 @@ export function EditorClient({
           if (a) return { el: a, kind: "link" };
           const tc = textContainer(el);
           if (tc) return { el: tc, kind: "text" };
+          // A named layout wrapper with nothing to edit but its size — only
+          // named ones (Framer's own data-framer-name) qualify, since an
+          // anonymous div has no content-independent key to target safely.
+          if (RESIZABLE_TAGS.test(el.tagName) && (el.getAttribute("data-framer-name") || "").trim()) {
+            return { el, kind: "container" };
+          }
         }
         return null;
       };
@@ -1598,6 +1689,31 @@ export function EditorClient({
     setSelRect(null);
   }, [selected, toggleHideLayer]);
 
+  /**
+   * Commits a width/height change from the resize toolbar. Both values are
+   * always sent together (the toolbar's local state holds the current pair,
+   * seeded from readContainerSize() at selection time — which itself prefers
+   * an already-applied inline override over the rendered size), so this
+   * never needs to merge against a prior edit for the same element: the
+   * value it's about to record already IS the merge.
+   *
+   * Deliberately does NOT clear the selection afterward (unlike
+   * toggleHideSelected/applyDialog) — resizing is normally iterative
+   * (nudge, look, nudge again), so the toolbar stays open for the next tweak
+   * instead of forcing a re-select per adjustment.
+   */
+  const resizeSelected = useCallback(
+    (width: string, height: string) => {
+      if (!selected || selected.kind !== "container") return;
+      const name = selected.el.getAttribute("data-framer-name") || "";
+      if (!name) return;
+      selected.el.style.setProperty("width", width || "", "important");
+      selected.el.style.setProperty("height", height || "", "important");
+      recordEdit({ kind: "size", tag: selected.el.tagName, name, width, height });
+    },
+    [selected, recordEdit]
+  );
+
   /** Scroll the canvas so a live element (found via the layer tree) centers
    *  in view, and flash an outline on it. The iframe never scrolls
    *  internally (artboards render full-height, see wireFrame), so this
@@ -1974,8 +2090,13 @@ export function EditorClient({
             transform (the zoom scale lives deeper, inside <main>). */}
         {selected && selRect && (
           <SelectionToolbar
+            // Remounts on every new selection so the width/height inputs'
+            // local state (needed for a smooth typing feel) always starts
+            // from THIS element's values instead of the previous one's.
+            key={selectionId}
             kind={selected.kind}
             rect={selRect}
+            size={selected.size}
             hidden={
               selected.el.style.display === "none" ||
               selected.el.ownerDocument?.defaultView?.getComputedStyle(selected.el).display === "none"
@@ -1997,6 +2118,7 @@ export function EditorClient({
               setSelRect(null);
             }}
             onToggleHide={toggleHideSelected}
+            onResize={resizeSelected}
           />
         )}
 
@@ -2147,10 +2269,12 @@ export function EditorClient({
                             ? "bg-violet-500/15 text-violet-400"
                             : e.kind === "image"
                               ? "bg-emerald-500/15 text-emerald-400"
-                              : "bg-amber-500/15 text-amber-400"
+                              : e.kind === "size"
+                                ? "bg-orange-500/15 text-orange-400"
+                                : "bg-amber-500/15 text-amber-400"
                       }`}
                     >
-                      <Icon name={e.kind === "visibility" ? "eyeOff" : e.kind} size={11} />
+                      <Icon name={e.kind === "visibility" ? "eyeOff" : e.kind === "size" ? "box" : e.kind} size={11} />
                     </span>
                     <div className="min-w-0 flex-1">
                       {e.kind === "text" ? (
@@ -2172,6 +2296,13 @@ export function EditorClient({
                             className="h-8 w-12 shrink-0 rounded border border-[#26262b] object-cover"
                           />
                           <span className="text-neutral-300">Image replaced</span>
+                        </div>
+                      ) : e.kind === "size" ? (
+                        <div className="truncate text-neutral-300">
+                          Resized <span className="text-neutral-500">{e.name}</span>:{" "}
+                          <span className="text-neutral-400">
+                            {e.width || "auto"} × {e.height || "auto"}
+                          </span>
                         </div>
                       ) : (
                         <div className="truncate text-neutral-300">

@@ -35,8 +35,15 @@ export interface Override {
    *  - "img":  key = src (or srcset contains k)→ set src = h, drop srcset/sizes
    *  - "hide": key = attribute `a`'s value, or normalized textContent when `a`
    *            is unset → toggle display:none. h is "1" (hidden) or "0" (shown).
+   *  - "size": key = attribute `a`'s value (always "data-framer-name" — a
+   *            container has no text/src to key on, and this is the only
+   *            content-independent identity it has that survives hydration;
+   *            an unnamed container can't be targeted safely and is skipped
+   *            upstream in the editor). h is JSON {width?, height?} (CSS
+   *            values, e.g. "420px"); a present-but-empty value means
+   *            "cleared — revert to Framer's own sizing" for that axis.
    */
-  m: "txt" | "text" | "html" | "attr" | "img" | "hide";
+  m: "txt" | "text" | "html" | "attr" | "img" | "hide" | "size";
   /** Normalized old content key the element must still show. */
   k: string;
   /** New value: innerHTML (text/html) or attribute value (attr/img). */
@@ -64,7 +71,14 @@ export type EditorEdit =
   | { kind: "text"; tag: string; oldText: string; newText: string; cls?: string }
   | { kind: "link"; oldHref: string; newHref: string }
   | { kind: "image"; oldSrc: string; newSrc: string }
-  | { kind: "visibility"; tag: string; matchAttr?: string; key: string; hidden: boolean };
+  | { kind: "visibility"; tag: string; matchAttr?: string; key: string; hidden: boolean }
+  // `name` is the container's data-framer-name — the only reliable,
+  // content-independent identity a text-less wrapper has. Applies at every
+  // breakpoint uniformly (an explicit tradeoff, not an oversight — see
+  // EditorClient.tsx's container-select handling for why per-breakpoint
+  // sizing was scoped out). width/height omitted (not "") means "leave that
+  // axis alone"; "" explicitly means "clear back to Framer's own sizing".
+  | { kind: "size"; tag: string; name: string; width?: string; height?: string };
 
 /** Turns editor-captured edits into runtime Override objects. */
 export function editorOverrides(edits: EditorEdit[]): Override[] {
@@ -90,6 +104,15 @@ export function editorOverrides(edits: EditorEdit[]): Override[] {
         k: e.matchAttr ? e.key : norm(e.key),
         a: e.matchAttr,
         h: e.hidden ? "1" : "0",
+      });
+    } else if (e.kind === "size") {
+      if (!e.name || (e.width === undefined && e.height === undefined)) continue;
+      out.push({
+        t: (e.tag || "").toLowerCase() || "*",
+        m: "size",
+        a: "data-framer-name",
+        k: e.name,
+        h: JSON.stringify({ width: e.width, height: e.height }),
       });
     }
   }
@@ -238,6 +261,7 @@ if(o.m==="attr"){if(el.getAttribute(o.a)===o.k){el.setAttribute(o.a,o.h);wrote=t
 else if(o.m==="img"){var s=el.getAttribute("src"),ss=el.getAttribute("srcset")||"";if(s===o.k||ss.indexOf(o.k)>=0){el.setAttribute("src",o.h);el.removeAttribute("srcset");el.removeAttribute("sizes");wrote=true;}}
 else if(o.m==="txt"){if(nm(el.textContent||"")===o.k){setTxt(el,o.h,o.k);wrote=true;}}
 else if(o.m==="hide"){var mtch=o.a?(el.getAttribute(o.a)===o.k):(nm(el.textContent||"")===o.k);if(mtch){el.style.setProperty("display",o.h==="1"?"none":"",o.h==="1"?"important":"");wrote=true;}}
+else if(o.m==="size"){if(el.getAttribute(o.a)===o.k){var sz=JSON.parse(o.h);if(sz.width!==undefined)el.style.setProperty("width",sz.width||"","important");if(sz.height!==undefined)el.style.setProperty("height",sz.height||"","important");wrote=true;}}
 else{var key=o.m==="text"?nm(el.textContent||""):nm(el.innerHTML||"");if(key===o.k){el.innerHTML=o.h;wrote=true;}}}}catch(e){}
 if(wrote)rounds[i]=(rounds[i]||0)+1;}
 }finally{applying=false}}
@@ -258,7 +282,7 @@ function isOverride(o: unknown): o is Override {
   return (
     !!x &&
     typeof x.t === "string" &&
-    (x.m === "txt" || x.m === "text" || x.m === "html" || x.m === "attr" || x.m === "img" || x.m === "hide") &&
+    (x.m === "txt" || x.m === "text" || x.m === "html" || x.m === "attr" || x.m === "img" || x.m === "hide" || x.m === "size") &&
     typeof x.k === "string" &&
     typeof x.h === "string"
   );
@@ -308,6 +332,25 @@ function toggleDisplayNone($el: cheerio.Cheerio<AnyNode>, hidden: boolean): void
   }
 }
 
+/** Mirrors the client's `el.style.setProperty("width"/"height", v||"",
+ *  "important")` — setting to "" clears the property (revert to Framer's own
+ *  sizing), a non-empty value overrides it. `undefined` (the axis wasn't
+ *  touched by this edit) leaves the existing inline value alone entirely. */
+function applyInlineSize($el: cheerio.Cheerio<AnyNode>, width: string | undefined, height: string | undefined): void {
+  let style = ($el.attr("style") || "").replace(/^;\s*/, "").trim();
+  if (width !== undefined) {
+    style = style.replace(/(^|;)\s*width\s*:[^;]*/gi, "").trim();
+    if (width) style += `${style && !style.endsWith(";") ? ";" : ""} width: ${width} !important;`;
+  }
+  if (height !== undefined) {
+    style = style.replace(/(^|;)\s*height\s*:[^;]*/gi, "").trim();
+    if (height) style += `${style && !style.endsWith(";") ? ";" : ""} height: ${height} !important;`;
+  }
+  style = style.trim();
+  if (style) $el.attr("style", style);
+  else $el.removeAttr("style");
+}
+
 /**
  * Server-side counterpart to the client-side `apply()` inside RUNTIME —
  * applies each override directly to the parsed document instead of leaving it
@@ -343,6 +386,15 @@ export function applyOverridesToDom(html: string, overrides: Override[]): string
       } else if (o.m === "hide") {
         const matched = o.a ? $el.attr(o.a) === o.k : norm($el.text()) === o.k;
         if (matched) toggleDisplayNone($el, o.h === "1");
+      } else if (o.m === "size") {
+        if (o.a && $el.attr(o.a) === o.k) {
+          try {
+            const sz = JSON.parse(o.h) as { width?: string; height?: string };
+            applyInlineSize($el, sz.width, sz.height);
+          } catch {
+            /* malformed — skip rather than corrupt the element's style */
+          }
+        }
       } else {
         const key = o.m === "text" ? norm($el.text()) : norm($el.html() || "");
         if (key === o.k) $el.html(o.h);
