@@ -3,7 +3,7 @@ import { db } from "./db";
 
 export async function recordConversion(
   ownerId: string,
-  params: { sourceUrl: string; jobId: string; outputKind: "hybrid" | "nextjs" }
+  params: { sourceUrl: string; jobId: string; outputKind: "hybrid" | "nextjs"; ogImage?: string }
 ) {
   const name = (() => {
     try {
@@ -20,6 +20,7 @@ export async function recordConversion(
       framerUrl: params.sourceUrl,
       outputKind: params.outputKind,
       themeRef: params.jobId,
+      previewImage: params.ogImage || null,
       status: "ready",
     },
   });

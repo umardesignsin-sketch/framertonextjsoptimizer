@@ -68,65 +68,54 @@ function manifestoJsonLd() {
 
 export default function ManifestoPage() {
   return (
-    <div className="min-h-screen w-full">
-      <main className="mx-auto max-w-2xl px-5 pb-24">
-        <section className="pt-16 pb-4 text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1 text-[12px] font-medium text-muted-foreground">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-            The Manifesto
-          </div>
-          <h1 className="mt-5 text-[34px] font-semibold leading-[1.1] tracking-tight sm:text-[44px]">
-            Own it. Ship it.
-            <br />
-            <span className="bg-gradient-to-br from-accent to-[#8b5cf6] bg-clip-text text-transparent">
-              Never rent it again.
-            </span>
-          </h1>
-        </section>
-
-        <section className="mt-12 space-y-10">
-          {ARTICLES.map((a, i) => (
-            <div key={a.title} className="border-t border-border pt-8 first:border-t-0 first:pt-0">
-              <div className="text-[12px] font-mono font-medium text-accent">
-                {String(i + 1).padStart(2, "0")}
+    <>
+      <main>
+        <section className="page-head">
+          <div className="page-head-box">
+            <div className="page-head-row">
+              <div className="page-head-stack">
+                <span className="mktg-badge">The Manifesto</span>
+                <h1 className="page-title">Own it. Ship it. Never rent it again.</h1>
               </div>
-              <h2 className="mt-2 text-[21px] font-semibold leading-snug tracking-tight sm:text-[24px]">
-                {a.title}
-              </h2>
-              <p className="mt-3 text-[16px] leading-relaxed text-muted-foreground">{a.body}</p>
             </div>
-          ))}
-        </section>
-
-        <section className="mt-16 rounded-2xl border border-border bg-muted/30 p-8 text-center">
-          <p className="text-[15.5px] leading-relaxed text-muted-foreground">
-            None of this is a sales page. It&apos;s what we actually believe, backed by the tests we ran and
-            published, including the ones that didn&apos;t flatter us.{" "}
-            <Link href="/blog/does-converting-framer-to-next-js-make-it-faster-10-real-templates-tested" className="text-foreground underline underline-offset-2">
-              Read the honest results
-            </Link>
-            .
-          </p>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            <Link
-              href="/#convert"
-              className="inline-flex h-11 items-center rounded-full bg-accent px-6 text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
-            >
-              Convert your site free →
-            </Link>
-            <Link
-              href="/nextjs"
-              className="inline-flex h-11 items-center rounded-full border border-border-strong px-6 text-[14px] font-medium transition-colors hover:bg-muted"
-            >
-              Own it as real Next.js code
-            </Link>
           </div>
         </section>
+
+        <div className="page-body is-narrow is-compact">
+          <div className="page-articles">
+            {ARTICLES.map((a, i) => (
+              <article key={a.title} className="page-article">
+                <span className="page-article-num">{String(i + 1).padStart(2, "0")}</span>
+                <h2>{a.title}</h2>
+                <p>{a.body}</p>
+              </article>
+            ))}
+          </div>
+
+          <section className="page-cta">
+            <p>
+              None of this is a sales page. It&apos;s what we actually believe, backed by the tests
+              we ran and published, including the ones that didn&apos;t flatter us.{" "}
+              <Link href="/blog/does-converting-framer-to-next-js-make-it-faster-10-real-templates-tested">
+                Read the honest results
+              </Link>
+              .
+            </p>
+            <div className="page-btn-row">
+              <Link href="/#convert" className="page-btn">
+                Convert your site free →
+              </Link>
+              <Link href="/" className="page-btn is-ghost">
+                Own it as real Next.js code
+              </Link>
+            </div>
+          </section>
+        </div>
       </main>
 
       {manifestoJsonLd().map((obj, i) => (
         <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(obj) }} />
       ))}
-    </div>
+    </>
   );
 }

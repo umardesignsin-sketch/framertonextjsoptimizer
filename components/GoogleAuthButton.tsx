@@ -54,16 +54,11 @@ export function GoogleAuthButton({ next, label = "Continue with Google" }: { nex
 
   return (
     <>
-      <button
-        type="button"
-        onClick={signIn}
-        disabled={busy}
-        className="flex h-11 w-full items-center justify-center gap-2.5 rounded-lg border border-border-strong bg-background text-[15px] font-medium text-foreground transition-colors hover:border-foreground disabled:cursor-not-allowed disabled:opacity-60"
-      >
+      <button type="button" onClick={signIn} disabled={busy} className="secondary-button">
         <GoogleIcon />
-        {busy ? "Redirecting…" : label}
+        <span>{busy ? "Redirecting…" : label}</span>
       </button>
-      {error && <p className="mt-2 text-[13px] text-red-600">{error}</p>}
+      {error && <p className="global-error">{error}</p>}
     </>
   );
 }

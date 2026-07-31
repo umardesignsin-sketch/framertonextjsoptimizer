@@ -34,7 +34,6 @@ publish live.
 - [Pure Next.js converter](${SITE.url}/nextjs): Export a Framer site as a real, deployable Next.js App Router project that keeps Framer's runtime for exact fidelity — not a performance-first mode.
 - [Free Framer templates](${SITE.url}/templates): Real, published Framer templates (portfolio, agency, SaaS, photography) that can be previewed and converted directly.
 - [PageSpeed checker](${SITE.url}/speed): Compare Lighthouse scores before and after conversion.
-- [Pricing](${SITE.url}/pricing): Free — converting, previewing, editing, and publishing all included; hosting uses your own free-tier account. No paid tier exists yet.
 - [FramerToNextJS vs NoCodeXport](${SITE.url}/vs/nocodexport): Honest comparison of Framer export tools — HTML ZIP export vs a real Next.js project + optimization pipeline.
 - [FramerToNextJS vs ConvertFramer](${SITE.url}/vs/convertframer): Comparison against another Framer conversion tool.
 - [Self-host a Framer site](${SITE.url}/guides/self-host-framer): Guide to moving a Framer site off Framer hosting to Netlify, Vercel, or Cloudflare.

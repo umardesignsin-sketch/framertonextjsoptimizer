@@ -32,11 +32,18 @@ enum DeployStatus {
 /// email verification live in Supabase's auth schema. This row is upserted on
 /// first authenticated request so app data (Sites) can FK to it.
 model User {
-  id        String   @id
-  email     String?
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id
+  email         String?
+  name          String?
+  workspaceName String?
+  /// Email preferences — no delivery is wired to these yet (no provider key
+  /// configured); saved for real so the settings UI reflects genuine state
+  /// once notifications go live.
+  notifyConversion Boolean @default(true)
+  notifyDeployment Boolean @default(true)
+  notifyProduct    Boolean @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   sites Site[]
 }
@@ -53,6 +60,10 @@ model Site {
   outputKind String     @default("hybrid")
   /// Reference to the imported design bundle in Blob (the converter output job id).
   themeRef   String?
+  /// og:image scraped from the source Framer page at conversion time — used
+  /// as a dashboard card thumbnail. Null for sites converted before this field
+  /// existed, or when the source page had no og:image.
+  previewImage String?
   status     SiteStatus @default(draft)
   /// Netlify build hook URL used by "Publish" to trigger a rebuild.
   buildHook  String?
@@ -62,6 +73,14 @@ model Site {
   /// Studio (Framer-style canvas) page tree — a DesignDoc of JSON component
   /// trees, edited as blocks on artboards. Independent of the converted bundle.
   designTree Json?
+  /// Last Google PageSpeed Insights audit (mobile), 0-100 per category. Null
+  /// until "Run audit" is used on the project page — audits are on-demand,
+  /// not automatic, since each one costs a real PSI API call.
+  lighthousePerformance   Int?
+  lighthouseAccessibility Int?
+  lighthouseBestPractices Int?
+  lighthouseSeo           Int?
+  lighthouseCheckedAt     DateTime?
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 

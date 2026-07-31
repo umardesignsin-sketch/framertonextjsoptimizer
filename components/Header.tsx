@@ -1,41 +1,56 @@
 import Link from "next/link";
 import { AuthNavLink } from "@/components/AuthNavLink";
-import { Logo } from "@/components/Logo";
 
+// Figma: Homepage → Hero section → Nav bar (node 5:239). 1360px frame, 80px
+// side gutters, 56px tall, sitting 24px below the top of the page (the header
+// owns that 24px so the hero only pads the remaining 72px above its content).
+//
+// The links are centred on the *frame*, not in the space left over between the
+// logo and the CTA — so they're absolutely positioned at 50% rather than laid
+// out in a three-column grid, which would drift as either edge changes width.
 export function Header() {
   return (
-    <header className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur-md">
-      <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3">
-        <Link href="/" className="flex items-center gap-2.5">
-          <Logo size={28} />
-          <span className="text-[15px] font-semibold tracking-tight">
-            Framer <span className="text-muted-foreground">→</span> Next.js
+    <header className="pt-6">
+      <div className="relative mx-auto flex h-14 max-w-[1360px] items-center justify-between px-5 lg:px-20">
+        <Link href="/" className="flex items-center gap-1" aria-label="FNJ home">
+          <span className="relative block size-12 shrink-0 overflow-hidden bg-white">
+            {/* Exported brand mark — the glyph is inset inside its 48px box. */}
+            <span className="absolute inset-[19.58%_17.22%_18.65%_16.29%] block">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/fnj-mark.svg"
+                alt=""
+                className="absolute inset-0 block size-full max-w-none"
+              />
+            </span>
           </span>
+          <span className="text-[28px] font-semibold leading-none text-black">FNJ</span>
         </Link>
-        <nav className="hidden items-center gap-1 rounded-full border border-border bg-muted/60 p-1 text-[13px] font-medium md:flex">
-          <Link href="/framer-to-html" className="rounded-full px-3.5 py-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground">
-            HTML
+
+        <nav
+          className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-8 text-[16px] leading-none text-[#1a1a1a] uppercase md:flex"
+          aria-label="Main navigation"
+        >
+          <Link href="/#how-it-works" className="transition-opacity hover:opacity-60">
+            How it works
           </Link>
-          <Link href="/nextjs" className="rounded-full px-3.5 py-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground">
-            Next.js
+          <Link href="/#faq" className="transition-opacity hover:opacity-60">
+            FAQs
           </Link>
-          <Link href="/templates" className="rounded-full px-3.5 py-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground">
-            Templates
-          </Link>
-          <Link href="/speed" className="rounded-full px-3.5 py-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground">
-            PageSpeed
-          </Link>
-          <Link href="/blog" className="rounded-full px-3.5 py-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground">
+          <Link href="/blog" className="transition-opacity hover:opacity-60">
             Blog
           </Link>
         </nav>
-        <div className="flex items-center gap-3 text-[13px]">
+
+        <div className="flex items-center gap-6">
           <AuthNavLink />
+          {/* Inset shadow, not a border: Figma strokes sit inside the frame,
+              so a real border would make this 186 × 50 instead of 184 × 48. */}
           <Link
             href="/#convert"
-            className="hidden h-9 items-center rounded-full bg-accent px-4 font-medium text-accent-foreground transition-colors hover:bg-accent-hover sm:inline-flex"
+            className="hidden items-center justify-center rounded-[80px] bg-white px-6 py-4 text-[16px] font-medium leading-none text-[#292929] shadow-[inset_0_0_0_1px_rgba(174,174,178,0.5)] transition-colors hover:bg-[#f7f6f5] sm:inline-flex"
           >
-            Convert free →
+            Convert to Next.js
           </Link>
         </div>
       </div>

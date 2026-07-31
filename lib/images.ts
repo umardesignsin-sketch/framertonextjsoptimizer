@@ -20,6 +20,22 @@ function hashName(url: string): string {
   return crypto.createHash("sha1").update(url).digest("hex").slice(0, 16);
 }
 
+/**
+ * Favicon / touch-icon hrefs pointing at Framer's CDN. Kept separate from the
+ * general image set because these must be self-hosted *without* re-encoding:
+ * a WebP favicon is not reliably rendered by Safari, so the original bytes and
+ * extension are preserved (see the callers' copyAsset branch).
+ */
+export function collectIconUrls($: Doc): Set<string> {
+  const urls = new Set<string>();
+  // Matches rel="icon", "shortcut icon", "apple-touch-icon", "mask-icon".
+  $('link[rel*="icon" i]').each((_, el) => {
+    const href = ($(el).attr("href") || "").trim();
+    if (href && IMG_HOST.test(href)) urls.add(href);
+  });
+  return urls;
+}
+
 /** Pull every optimizable image URL out of the document + collected CSS text. */
 export function collectImageUrls($: Doc, cssText: string): Set<string> {
   const urls = new Set<string>();
@@ -38,6 +54,9 @@ export function collectImageUrls($: Doc, cssText: string): Set<string> {
     add($(el).attr("src"));
   });
   $("video[poster]").each((_, el) => add($(el).attr("poster")));
+  // Favicons / touch icons — Framer leaves these on its own CDN, so without
+  // this the converted site still phones home for its tab icon.
+  collectIconUrls($).forEach(add);
   // inline style background-image
   $("[style]").each((_, el) => {
     extractCssUrls($(el).attr("style") || "").forEach(add);
@@ -143,6 +162,12 @@ export function rewriteImageRefs($: Doc, map: Map<string, string>): void {
   });
 
   $('link[as="image"]').each((_, el) => {
+    const newHref = remap($(el).attr("href"));
+    if (newHref) $(el).attr("href", newHref);
+  });
+
+  // Favicons / touch icons — see collectIconUrls().
+  $('link[rel*="icon" i]').each((_, el) => {
     const newHref = remap($(el).attr("href"));
     if (newHref) $(el).attr("href", newHref);
   });

@@ -46,6 +46,7 @@ export async function POST(request: Request) {
             sourceUrl: report.sourceUrl,
             jobId,
             outputKind: "nextjs",
+            ogImage: report.ogImage,
           }).catch(() => {});
         }
 

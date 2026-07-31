@@ -268,7 +268,11 @@ function NextJsConverter() {
             <a href="https://www.netlify.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Netlify</a>{" "}
             for free and it&apos;s genuinely yours from that point on.
           </p>
-          <div className="mt-4 rounded-lg border border-border bg-muted px-4 py-3 text-[13px] leading-relaxed text-muted-foreground">
+          {/* Explicit colours rather than the bg-muted/text-muted-foreground
+              pair: the theme's muted background darkened during the redesign
+              and the muted text colour did not, leaving this whole paragraph
+              grey-on-grey and unreadable. */}
+          <div className="mt-4 rounded-lg border border-border bg-[#f7f6f5] px-4 py-3 text-[13px] leading-relaxed text-[#5d5d5d]">
             <span className="font-medium text-foreground">Honest expectations:</span> this export
             keeps Framer&apos;s own runtime and CDN assets intact, so the site renders and behaves{" "}
             <span className="font-medium text-foreground">exactly</span> like the source — that&apos;s

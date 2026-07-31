@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, Suspense } from "react";
+import { useState, useRef, useCallback, useEffect, Suspense, Fragment } from "react";
 import { useSearchParams } from "next/navigation";
 import { SpeedCompare } from "@/components/SpeedCompare";
 import { AuthGateModal } from "@/components/AuthGateModal";
 import { useAuthUser } from "@/components/useAuthUser";
 import Link from "next/link";
-import { FAQ, faqJsonLd, jsonLdScript } from "@/lib/site-meta";
+import { faqJsonLd, jsonLdScript } from "@/lib/site-meta";
 
 type Stat = { label: string; before: number; after: number; unit: string };
 type PageRef = { route: string; sourceUrl: string };
@@ -28,132 +28,6 @@ function human(n: number): string {
   return n + " B";
 }
 
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
-}
-
-// Reveals content once it scrolls into view. Content renders VISIBLE on the
-// server and for no-JS crawlers; only elements that are below the fold at
-// mount get armed for the entrance animation, so above-the-fold content never
-// flickers and the page stays fully indexable.
-function useInView<T extends HTMLElement>() {
-  const ref = useRef<T>(null);
-  const [shown, setShown] = useState(true);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || prefersReducedMotion()) return;
-    // If the document isn't visible (e.g. a background/prerendered tab),
-    // IntersectionObserver callbacks are suppressed — never arm the hide, so
-    // content can't get stuck invisible.
-    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
-    if (typeof IntersectionObserver === "undefined") return;
-    const belowFold = el.getBoundingClientRect().top > window.innerHeight * 0.85;
-    if (!belowFold) return;
-    setShown(false);
-    const obs = new IntersectionObserver(
-      ([e]) => {
-        if (e.isIntersecting) {
-          setShown(true);
-          obs.disconnect();
-        }
-      },
-      { threshold: 0.18 },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-  return { ref, shown };
-}
-
-function Reveal({
-  children,
-  delay = 0,
-  className = "",
-  as: Tag = "div",
-}: {
-  children: React.ReactNode;
-  delay?: number;
-  className?: string;
-  as?: "div" | "li";
-}) {
-  const { ref, shown } = useInView<HTMLDivElement>();
-  return (
-    <Tag
-      ref={ref as React.Ref<HTMLDivElement & HTMLLIElement>}
-      className={className}
-      style={{
-        opacity: shown ? 1 : 0,
-        transform: shown ? "none" : "translateY(16px)",
-        transition: "opacity 0.6s cubic-bezier(0.16,1,0.3,1), transform 0.6s cubic-bezier(0.16,1,0.3,1)",
-        transitionDelay: `${delay}ms`,
-      }}
-    >
-      {children}
-    </Tag>
-  );
-}
-
-// Counts up to `to` when scrolled into view. Renders the final value on the
-// server / above the fold so numbers are never blank or flickering.
-function CountUp({
-  to,
-  duration = 1400,
-  decimals = 0,
-  prefix = "",
-  suffix = "",
-}: {
-  to: number;
-  duration?: number;
-  decimals?: number;
-  prefix?: string;
-  suffix?: string;
-}) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [val, setVal] = useState(to);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || prefersReducedMotion()) return;
-    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
-    if (typeof IntersectionObserver === "undefined") return;
-    const belowFold = el.getBoundingClientRect().top > window.innerHeight * 0.85;
-    if (!belowFold) return;
-    setVal(0);
-    let raf = 0;
-    const obs = new IntersectionObserver(
-      ([e]) => {
-        if (!e.isIntersecting) return;
-        obs.disconnect();
-        let start = 0;
-        const step = (t: number) => {
-          if (!start) start = t;
-          const p = Math.min(1, (t - start) / duration);
-          const eased = 1 - Math.pow(1 - p, 3);
-          setVal(to * eased);
-          if (p < 1) raf = requestAnimationFrame(step);
-        };
-        raf = requestAnimationFrame(step);
-      },
-      { threshold: 0.4 },
-    );
-    obs.observe(el);
-    return () => {
-      obs.disconnect();
-      cancelAnimationFrame(raf);
-    };
-  }, [to, duration]);
-  const display = decimals > 0 ? val.toFixed(decimals) : Math.round(val).toString();
-  return (
-    <span ref={ref}>
-      {prefix}
-      {display}
-      {suffix}
-    </span>
-  );
-}
 
 function Home() {
   const searchParams = useSearchParams();
@@ -166,9 +40,13 @@ function Home() {
   const [error, setError] = useState<string>("");
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const [showAuthGate, setShowAuthGate] = useState(false);
-
-  // options — the live tool runs Hybrid only (full fidelity + optimized assets).
-  const mode = "hybrid" as const;
+  // Both pipelines now run here. `?mode=` lets the other entry points (the
+  // dashboard, the repeated CTA at the foot of the marketing pages) hand a
+  // URL over with the right tab already selected, instead of sending the user
+  // to a separate converter page.
+  const [outputMode, setOutputMode] = useState<"hybrid" | "nextjs">(() =>
+    searchParams.get("mode") === "hybrid" ? "hybrid" : "nextjs"
+  );
 
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -193,13 +71,18 @@ function Home() {
     setError("");
 
     try {
-      const res = await fetch("/api/convert", {
+      // Two pipelines, one identical NDJSON event stream (progress / done /
+      // error), so the reader loop below is shared. Only the endpoint and the
+      // request body differ — the Next.js route takes no options.
+      const isNextJs = outputMode === "nextjs";
+      const res = await fetch(isNextJs ? "/api/convert-nextjs" : "/api/convert", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: targetUrl.trim(),
-          options: { mode },
-        }),
+        body: JSON.stringify(
+          isNextJs
+            ? { url: targetUrl.trim() }
+            : { url: targetUrl.trim(), options: { mode: "hybrid" } }
+        ),
       });
       if (!res.body) throw new Error("No response stream");
 
@@ -242,7 +125,7 @@ function Home() {
       setError(e instanceof Error ? e.message : "Network error");
       setStatus("error");
     }
-  }, [url, status, pushLine, authState]);
+  }, [url, status, pushLine, authState, outputMode]);
 
   // After returning from login/signup with ?url=&autoconvert=1 (set by the
   // auth gate), the pasted URL was already restored via the lazy useState
@@ -261,46 +144,108 @@ function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState]);
 
+  // Once a conversion starts the workspace takes over the whole page, matching
+  // the design prototype's dedicated conversion screen. Crawlers never click
+  // Convert, so status stays "idle" for them and the indexable marketing page
+  // below is always what gets rendered for SEO.
+  if (status !== "idle") {
+    return (
+      <ConversionWorkspace
+        status={status}
+        lines={lines}
+        error={error}
+        url={url}
+        report={report}
+        jobId={jobId}
+        device={device}
+        setDevice={setDevice}
+        onRetry={() => convert(url)}
+        onChangeUrl={() => {
+          setStatus("idle");
+          setLines([]);
+          setReport(null);
+          setJobId(null);
+          setError("");
+        }}
+      />
+    );
+  }
+
+  function handleHeroSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const v = url.trim();
+    if (!v) return;
+    convert();
+  }
+
   return (
     <div className="min-h-screen w-full">
-      <main className="mx-auto max-w-5xl px-5 pb-24">
-        <Hero />
-        <div id="convert" className="scroll-mt-20">
-          <ConvertCard url={url} setUrl={setUrl} status={status} convert={convert} />
-        </div>
-        <p className="mt-3 px-1 text-[12.5px] leading-relaxed text-muted-foreground">
-          <span className="font-medium text-foreground">Honest expectations:</span>{" "}
-          SEO / Best-Practices / Accessibility reliably hit 95–100. Performance is 90–100 on
-          desktop; mobile is typically 75–95 for marketing sites (Lighthouse throttles mobile CPU
-          4×, so mobile always scores well below desktop — compare mobile-to-mobile). 100/100 on
-          every site is not realistic.
-        </p>
-
-        {(status === "converting" || lines.length > 0) && (
-          <LogPane lines={lines} logRef={logRef} active={status === "converting"} />
-        )}
-
-        {status === "error" && error && (
-          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
+      <main>
+        {/* ── Hero with integrated conversion form ── */}
+        <section className="mktg-hero" id="convert" aria-label="Start a new conversion">
+          <div className="mktg-banner">
+            <span className="mktg-badge">Free Public Beta</span>
+            <div className="mktg-title-area">
+              <h1 className="mktg-title">
+                Production-ready HTML &amp; Next.js Converter
+              </h1>
+              <p className="mktg-subtitle">
+                Convert your published Framer website into optimised HTML or a deployable Next.js
+                project for free. Download, and deploy on the infrastructure you choose.
+              </p>
+            </div>
           </div>
-        )}
 
-        {status === "done" && report && jobId && (
-          <Results
-            report={report}
-            jobId={jobId}
-            device={device}
-            setDevice={setDevice}
-          />
-        )}
+          <div className="mktg-features">
+            <div className="mktg-toggle" role="tablist" aria-label="Conversion output">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={outputMode === "nextjs"}
+                className={`mktg-tab${outputMode === "nextjs" ? " is-active" : ""}`}
+                onClick={() => setOutputMode("nextjs")}
+              >
+                Convert to Next.js
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={outputMode === "hybrid"}
+                className={`mktg-tab${outputMode === "hybrid" ? " is-active" : ""}`}
+                onClick={() => setOutputMode("hybrid")}
+              >
+                Improve Site Performance
+              </button>
+            </div>
 
-        <PipelineSection />
+            <div className="mktg-surface">
+              <div className="mktg-surface-bg" aria-hidden />
+              <div className="mktg-pill-wrapper">
+                <form className="mktg-pill" onSubmit={handleHeroSubmit} noValidate>
+                  <input
+                    type="url"
+                    autoComplete="url"
+                    placeholder="Paste your framer website url"
+                    aria-label="Framer website URL"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                  />
+                  <button type="submit" disabled={!url.trim()}>
+                    {outputMode === "nextjs" ? "Get Next.js file" : "Get HTML file"}
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <ImpactStats />
-        <StepsSection />
-        <AboutSection />
+
+        <HowItWorks />
+
         <FaqSection />
       </main>
+
       {/* FAQPage structured data for rich results + answer engines */}
       <script
         type="application/ld+json"
@@ -309,7 +254,7 @@ function Home() {
 
       {showAuthGate && (
         <AuthGateModal
-          next={`/?url=${encodeURIComponent(url)}&autoconvert=1`}
+          next={`/?url=${encodeURIComponent(url)}&mode=${outputMode}&autoconvert=1`}
           onClose={() => setShowAuthGate(false)}
         />
       )}
@@ -318,33 +263,39 @@ function Home() {
 }
 
 // useSearchParams() suspends — without a fallback the initial HTML is empty for
-// crawlers. This shell ships H1 + FAQ + about so Google indexes real content.
+// crawlers. This shell ships the hero content (with H1) + FAQ so Google indexes real content.
 function HomeSeoShell() {
   return (
     <div className="min-h-screen w-full">
-      <main className="mx-auto max-w-5xl px-5 pb-24">
-        <section className="pt-14 pb-8">
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Convert Framer Websites to Next.js &amp; HTML
-          </h1>
-          <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Paste a published Framer URL and get a production-ready export: optimized static HTML
-            or a real Next.js App Router project — strip Framer lock-in, boost Lighthouse &amp; SEO,
-            host anywhere.
-          </p>
+      <main>
+        <section className="mktg-hero">
+          <div className="mktg-banner">
+            <span className="mktg-badge">Free Public Beta</span>
+            <div className="mktg-title-area">
+              <h1 className="mktg-title">
+                Production-ready HTML &amp; Next.js Converter
+              </h1>
+              <p className="mktg-subtitle">
+                Convert your published Framer website into optimised HTML or a deployable Next.js
+                project for free. Download, and deploy on the infrastructure you choose.
+              </p>
+            </div>
+          </div>
+          <div className="mktg-surface">
+            <div className="mktg-surface-bg" aria-hidden />
+            <div className="mktg-pill-wrapper">
+              <div className="mktg-pill">
+                <span style={{ color: "#8a8a8a", fontSize: "18px" }}>Loading converter…</span>
+              </div>
+            </div>
+          </div>
         </section>
-        <section className="rounded-xl border border-border bg-muted/40 p-5 text-[14px] text-muted-foreground">
-          Loading converter…
-        </section>
-        <PipelineSection />
+
         <ImpactStats />
-        <StepsSection />
-        <AboutSection />
+        <HowItWorks />
         <FaqSection />
       </main>
-      {/* No FAQ JSON-LD here — the resolved <Home/> emits it; duplicating it
-          in the Suspense fallback would leave two identical FAQPage blocks
-          in the DOM. */}
+      {/* No FAQ JSON-LD here — the resolved <Home/> emits it */}
     </div>
   );
 }
@@ -357,421 +308,100 @@ export default function HomePage() {
   );
 }
 
-// Lucide-style stroke icons — inline so there's no runtime dep and no
-// broken-emoji fallback on machines missing the glyphs.
-const ICONS: Record<string, React.ReactNode> = {
-  zap: <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z" />,
-  image: (
-    <>
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <circle cx="9" cy="9" r="2" />
-      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-    </>
-  ),
-  search: (
-    <>
-      <circle cx="11" cy="11" r="8" />
-      <path d="m21 21-4.3-4.3" />
-    </>
-  ),
-  rocket: (
-    <>
-      <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
-      <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
-      <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
-      <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
-    </>
-  ),
-};
 
-function Icon({ name, className = "h-5 w-5" }: { name: string; className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      {ICONS[name]}
-    </svg>
-  );
-}
-
-// A Lighthouse-style score dial that fills and counts up when scrolled into
-// view. Colour bands mirror Lighthouse: red < 50, amber < 90, green ≥ 90.
-function ScoreRing({ score, label }: { score: number; label: string }) {
-  const { ref, shown } = useInView<HTMLDivElement>();
-  const r = 24;
-  const circ = 2 * Math.PI * r;
-  const offset = circ * (1 - score / 100);
-  const color = score >= 90 ? "#0cce6b" : score >= 50 ? "#ffa400" : "#ff4e42";
-  return (
-    <div ref={ref} className="flex flex-col items-center gap-1.5">
-      <div className="relative h-14 w-14">
-        <svg viewBox="0 0 60 60" className="h-14 w-14 -rotate-90">
-          <circle cx="30" cy="30" r={r} fill="none" strokeWidth="4" className="stroke-border" />
-          <circle
-            cx="30"
-            cy="30"
-            r={r}
-            fill="none"
-            stroke={color}
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeDasharray={circ}
-            strokeDashoffset={shown ? offset : circ}
-            style={{ transition: "stroke-dashoffset 1s cubic-bezier(0.16,1,0.3,1)" }}
-          />
-        </svg>
-        <span
-          className="absolute inset-0 flex items-center justify-center text-[14px] font-semibold"
-          style={{ color }}
-        >
-          <CountUp to={score} duration={1000} />
-        </span>
-      </div>
-      <span className="text-[10.5px] text-muted-foreground">{label}</span>
-    </div>
-  );
-}
-
-// The hero product shot: a browser frame showing a before/after Lighthouse
-// comparison — the product's core value prop, rendered as a real visual.
-function HeroVisual() {
-  return (
-    <div className="relative">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -inset-6 -z-10 rounded-[2rem] bg-[radial-gradient(60%_60%_at_60%_20%,var(--accent-soft),transparent_70%)]"
-      />
-      <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-xl shadow-black/[0.06]">
-        <div className="flex items-center gap-1.5 border-b border-border bg-muted/50 px-4 py-3">
-          <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
-          <div className="ml-3 flex h-6 flex-1 items-center rounded-md bg-background px-3 text-[11px] text-muted-foreground">
-            your-site.com
-          </div>
-        </div>
-        <div className="p-5">
-          <div className="text-[11.5px] font-medium text-muted-foreground">Lighthouse — mobile</div>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <div className="rounded-xl border border-border bg-muted/30 p-3.5">
-              <div className="text-[11px] font-medium text-muted-foreground">Before · Framer</div>
-              <div className="mt-3 flex justify-around">
-                <ScoreRing score={42} label="Perf" />
-                <ScoreRing score={71} label="SEO" />
-              </div>
-            </div>
-            <div className="rounded-xl border border-accent/30 bg-accent-soft/50 p-3.5">
-              <div className="text-[11px] font-medium text-accent">After · Optimized</div>
-              <div className="mt-3 flex justify-around">
-                <ScoreRing score={98} label="Perf" />
-                <ScoreRing score={100} label="SEO" />
-              </div>
-            </div>
-          </div>
-          <div className="mt-3.5 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-[12px] font-medium text-emerald-700">
-            <Icon name="zap" className="h-3.5 w-3.5" />
-            −840&nbsp;KB JavaScript · runtime stripped
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Hero() {
-  return (
-    <section className="relative pt-14 pb-10 sm:pt-20">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 -top-24 -z-10 h-[420px] bg-[radial-gradient(50%_60%_at_50%_0%,var(--accent-soft),transparent_70%)]"
-      />
-      <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background/70 px-3 py-1 text-[12.5px] font-medium text-muted-foreground backdrop-blur">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-            Free · No signup to preview
-          </div>
-          <h1 className="mt-5 text-[38px] font-semibold leading-[1.03] tracking-tight sm:text-[54px]">
-            Convert Framer sites to{" "}
-            <span className="bg-gradient-to-br from-accent to-[#8b5cf6] bg-clip-text text-transparent">
-              Next.js &amp; HTML
-            </span>
-          </h1>
-          <p className="mt-5 max-w-md text-[17px] leading-relaxed text-muted-foreground">
-            Paste a URL. Get a faster, self-hosted site in about a minute.
-          </p>
-          <div className="mt-7 flex flex-wrap items-center gap-3">
-            <a
-              href="#convert"
-              className="inline-flex h-11 items-center rounded-full bg-accent px-5 text-[14px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
-            >
-              Convert your site free →
-            </a>
-            <Link
-              href="/nextjs"
-              className="inline-flex h-11 items-center rounded-full border border-border-strong px-5 text-[14px] font-medium transition-colors hover:bg-muted"
-            >
-              Pure Next.js export
-            </Link>
-          </div>
-          <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[12.5px] text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="text-emerald-600">✓</span> Pixel-perfect fidelity
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="text-emerald-600">✓</span> Self-hosted images
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="text-emerald-600">✓</span> One-click deploy
-            </span>
-          </div>
-        </div>
-        <HeroVisual />
-      </div>
-    </section>
-  );
-}
-
-function ConvertCard(props: {
-  url: string;
-  setUrl: (v: string) => void;
-  status: Status;
-  convert: (overrideUrl?: string) => void;
-}) {
-  const busy = props.status === "converting";
-  return (
-    <section className="rounded-xl border border-border bg-background p-5 shadow-sm">
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <input
-          type="url"
-          value={props.url}
-          onChange={(e) => props.setUrl(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && props.convert()}
-          placeholder="https://your-site.framer.website"
-          spellCheck={false}
-          disabled={busy}
-          className="h-11 flex-1 rounded-lg border border-border-strong bg-background px-3.5 text-[15px] outline-none placeholder:text-muted-foreground focus:border-foreground disabled:opacity-60"
-        />
-        <button
-          onClick={() => props.convert()}
-          disabled={busy || !props.url.trim()}
-          className="h-11 rounded-lg bg-accent px-5 text-[15px] font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {busy ? "Converting…" : "Convert"}
-        </button>
-      </div>
-
-      <div className="mt-4">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/20 bg-accent-soft px-2.5 py-1 text-[12px] font-medium text-accent">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-          Hybrid mode — full fidelity, optimized
-        </span>
-      </div>
-    </section>
-  );
-}
-
-function SectionHeader({
-  eyebrow,
-  title,
-  subtitle,
-}: {
-  eyebrow: string;
-  title: string;
-  subtitle?: string;
-}) {
-  return (
-    <Reveal className="max-w-2xl">
-      <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1 text-[12px] font-medium text-muted-foreground">
-        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-        {eyebrow}
-      </div>
-      <h2 className="mt-4 text-[28px] font-semibold tracking-tight sm:text-[34px]">{title}</h2>
-      {subtitle && (
-        <p className="mt-3 text-[15.5px] leading-relaxed text-muted-foreground">{subtitle}</p>
-      )}
-    </Reveal>
-  );
-}
-
-// One stage of the optimization pipeline — reveals and its progress bar fills
-// as it scrolls into view.
-function PipelineStage({
-  index,
-  icon,
-  title,
-  body,
-}: {
-  index: number;
-  icon: string;
-  title: string;
-  body: string;
-}) {
-  const { ref, shown } = useInView<HTMLDivElement>();
-  return (
-    <div
-      ref={ref}
-      className="group relative rounded-2xl border border-border bg-background p-5 transition-all hover:-translate-y-1 hover:border-accent/40 hover:shadow-lg hover:shadow-accent/5"
-      style={{
-        opacity: shown ? 1 : 0,
-        transform: shown ? "none" : "translateY(16px)",
-        transition: "opacity 0.6s cubic-bezier(0.16,1,0.3,1), transform 0.6s cubic-bezier(0.16,1,0.3,1)",
-        transitionDelay: `${index * 90}ms`,
-      }}
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent transition-colors group-hover:bg-accent group-hover:text-accent-foreground">
-          <Icon name={icon} />
-        </div>
-        <span className="font-mono text-[12px] font-semibold text-muted-foreground">
-          0{index + 1}
-        </span>
-      </div>
-      <h3 className="mt-4 text-[15.5px] font-semibold">{title}</h3>
-      <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">{body}</p>
-      <div className="mt-4 h-1 overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full rounded-full bg-accent"
-          style={{
-            width: shown ? "100%" : "0%",
-            transition: "width 0.9s cubic-bezier(0.16,1,0.3,1)",
-            transitionDelay: `${index * 90 + 150}ms`,
-          }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function PipelineSection() {
-  const stages = [
-    { icon: "zap", title: "Strip the runtime", body: "Framer's JS bundle, hover-state machinery, and analytics beacon are removed." },
-    { icon: "image", title: "Re-encode images", body: "Every image is downloaded, converted to WebP, and self-hosted on your domain." },
-    { icon: "search", title: "SEO pass", body: "Canonical tags, Open Graph, sitemaps, and structured data are fixed automatically." },
-    { icon: "rocket", title: "Ship it", body: "Deploy to Netlify or Vercel in a click — or download a real Next.js project." },
+// Figma: Homepage → "How it works + Features section" (node 5:293).
+// Full-bleed 2×2 card grid. Illustrations are static SVGs; card-0X-b.svg
+// variants exist alongside the a variants for future animation.
+function HowItWorks() {
+  const cards = [
+    {
+      num: "01",
+      illus: "/illustrations/card-01-a.svg",
+      name: "Choose your output",
+      desc: "Generate either optimized HTML or a production-ready Next.js project, depending on how you plan to continue your workflow.",
+    },
+    {
+      num: "02",
+      illus: "/illustrations/card-02-a.svg",
+      name: "Paste your published website",
+      desc: "Start with a published Framer website that you own or are authorized to migrate. We'll validate the URL and prepare it for conversion.",
+    },
+    {
+      num: "03",
+      illus: "/illustrations/card-03-a.svg",
+      name: "Review the generated project",
+      desc: "Preview the generated website and review the Lighthouse report before downloading or deploying your project.",
+    },
+    {
+      num: "04",
+      illus: "/illustrations/card-04.svg",
+      name: "Download or deploy",
+      desc: "Export your generated project or deploy it to your preferred hosting platform with a few clicks.",
+    },
   ];
-  return (
-    <section className="mt-24">
-      <SectionHeader
-        eyebrow="Under the hood"
-        title="One paste, a full optimization pass"
-        subtitle="No manual cleanup. Every conversion runs the same four-stage pipeline."
-      />
-      {/* input → output flow strip */}
-      <Reveal className="mt-8 flex items-center gap-3" delay={80}>
-        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3.5 py-2 text-[12.5px] font-medium">
-          <Icon name="search" className="h-3.5 w-3.5 text-muted-foreground" />
-          your-site.framer.website
-        </div>
-        <div className="pipeline-spine hidden h-0.5 flex-1 rounded-full sm:block" />
-        <div className="inline-flex items-center gap-2 rounded-full bg-accent px-3.5 py-2 text-[12.5px] font-medium text-accent-foreground">
-          <Icon name="rocket" className="h-3.5 w-3.5" />
-          deployed · fast
-        </div>
-      </Reveal>
-      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stages.map((s, i) => (
-          <PipelineStage key={s.title} index={i} icon={s.icon} title={s.title} body={s.body} />
-        ))}
-      </div>
-    </section>
-  );
-}
 
-// A before/after mini bar chart whose "after" bar animates when in view.
-function ImpactBars({ before, after }: { before: number; after: number }) {
-  const { ref, shown } = useInView<HTMLDivElement>();
-  const row = (label: string, pct: number, accent: boolean, delay: number) => (
-    <div className="flex items-center gap-2">
-      <span className="w-11 shrink-0 text-[10.5px] text-muted-foreground">{label}</span>
-      <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-        <div
-          className={`h-full rounded-full ${accent ? "bg-accent" : "bg-border-strong"}`}
-          style={{
-            width: shown ? `${pct}%` : "0%",
-            transition: "width 1s cubic-bezier(0.16,1,0.3,1)",
-            transitionDelay: `${delay}ms`,
-          }}
-        />
+  return (
+    <section className="mktg-how" id="how-it-works">
+      <div className="mktg-how-head">
+        <h2 className="mktg-how-title">See how every conversion works</h2>
+        <p className="mktg-how-subtitle">
+          From validating your published website to generating previews, Lighthouse reports, and
+          downloadable files, every stage of the conversion process is visible before you deploy or
+          export.
+        </p>
       </div>
-    </div>
-  );
-  return (
-    <div ref={ref} className="mt-5 space-y-2">
-      {row("Before", before, false, 100)}
-      {row("After", after, true, 260)}
-    </div>
-  );
-}
 
-function ImpactStats() {
-  const stats = [
-    { big: 91, prefix: "−", suffix: "%", label: "less JavaScript", detail: "≈920 KB → 80 KB shipped", before: 100, after: 9 },
-    { big: 68, prefix: "−", suffix: "%", label: "lighter images", detail: "re-encoded to self-hosted WebP", before: 100, after: 32 },
-    { big: 98, prefix: "", suffix: "", label: "mobile Lighthouse", detail: "up from 42 on the original", before: 42, after: 98 },
-  ];
-  return (
-    <section className="mt-24">
-      <SectionHeader
-        eyebrow="The numbers"
-        title="Measurably lighter and faster"
-        subtitle="Typical results on a marketing site — your mileage varies by how heavy the original is."
-      />
-      <div className="mt-8 grid gap-4 sm:grid-cols-3">
-        {stats.map((s, i) => (
-          <Reveal
-            key={s.label}
-            delay={i * 90}
-            className="rounded-2xl border border-border bg-background p-6"
-          >
-            <div className="text-[40px] font-semibold leading-none tracking-tight text-accent">
-              <CountUp to={s.big} prefix={s.prefix} suffix={s.suffix} />
-            </div>
-            <div className="mt-2 text-[14.5px] font-medium">{s.label}</div>
-            <div className="text-[12.5px] text-muted-foreground">{s.detail}</div>
-            <ImpactBars before={s.before} after={s.after} />
-          </Reveal>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function StepsSection() {
-  const steps = [
-    { icon: "search", title: "Paste your Framer URL", body: "Point the converter at any published Framer site — one page or hundreds." },
-    { icon: "zap", title: "Convert & preview", body: "Watch the pipeline run live, then preview the optimized result before you commit." },
-    { icon: "rocket", title: "Deploy or download", body: "Push it live to Netlify or Vercel in one click, or take a real Next.js project with you." },
-  ];
-  return (
-    <section className="mt-24">
-      <SectionHeader eyebrow="How it works" title="From URL to live site in three steps" />
-      <div className="relative mt-8">
-        {/* connecting spine behind the step numbers on desktop */}
-        <div className="pipeline-spine absolute left-0 right-0 top-[26px] hidden h-0.5 rounded-full opacity-60 sm:block" />
-        <div className="relative grid gap-5 sm:grid-cols-3">
-          {steps.map((s, i) => (
-            <Reveal key={s.title} delay={i * 110} className="rounded-2xl border border-border bg-background p-6">
-              <div className="flex items-center gap-3">
-                <span
-                  className="flex items-center justify-center rounded-full bg-accent text-[15px] font-semibold text-accent-foreground"
-                  style={{ height: 52, width: 52 }}
-                >
-                  0{i + 1}
-                </span>
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent">
-                  <Icon name={s.icon} />
+      <div className="mktg-how-cards">
+        <div className="mktg-how-row">
+          {cards.slice(0, 2).map((c) => (
+            <div key={c.num} className="mktg-card">
+              <div className="mktg-card-num" aria-hidden>
+                <div className="mktg-card-num-dots">
+                  <span className="mktg-card-num-dot" />
+                  <span className="mktg-card-num-dot" />
                 </div>
+                <span className="mktg-card-num-label">{c.num}</span>
               </div>
-              <h3 className="mt-5 text-[16px] font-semibold">{s.title}</h3>
-              <p className="mt-1.5 text-[14px] leading-relaxed text-muted-foreground">{s.body}</p>
-            </Reveal>
+              <div className="mktg-card-illus">
+                {/* These illustrations are Figma exports carrying embedded
+                    rasters (~3-8 MB each, ~19 MB across the four shown). The
+                    section sits below the fold, so deferring them keeps that
+                    weight off first paint until the real fix — re-exporting
+                    them without the embedded bitmaps — lands. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={c.illus} alt="" loading="lazy" decoding="async" />
+              </div>
+              <div className="mktg-card-text">
+                <p className="mktg-card-name">{c.name}</p>
+                <p className="mktg-card-desc">{c.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mktg-how-row">
+          {cards.slice(2, 4).map((c) => (
+            <div key={c.num} className="mktg-card">
+              <div className="mktg-card-num" aria-hidden>
+                <div className="mktg-card-num-dots">
+                  <span className="mktg-card-num-dot" />
+                  <span className="mktg-card-num-dot" />
+                </div>
+                <span className="mktg-card-num-label">{c.num}</span>
+              </div>
+              <div className="mktg-card-illus">
+                {/* These illustrations are Figma exports carrying embedded
+                    rasters (~3-8 MB each, ~19 MB across the four shown). The
+                    section sits below the fold, so deferring them keeps that
+                    weight off first paint until the real fix — re-exporting
+                    them without the embedded bitmaps — lands. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={c.illus} alt="" loading="lazy" decoding="async" />
+              </div>
+              <div className="mktg-card-text">
+                <p className="mktg-card-name">{c.name}</p>
+                <p className="mktg-card-desc">{c.desc}</p>
+              </div>
+            </div>
           ))}
         </div>
       </div>
@@ -779,37 +409,508 @@ function StepsSection() {
   );
 }
 
-function LogPane({
-  lines,
-  logRef,
-  active,
-}: {
-  lines: string[];
-  logRef: React.RefObject<HTMLDivElement | null>;
-  active: boolean;
-}) {
+// Figma: Homepage → "FAQ section" (node 5:474). Two columns: left heading/CTA,
+// right interactive accordion. Same 80px side gutters as benefits/how-it-works.
+function FaqSection() {
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
+
+  const items = [
+    {
+      q: "What websites can I convert?",
+      a: "You can convert publicly accessible Framer websites that you own or are authorized to migrate.",
+    },
+    {
+      q: "Will the converted site improve SEO and Lighthouse scores?",
+      a: "Optimized HTML exports can improve performance, SEO, and Core Web Vitals by reducing unnecessary runtime overhead and optimizing assets. Actual results depend on the original website.",
+    },
+    {
+      q: "What's the difference between HTML and Next.js export?",
+      a: "HTML Export generates an optimized static website that's ready to host almost anywhere. Next.js Export generates a production-ready Next.js project that developers can continue building on.",
+    },
+    {
+      q: "Does it work with every Framer website?",
+      a: "Most published Framer websites are supported. Results may vary for websites with complex custom code, third-party integrations, or unsupported features. We're continuously improving compatibility during beta.",
+    },
+    {
+      q: "Does it support multi-page websites?",
+      a: "Yes. Published multi-page Framer websites are discovered and converted while preserving their page structure.",
+    },
+    {
+      q: "What do I get after conversion?",
+      a: "Depending on your selection, you'll receive either an optimized HTML export or a production-ready Next.js project ready for download or deployment.",
+    },
+    {
+      q: "Is FramerToNextJS affiliated with Framer?",
+      a: "No. FramerToNextJS is an independent migration tool and is not affiliated with or endorsed by Framer.",
+    },
+  ];
+
   return (
-    <section className="mt-4 overflow-hidden rounded-xl border border-border bg-background">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-        {active ? (
-          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-        ) : (
-          <span className="h-2 w-2 rounded-full bg-border-strong" />
-        )}
-        <span className="text-[13px] font-medium">Pipeline</span>
+    <section className="mktg-faq" id="faq">
+      <div className="mktg-faq-left">
+        <div className="mktg-faq-content">
+          <h2 className="mktg-faq-title">Frequently asked questions</h2>
+          <p className="mktg-faq-subtitle">
+            We&apos;re actively improving the conversion engine. If something doesn&apos;t work as
+            expected, please let us know—we&apos;re here to help.
+          </p>
+        </div>
+        <a href="mailto:support@framertonextjs.com" className="mktg-faq-cta">
+          Contact us
+        </a>
       </div>
-      <div
-        ref={logRef}
-        className="thin-scroll max-h-44 overflow-y-auto px-4 py-3 font-mono text-[12.5px] leading-relaxed text-muted-foreground"
-      >
-        {lines.map((l, i) => (
-          <div key={i} className={l.startsWith("✓") ? "text-emerald-600" : ""}>
-            {l.startsWith("✓") ? "" : "· "}
-            {l}
+      <div className="mktg-faq-right">
+        {items.map((item, i) => {
+          const isOpen = openIdx === i;
+          return (
+            <div key={i} className="mktg-faq-item">
+              <button
+                className="mktg-faq-item-header"
+                onClick={() => setOpenIdx(isOpen ? null : i)}
+                aria-expanded={isOpen}
+              >
+                <span className="mktg-faq-item-question">{item.q}</span>
+                <span className="mktg-faq-item-icon" aria-hidden="true">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 14 14"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    style={{
+                      transform: isOpen ? "rotate(45deg)" : "none",
+                      transition: "transform 0.2s ease",
+                    }}
+                  >
+                    <path
+                      d="M7 1V13M1 7H13"
+                      stroke="#292929"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </span>
+              </button>
+              {isOpen && <p className="mktg-faq-item-answer">{item.a}</p>}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// Figma: Homepage → "Frame" (node 5:275). Full-bleed section — the heading
+// row and the benefit strip both use their own 80px side padding rather than
+// inheriting the page's max-width wrapper, so this renders outside the
+// `mx-auto max-w-5xl` container (see the call site) and manages its own
+// horizontal rhythm at any viewport up to 1360px.
+function ImpactStats() {
+  const benefits = [
+    { stat: "~91%", label: "Less JavaScript", detail: "Reduced from 920 KB to 80 KB by removing unnecessary runtime overhead." },
+    { stat: "~68%", label: "Lighter images", detail: "Images re-encoded and optimized for faster delivery using modern WebP." },
+    { stat: "~98", label: "Lighthouse scores", detail: "Typical score measured after conversion on a representative marketing website." },
+  ];
+  return (
+    <section className="mktg-benefits">
+      <div className="mktg-benefits-head">
+        <h2 className="mktg-benefits-title">Optimized for faster delivery</h2>
+        <p className="mktg-benefits-subtitle">
+          Built to reduce unnecessary runtime overhead while preserving the published website experience.
+        </p>
+      </div>
+      <div className="mktg-benefits-row">
+        {benefits.map((b) => (
+          <div key={b.label} className="mktg-benefit">
+            <p className="mktg-benefit-stat">
+              <span className="mktg-benefit-number">{b.stat}</span> {b.label}
+            </p>
+            <p className="mktg-benefit-detail">{b.detail}</p>
           </div>
         ))}
       </div>
     </section>
+  );
+}
+
+
+// ── Conversion workspace ──────────────────────────────────────────────
+// Presents the single continuous /api/convert stream as distinct staged
+// screens (validate → analyze → found → build → done/error). The stage is
+// DERIVED from the real progress lines already being sent by lib/convert.ts
+// (see the onProgress calls there) — nothing here is simulated or fake.
+// There's no separate output-choice step because the live tool only runs
+// Hybrid mode (see the `mode` constant above), so "found" surfaces that as
+// a fact instead of a non-functional choice.
+
+type Stage = "validate" | "analyze" | "found" | "build" | "done" | "error";
+
+function deriveStage(status: Status, lines: string[]): Stage | null {
+  if (status === "idle") return null;
+  if (status === "error") return "error";
+  if (status === "done") return "done";
+  const hasDiscover = lines.some((l) => l.includes("Discovering pages"));
+  const foundLine = lines.find((l) => /^Found \d+ page/.test(l));
+  const hasBuild = lines.some((l) => /Optimizing|Self-hosting|Generating|Mirror mode/.test(l));
+  if (!hasDiscover) return "validate";
+  if (!foundLine) return "analyze";
+  if (!hasBuild) return "found";
+  return "build";
+}
+
+function railIndex(stage: Stage): number {
+  if (stage === "validate") return 0;
+  if (stage === "analyze" || stage === "found") return 1;
+  if (stage === "build") return 2;
+  return 3;
+}
+
+function fmtElapsed(sec: number): string {
+  const m = Math.floor(sec / 60).toString().padStart(2, "0");
+  const s = (sec % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+// Runs only while `active`; freezes at the final value once the job
+// finishes so the "done" screen can show total build time.
+function useElapsed(active: boolean): number {
+  const [sec, setSec] = useState(0);
+  const [wasActive, setWasActive] = useState(active);
+  const startRef = useRef<number | null>(null);
+
+  // Reset the counter on the transition into `active`, using React's
+  // adjust-state-during-render pattern. Resetting inside the effect below
+  // instead is a state write from an effect: it renders once with the stale
+  // count before correcting itself, and trips react-hooks/set-state-in-effect.
+  if (active !== wasActive) {
+    setWasActive(active);
+    if (active) setSec(0);
+  }
+
+  useEffect(() => {
+    if (!active) return;
+    startRef.current = Date.now();
+    const id = setInterval(() => {
+      if (startRef.current) setSec(Math.floor((Date.now() - startRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [active]);
+
+  return sec;
+}
+
+// Four steps, not the prototype's five: the live tool has no output-choice
+// stage because it runs Hybrid only (see the `mode` constant above). Showing
+// an "Output" step that the user can't act on would be theatre.
+function Rail({ index }: { index: number }) {
+  const steps = ["Validate", "Analyze", "Convert", "Deliver"];
+  return (
+    <div className="progress-rail" aria-label="Conversion status">
+      {steps.map((label, i) => (
+        <Fragment key={label}>
+          <div className={`rail-item${i < index ? " done" : i === index ? " active" : ""}`}>
+            <span>0{i + 1}</span>
+            <strong>{label}</strong>
+          </div>
+          {i < steps.length - 1 && <i aria-hidden="true" />}
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
+const BUILD_STEPS = [
+  { match: /Optimizing/, label: "Optimize images" },
+  { match: /Self-hosting.*font/i, label: "Self-host fonts" },
+  { match: /Self-hosting.*video/i, label: "Self-host videos" },
+  { match: /Generating Next\.js project|Mirror mode/, label: "Generate project" },
+];
+
+function ConversionWorkspace({
+  status,
+  lines,
+  error,
+  url,
+  report,
+  jobId,
+  device,
+  setDevice,
+  onRetry,
+  onChangeUrl,
+}: {
+  status: Status;
+  lines: string[];
+  error: string;
+  url: string;
+  report: Report | null;
+  jobId: string | null;
+  device: "desktop" | "mobile";
+  setDevice: (d: "desktop" | "mobile") => void;
+  onRetry: () => void;
+  onChangeUrl: () => void;
+}) {
+  const stage = deriveStage(status, lines);
+  const elapsed = useElapsed(status === "converting");
+  if (!stage) return null;
+
+  const host = (() => {
+    try {
+      return new URL(url).host;
+    } catch {
+      return url;
+    }
+  })();
+
+  return (
+    <div className="workspace-shell">
+      <header className="workspace-topbar">
+        <Link className="brand" href="/dashboard" aria-label="FramerToNextJS dashboard">
+          <span className="brand-mark" aria-hidden="true">
+            <i /><i /><i /><i />
+          </span>
+          FramerToNextJS
+        </Link>
+        <div className="conversion-identity">
+          <span className="site-dot" aria-hidden="true" />
+          <span>{host}</span>
+          <button className="quiet-button" type="button" onClick={onChangeUrl}>
+            Change
+          </button>
+        </div>
+        <div className="top-actions" />
+      </header>
+
+      {stage !== "error" && <Rail index={railIndex(stage)} />}
+
+      <main className="conversion-main">
+        {stage === "validate" && (
+          <section className="screen active" aria-labelledby="validate-title">
+            <div className="screen-intro narrow">
+              <p className="eyebrow">Step 01 — URL validation</p>
+              <h1 id="validate-title">Let&rsquo;s make sure we can reach it.</h1>
+              <p>
+                We check the published site before collecting anything. Your URL is never shared
+                or republished.
+              </p>
+            </div>
+            <div className="validation-layout">
+              <article className="panel validation-panel">
+                <div className="url-pill">
+                  <svg className="icon icon-sm" aria-hidden="true">
+                    <use href="#i-arrow-up-right" />
+                  </svg>
+                  <strong>{host}</strong>
+                  <span className="url-lock">Public URL</span>
+                </div>
+                <div className="validation-result">
+                  <span className="result-orb" aria-hidden="true" />
+                  <div>
+                    <strong>Checking published site</strong>
+                    <p>Confirming the URL is live and accessible.</p>
+                  </div>
+                  <span className="loading-line" aria-hidden="true" />
+                </div>
+                <div className="panel-footer">
+                  <span>
+                    <i className="secure-dot" aria-hidden="true" /> Read-only access
+                  </span>
+                </div>
+              </article>
+              <aside className="side-note">
+                <p className="eyebrow">What we check</p>
+                <ul>
+                  <li>Published page can load</li>
+                  <li>Site is publicly reachable</li>
+                  <li>Framer assets are available</li>
+                </ul>
+                <p className="side-note-foot">
+                  Password-protected sites need to be made public before conversion.
+                </p>
+              </aside>
+            </div>
+          </section>
+        )}
+
+        {stage === "analyze" && (
+          <section className="screen active" aria-labelledby="analyze-title">
+            <div className="screen-intro">
+              <p className="eyebrow">Step 02 — Website analysis</p>
+              <h1 id="analyze-title">Mapping your site structure.</h1>
+              <p>
+                We&rsquo;re reading what is actually published so your export starts with the right
+                pages, assets, and breakpoints.
+              </p>
+            </div>
+            <div className="analysis-grid">
+              <article className="panel analysis-panel">
+                <div className="analysis-header">
+                  <div>
+                    <p className="eyebrow">Live discovery</p>
+                    <h2>Discovering pages</h2>
+                  </div>
+                  <span className="elapsed">{fmtElapsed(elapsed)} elapsed</span>
+                </div>
+                <div className="discovery-list">
+                  {lines.map((l, i) => {
+                    const isLast = i === lines.length - 1;
+                    return (
+                      <div className={`discovery-item ${isLast ? "working" : "complete"}`} key={i}>
+                        <span className="state">{isLast ? "" : "✓"}</span>
+                        <strong>{l}</strong>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="analysis-foot">
+                  <i aria-hidden="true" />
+                  <span>Finding linked and published routes…</span>
+                </div>
+              </article>
+              <aside className="analysis-aside">
+                <div className="skeleton browser-skeleton" aria-hidden="true">
+                  <i /><b /><span /><span /><span />
+                </div>
+                <p className="eyebrow">Reading published layout</p>
+                <p>
+                  Page structure appears here as we learn it. This does not change your original
+                  Framer site.
+                </p>
+              </aside>
+            </div>
+          </section>
+        )}
+
+        {stage === "found" &&
+          (() => {
+            const foundLine = lines.find((l) => /^Found \d+ page/.test(l));
+            const count = foundLine?.match(/\d+/)?.[0] ?? "—";
+            return (
+              <section className="screen active" aria-labelledby="found-title">
+                <div className="screen-intro">
+                  <p className="eyebrow">Step 02 — Analysis complete</p>
+                  <h1 id="found-title">We found a healthy site.</h1>
+                  <p>Here&rsquo;s the scope we&rsquo;ll convert. Hybrid mode runs automatically.</p>
+                </div>
+                <div className="found-layout">
+                  <article className="panel findings-card">
+                    <div className="findings-heading">
+                      <div>
+                        <p className="eyebrow">What we found</p>
+                        <h2>Conversion scope</h2>
+                      </div>
+                      <span className="site-status">
+                        <i aria-hidden="true" />
+                        Ready to convert
+                      </span>
+                    </div>
+                    <div className="metrics">
+                      <div>
+                        <strong>{count}</strong>
+                        <span>Published pages</span>
+                      </div>
+                      <div>
+                        <strong>Hybrid</strong>
+                        <span>Output mode</span>
+                      </div>
+                      <div>
+                        <strong>{fmtElapsed(elapsed)}</strong>
+                        <span>Elapsed</span>
+                      </div>
+                    </div>
+                    <div className="panel-footer">
+                      <span>
+                        <i className="secure-dot" aria-hidden="true" /> Continuing automatically
+                      </span>
+                    </div>
+                  </article>
+                </div>
+              </section>
+            );
+          })()}
+
+        {stage === "build" &&
+          (() => {
+            const lastLine = lines[lines.length - 1] || "Building…";
+            return (
+              <section className="screen active" aria-labelledby="progress-title">
+                <div className="screen-intro narrow center">
+                  <p className="eyebrow">Step 03 — Conversion</p>
+                  <h1 id="progress-title">Building your project.</h1>
+                  <p>We&rsquo;ll keep this specific. Your Framer project stays untouched.</p>
+                </div>
+                <article className="panel progress-panel">
+                  <div className="job-head">
+                    <div>
+                      <span className="status-dot running" aria-hidden="true" />
+                      <strong>{lastLine}</strong>
+                    </div>
+                    <span id="job-time">{fmtElapsed(elapsed)}</span>
+                  </div>
+                  <div className="stage-list">
+                    {BUILD_STEPS.map((s, i) => {
+                      const hasStarted = lines.some((l) => s.match.test(l));
+                      const isDone = BUILD_STEPS.slice(i + 1).some((n) =>
+                        lines.some((l) => n.match.test(l)),
+                      );
+                      const cls = isDone ? "complete" : hasStarted ? "working" : "pending";
+                      return (
+                        <div key={s.label} className={`discovery-item ${cls}`}>
+                          <span className="state">{isDone ? "✓" : hasStarted ? "" : i + 1}</span>
+                          <strong>{s.label}</strong>
+                          <small>{isDone ? "Done" : hasStarted ? "Running" : "Queued"}</small>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </article>
+              </section>
+            );
+          })()}
+
+        {stage === "error" && (
+          <section className="screen active" aria-labelledby="error-title">
+            <div className="screen-intro narrow">
+              <p className="eyebrow">Conversion stopped</p>
+              <h1 id="error-title">We couldn&rsquo;t convert this site.</h1>
+            </div>
+            <article className="panel validation-panel">
+              <div className="validation-result">
+                <span className="error-badge" aria-hidden="true">!</span>
+                <div>
+                  <strong>{error || "Conversion failed."}</strong>
+                  <p>Check that the site is published publicly and does not require a password.</p>
+                </div>
+                <button className="retry-button" type="button" onClick={onRetry}>
+                  Try again
+                </button>
+              </div>
+              <div className="panel-footer">
+                <span>Nothing was changed on your Framer site.</span>
+                <button className="quiet-button" type="button" onClick={onChangeUrl}>
+                  Use a different URL
+                </button>
+              </div>
+            </article>
+          </section>
+        )}
+
+        {stage === "done" && report && jobId && (
+          <section className="screen active" aria-labelledby="success-title">
+            <div className="success-heading">
+              <div>
+                <p className="eyebrow">Step 04 — Project ready</p>
+                <h1 id="success-title">Your project is ready.</h1>
+                <p>
+                  Everything is packaged and ready for review, download, or deployment. Completed
+                  in {fmtElapsed(elapsed)}.
+                </p>
+              </div>
+            </div>
+            <Results report={report} jobId={jobId} device={device} setDevice={setDevice} />
+          </section>
+        )}
+      </main>
+    </div>
   );
 }
 
@@ -1086,64 +1187,4 @@ function DeployPanel({
   );
 }
 
-// Crawlable, answer-engine-friendly explainer: a self-contained definition
-// that AI overviews can quote directly.
-function AboutSection() {
-  return (
-    <section className="mt-24 border-t border-border pt-12">
-      <h2 className="text-2xl font-semibold tracking-tight">What is the Framer → Next.js Optimizer?</h2>
-      <p className="mt-3 max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
-        The Framer → Next.js Optimizer is a free Framer to Next.js converter that turns any published{" "}
-        <a href="https://www.framer.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Framer</a>{" "}
-        site into a fast, deployable website. It captures your Framer pages, removes Framer&apos;s heavy
-        JavaScript runtime, self-hosts and re-encodes images to{" "}
-        <a href="https://developer.mozilla.org/en-US/docs/Web/Media/Formats/Image_types#webp_image" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">WebP</a>,
-        inlines fonts, and runs an SEO pass — then gives you either an optimized static bundle or a real{" "}
-        <a href="https://nextjs.org/docs/app" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Next.js App Router</a>{" "}
-        project. The result loads faster, scores higher on{" "}
-        <a href="https://developer.chrome.com/docs/lighthouse/overview" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Lighthouse</a>{" "}
-        and improves{" "}
-        <a href="https://web.dev/articles/vitals" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Core Web Vitals</a>, and can be deployed anywhere. If your goal is plain static
-        files, see the step-by-step{" "}
-        <Link href="/framer-to-html" className="text-foreground underline underline-offset-2">Framer to HTML guide</Link>.
-      </p>
-      <p className="mt-4 max-w-3xl text-[15px] leading-relaxed text-muted-foreground">
-        Not sure which output to choose? The{" "}
-        <Link href="/nextjs" className="text-foreground underline underline-offset-2">Pure Next.js export</Link>{" "}
-        gives you real, editable code that renders identically to the source, while the Hybrid converter on
-        this page strips the runtime for the highest scores. Either way, you can{" "}
-        <Link href="/speed" className="text-foreground underline underline-offset-2">compare the converted site against your original</Link>{" "}
-        with the PageSpeed checker, then deploy it to{" "}
-        <a href="https://www.netlify.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Netlify</a>{" "}or{" "}
-        <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Vercel</a>{" "}
-        in one click — or open a converted site in the{" "}
-        <Link href="/nextjs" className="text-foreground underline underline-offset-2">Next.js project export</Link>{" "}
-        and take the code with you. Looking at other Framer to Next.js converter options? See how this
-        one compares to{" "}
-        <Link href="/vs/convertframer" className="text-foreground underline underline-offset-2">ConvertFramer</Link>.
-      </p>
-    </section>
-  );
-}
-
-function FaqSection() {
-  return (
-    <section className="mt-16 border-t border-border pt-12">
-      <h2 className="text-2xl font-semibold tracking-tight">Frequently asked questions</h2>
-      <div className="mt-5 divide-y divide-border rounded-xl border border-border">
-        {FAQ.map((f, i) => (
-          <details key={f.q} className="group px-4" open={i === 0}>
-            <summary className="flex cursor-pointer list-none items-center justify-between py-4 text-[15px] font-medium marker:content-none">
-              <span>{f.q}</span>
-              <span className="ml-3 shrink-0 text-accent transition-transform group-open:rotate-45">
-                +
-              </span>
-            </summary>
-            <p className="pb-4 pr-6 text-[14px] leading-relaxed text-muted-foreground">{f.a}</p>
-          </details>
-        ))}
-      </div>
-    </section>
-  );
-}
 

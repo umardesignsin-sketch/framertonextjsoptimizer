@@ -78,116 +78,138 @@ function guideJsonLd() {
 
 export default function SelfHostFramerGuide() {
   return (
-    <div className="min-h-screen w-full">
-
-      <main className="mx-auto max-w-3xl px-5 pb-24">
-        <section className="pt-14 pb-8">
-          <nav className="text-[12.5px] text-muted-foreground">
-            <Link href="/" className="hover:text-foreground">Home</Link> · Guides · Self-host Framer
-          </nav>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-            How to self-host a Framer site
-          </h1>
-          <p className="mt-4 max-w-2xl text-[15.5px] leading-relaxed text-muted-foreground">
-            <strong className="text-foreground">Yes — you can self-host a Framer website</strong>, even though
-            Framer has no export button. The route: convert your published site to{" "}
-            <Link href="/framer-to-html" className="text-foreground underline underline-offset-2">static HTML</Link>{" "}
-            or a{" "}
-            <Link href="/nextjs" className="text-foreground underline underline-offset-2">Next.js project</Link>,
-            deploy it to a host you control, and point your domain there. Ten minutes end to end, and for
-            most sites the ongoing cost is <strong className="text-foreground">$0/month</strong> on{" "}
-            <a href="https://www.netlify.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Netlify</a>{" "}
-            or{" "}
-            <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Vercel</a>{" "}
-            free tiers.
-          </p>
-        </section>
-
-        <section>
-          <h2 className="text-2xl font-semibold tracking-tight">Why self-host at all?</h2>
-          <ul className="mt-4 space-y-3 text-[15px] leading-relaxed text-muted-foreground">
-            <li><strong className="text-foreground">Cost.</strong> Framer&apos;s paid site plans bill per site, per month. A converted static site on a free tier costs nothing to serve.</li>
-            <li><strong className="text-foreground">Ownership.</strong> Your site becomes plain files or a normal codebase — no builder subscription required to keep it online, no lock-in.</li>
-            <li><strong className="text-foreground">Speed.</strong> The HTML export strips Framer&apos;s runtime and optimizes images to WebP, which typically lifts Lighthouse Performance to 90–100 on desktop and improves{" "}
-              <a href="https://web.dev/articles/vitals" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Core Web Vitals</a>.</li>
-            <li><strong className="text-foreground">Flexibility.</strong> Add server logic, integrate with your stack, or hand the project to a developer — things a hosted builder can&apos;t offer.</li>
-          </ul>
-        </section>
-
-        <section className="mt-14">
-          <h2 className="text-2xl font-semibold tracking-tight">The 4-step process</h2>
-          <ol className="mt-4 space-y-4">
-            {STEPS.map((s, i) => (
-              <li key={s.name} className="rounded-xl border border-border bg-background p-4">
-                <div className="flex items-center gap-2 text-[14px] font-semibold">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-[11px] text-background">{i + 1}</span>
-                  {s.name}
-                </div>
-                <p className="mt-1.5 text-[14px] leading-relaxed text-muted-foreground">{s.text}</p>
-              </li>
-            ))}
-          </ol>
-        </section>
-
-        <section className="mt-14">
-          <h2 className="text-2xl font-semibold tracking-tight">Where to host (all work)</h2>
-          <div className="mt-4 overflow-x-auto rounded-xl border border-border">
-            <table className="w-full text-[13.5px]">
-              <thead className="border-b border-border bg-foreground/5 text-left text-[12.5px] text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-2.5 font-medium">Host</th>
-                  <th className="px-4 py-2.5 font-medium">Free tier fits a converted site?</th>
-                  <th className="px-4 py-2.5 font-medium">Notes</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                <tr><td className="px-4 py-3 font-medium">Netlify</td><td className="px-4 py-3">Yes</td><td className="px-4 py-3 text-muted-foreground">One-click deploy from this tool; drag-and-drop also works.</td></tr>
-                <tr><td className="px-4 py-3 font-medium">Vercel</td><td className="px-4 py-3">Yes</td><td className="px-4 py-3 text-muted-foreground">One-click deploy; natural home for the Next.js export.</td></tr>
-                <tr><td className="px-4 py-3 font-medium">Cloudflare Pages</td><td className="px-4 py-3">Yes</td><td className="px-4 py-3 text-muted-foreground">Unlimited static requests on the free plan.</td></tr>
-                <tr><td className="px-4 py-3 font-medium">GitHub Pages</td><td className="px-4 py-3">Yes</td><td className="px-4 py-3 text-muted-foreground">Good for the HTML bundle; push the folder to a repo.</td></tr>
-                <tr><td className="px-4 py-3 font-medium">S3 / shared hosting</td><td className="px-4 py-3">Cheap</td><td className="px-4 py-3 text-muted-foreground">Any host that serves files works — no build step needed.</td></tr>
-              </tbody>
-            </table>
+    <>
+      <main>
+        <section className="page-head">
+          <div className="page-head-box">
+            <div className="page-head-row">
+              <div className="page-head-stack">
+                <nav className="page-breadcrumb">
+                  <Link href="/">Home</Link> · Guides · Self-host Framer
+                </nav>
+                <h1 className="page-title">How to self-host a Framer site</h1>
+              </div>
+            </div>
+            <div className="page-head-row">
+              <p className="page-intro is-wide">
+                <strong>Yes — you can self-host a Framer website</strong>, even though Framer has no
+                export button. The route: convert your published site to{" "}
+                <Link href="/">static HTML</Link> or a{" "}
+                <Link href="/">Next.js project</Link>, deploy it to a host you control, and
+                point your domain there. Ten minutes end to end, and for most sites the ongoing cost
+                is <strong>$0/month</strong> on{" "}
+                <a href="https://www.netlify.com" target="_blank" rel="noopener noreferrer">Netlify</a>{" "}
+                or <a href="https://vercel.com" target="_blank" rel="noopener noreferrer">Vercel</a>{" "}
+                free tiers.
+              </p>
+            </div>
           </div>
         </section>
 
-        <section className="mt-14">
-          <h2 className="text-2xl font-semibold tracking-tight">Honest limitations</h2>
-          <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
-            Password-protected Framer pages can&apos;t be converted — the tool reads public URLs only. Framer&apos;s
-            built-in form backend stays with Framer, so repoint forms to a service like Formspree or Tally
-            after migrating. And in HTML mode, heavy runtime effects (custom cursors, WebGL) are trimmed for
-            speed — the <Link href="/nextjs" className="text-foreground underline underline-offset-2">Next.js export</Link>{" "}
-            keeps them if you need exact behavior.
-          </p>
-        </section>
+        <div className="page-body is-narrow is-compact">
+          <section className="page-section is-compact">
+            <h2>Why self-host at all?</h2>
+            <div className="page-prose is-sm">
+              <ul className="page-list">
+                <li>
+                  <strong>Cost.</strong>{" "}Framer&apos;s paid site plans bill per site, per month. A
+                  converted static site on a free tier costs nothing to serve.
+                </li>
+                <li>
+                  <strong>Ownership.</strong>{" "}Your site becomes plain files or a normal codebase — no
+                  builder subscription required to keep it online, no lock-in.
+                </li>
+                <li>
+                  <strong>Speed.</strong>{" "}The HTML export strips Framer&apos;s runtime and optimizes
+                  images to WebP, which typically lifts Lighthouse Performance to 90–100 on desktop
+                  and improves{" "}
+                  <a href="https://web.dev/articles/vitals" target="_blank" rel="noopener noreferrer">
+                    Core Web Vitals
+                  </a>
+                  .
+                </li>
+                <li>
+                  <strong>Flexibility.</strong>{" "}Add server logic, integrate with your stack, or hand
+                  the project to a developer — things a hosted builder can&apos;t offer.
+                </li>
+              </ul>
+            </div>
+          </section>
 
-        <section className="mt-14">
-          <h2 className="text-2xl font-semibold tracking-tight">Self-hosting FAQ</h2>
-          <div className="mt-5 divide-y divide-border rounded-xl border border-border">
-            {FAQ.map((f, i) => (
-              <details key={f.q} className="group px-4" open={i === 0}>
-                <summary className="flex cursor-pointer list-none items-center justify-between py-4 text-[15px] font-medium marker:content-none">
-                  <span>{f.q}</span>
-                  <span className="ml-3 shrink-0 text-muted-foreground transition-transform group-open:rotate-45">+</span>
-                </summary>
-                <p className="pb-4 pr-6 text-[14px] leading-relaxed text-muted-foreground">{f.a}</p>
-              </details>
-            ))}
-          </div>
-        </section>
+          <section className="page-section is-compact">
+            <h2>The 4-step process</h2>
+            <ol className="page-steps">
+              {STEPS.map((s, i) => (
+                <li key={s.name} className="page-step">
+                  <span className="page-step-name">
+                    <span className="page-step-num">{i + 1}</span>
+                    {s.name}
+                  </span>
+                  <p>{s.text}</p>
+                </li>
+              ))}
+            </ol>
+          </section>
 
-        <section className="mt-14 rounded-xl border border-border bg-muted/40 p-6 text-center">
-          <h2 className="text-xl font-semibold tracking-tight">Start self-hosting in one minute</h2>
-          <div className="mx-auto mt-4 max-w-lg">
-            <UrlFunnelForm cta="Convert my Framer site →" />
-          </div>
-        </section>
+          <section className="page-section is-compact">
+            <h2>Where to host (all work)</h2>
+            <div className="page-table-wrap">
+              <table className="page-table">
+                <thead>
+                  <tr>
+                    <th>Host</th>
+                    <th>Free tier fits a converted site?</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td>Netlify</td><td>Yes</td><td>One-click deploy from this tool; drag-and-drop also works.</td></tr>
+                  <tr><td>Vercel</td><td>Yes</td><td>One-click deploy; natural home for the Next.js export.</td></tr>
+                  <tr><td>Cloudflare Pages</td><td>Yes</td><td>Unlimited static requests on the free plan.</td></tr>
+                  <tr><td>GitHub Pages</td><td>Yes</td><td>Good for the HTML bundle; push the folder to a repo.</td></tr>
+                  <tr><td>S3 / shared hosting</td><td>Cheap</td><td>Any host that serves files works — no build step needed.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="page-section is-compact">
+            <h2>Honest limitations</h2>
+            <div className="page-prose is-sm">
+              <p>
+                Password-protected Framer pages can&apos;t be converted — the tool reads public URLs
+                only. Framer&apos;s built-in form backend stays with Framer, so repoint forms to a
+                service like Formspree or Tally after migrating. And in HTML mode, heavy runtime
+                effects (custom cursors, WebGL) are trimmed for speed — the{" "}
+                <Link href="/">Next.js export</Link> keeps them if you need exact behavior.
+              </p>
+            </div>
+          </section>
+
+          <section className="page-section is-compact">
+            <h2>Self-hosting FAQ</h2>
+            <div className="page-faq">
+              {FAQ.map((f, i) => (
+                <details key={f.q} open={i === 0}>
+                  <summary>{f.q}</summary>
+                  <p>{f.a}</p>
+                </details>
+              ))}
+            </div>
+          </section>
+
+          <section className="page-cta">
+            <h2>Start self-hosting in one minute</h2>
+            <div className="page-cta-form">
+              <UrlFunnelForm cta="Convert my Framer site →" />
+            </div>
+          </section>
+        </div>
       </main>
 
       {guideJsonLd().map((obj, i) => (
         <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(obj) }} />
       ))}
-    </div>
+    </>
   );
 }

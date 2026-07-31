@@ -23,27 +23,40 @@ export const metadata = {
 
 export default function RobotsTxtGeneratorPage() {
   return (
-    <main className="mx-auto max-w-3xl px-5 py-12">
-      <p className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
-        <Link href="/tools" className="hover:text-foreground">Tools</Link> / Robots.txt Generator
-      </p>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-        Robots.txt Generator
-      </h1>
-      <p className="mt-2 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-        Build a valid <code className="rounded bg-muted px-1 py-0.5 text-[13px]">robots.txt</code> in
-        seconds — allow everything, block everything, or set per-crawler rules
-        for Googlebot, Bingbot, GPTBot, and others. Copy it or download the
-        file and drop it in your site&apos;s <code className="rounded bg-muted px-1 py-0.5 text-[13px]">public/</code> folder.
-      </p>
-      <div className="mt-6">
-        <RobotsTxtGenerator />
+    <main>
+      <section className="page-head">
+        <div className="page-head-box">
+          <div className="page-head-row">
+            <div className="page-head-stack">
+              <p className="page-breadcrumb">
+                <Link href="/tools">Tools</Link> / Robots.txt Generator
+              </p>
+              <h1 className="page-title">Robots.txt Generator</h1>
+            </div>
+          </div>
+          <div className="page-head-row">
+            <p className="page-intro is-wide">
+              Build a valid <code className="page-code">robots.txt</code> in seconds —
+              allow everything, block everything, or set per-crawler rules for
+              Googlebot, Bingbot, GPTBot, and others. Copy it or download the file
+              and drop it in your site&apos;s <code className="page-code">public/</code>{" "}
+              folder.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div className="page-body is-narrow is-compact">
+        <div className="page-widget">
+          <RobotsTxtGenerator />
+        </div>
+
+        <p className="page-note">
+          Deploying a converted Next.js project? Add the generated file as{" "}
+          <code className="page-code">public/robots.txt</code> — Next.js serves it
+          automatically at the root.
+        </p>
       </div>
-      <p className="mt-6 text-[13px] text-muted-foreground">
-        Deploying a converted Next.js project? Add the generated file as{" "}
-        <code className="rounded bg-muted px-1 py-0.5 text-[12.5px]">public/robots.txt</code>{" "}
-        — Next.js serves it automatically at the root.
-      </p>
     </main>
   );
 }

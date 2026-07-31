@@ -70,6 +70,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
   const published = p.publishedAt || p.createdAt;
   const html = renderMarkdown(p.content);
   const nextPost = allPosts.find((x) => x.slug !== p.slug) || null;
+  const lede = p.excerpt || autoExcerpt(p.content);
 
   const meta = [
     { label: "Published", value: fmtDate(published) },
@@ -78,36 +79,38 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
   ];
 
   return (
-    <div className="min-h-screen w-full">
-
-      {/* Case-study style: title + subtitle, a stacked meta list on the left
-          with a single link on the right, then the hero image below — no
-          boxed frame, no color accent, just clean black-on-white spacing. */}
-      <article className="mx-auto max-w-3xl px-5 pb-24 pt-14 sm:pt-16">
-        <h1 className="text-[34px] font-semibold leading-[1.1] tracking-tight sm:text-[44px]">
-          {p.title}
-        </h1>
-        {(p.excerpt || autoExcerpt(p.content)) && (
-          <p className="mt-3 max-w-xl text-[15.5px] leading-relaxed text-muted-foreground">
-            {p.excerpt || autoExcerpt(p.content)}
-          </p>
-        )}
-
-        <div className="mt-10 flex flex-wrap items-start justify-between gap-y-8 sm:items-center">
-          <div className="flex flex-col gap-6 sm:flex-row sm:gap-14">
-            {meta.map((m) => (
-              <div key={m.label}>
-                <div className="text-[12px] text-muted-foreground">{m.label}</div>
-                <div className="mt-1 text-[14.5px] font-medium">{m.value}</div>
-              </div>
-            ))}
+    <main>
+      <section className="page-head">
+        <div className="page-head-box">
+          <div className="page-head-row">
+            <div className="page-head-stack">
+              <p className="page-breadcrumb">
+                <Link href="/blog">Blog</Link>
+              </p>
+              <h1 className="page-title">{p.title}</h1>
+            </div>
           </div>
-          <Link
-            href="/blog"
-            className="group inline-flex shrink-0 items-center gap-1.5 border-b border-foreground pb-0.5 text-[13.5px] font-medium"
-          >
-            All posts
-            <span className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">↗</span>
+          {lede && (
+            <div className="page-head-row">
+              <p className="page-intro is-wide">{lede}</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Case-study style: a stacked meta row with a single link on the right,
+          then the hero image below — no boxed frame, no color accent, just
+          clean black-on-white spacing. */}
+      <article className="page-body is-article">
+        <div className="page-meta-row">
+          {meta.map((m) => (
+            <div key={m.label} className="page-meta-item">
+              <span className="page-meta-label">{m.label}</span>
+              <span className="page-meta-value">{m.value}</span>
+            </div>
+          ))}
+          <Link href="/blog" className="page-backlink">
+            All posts ↗
           </Link>
         </div>
 
@@ -121,18 +124,19 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
           <img
             src={p.coverImage}
             alt={p.title}
-            className="mt-10 aspect-[1200/630] w-full rounded-lg object-cover"
+            className="page-hero-img"
+            style={{ aspectRatio: "1200 / 630" }}
           />
         ) : (
-          <PostCover seed={p.slug} className="mt-10 aspect-[16/10] w-full rounded-lg" />
+          <PostCover seed={p.slug} className="page-post-hero" />
         )}
 
-        <div className="blog-content mt-12" dangerouslySetInnerHTML={{ __html: html }} />
+        <div className="blog-content" dangerouslySetInnerHTML={{ __html: html }} />
 
         {p.tags.length > 0 && (
-          <div className="mt-12 flex flex-wrap gap-2 border-t border-border pt-8">
+          <div className="page-tags has-rule">
             {p.tags.map((t) => (
-              <span key={t} className="rounded-full border border-border px-2.5 py-1 text-[12px] text-muted-foreground">
+              <span key={t} className="page-tag">
                 #{t}
               </span>
             ))}
@@ -140,44 +144,32 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
         )}
 
         {/* Soft CTA — every post links to a money page */}
-        <div className="mt-10 flex flex-col items-start justify-between gap-4 rounded-lg border border-border p-6 sm:flex-row sm:items-center">
-          <div>
-            <p className="text-[15px] font-semibold">Convert your Framer site next</p>
-            <p className="mt-1 text-[13.5px] text-muted-foreground">
-              Free, takes about a minute, and you can preview the result before deploying.
-            </p>
+        <div className="page-banner">
+          <div className="page-banner-text">
+            <h2>Convert your Framer site next</h2>
+            <p>Free, takes about a minute, and you can preview the result before deploying.</p>
           </div>
-          <Link
-            href="/"
-            className="shrink-0 rounded-lg bg-foreground px-5 py-2.5 text-[13.5px] font-medium text-background hover:opacity-90"
-          >
+          <Link href="/" className="page-btn is-sm">
             Convert free →
           </Link>
         </div>
 
         {nextPost && (
-          <Link
-            href={`/blog/${nextPost.slug}`}
-            className="group mt-6 flex items-center gap-4 rounded-lg border border-border p-4 transition-colors hover:border-foreground"
-          >
-            <PostCover seed={nextPost.slug} className="h-16 w-24 shrink-0 rounded-md" />
-            <div className="min-w-0">
-              <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Up next</div>
-              <div className="mt-0.5 truncate text-[15px] font-semibold group-hover:underline">
-                {nextPost.title}
-              </div>
+          <Link href={`/blog/${nextPost.slug}`} className="page-next">
+            <PostCover seed={nextPost.slug} className="page-next-media" />
+            <div className="page-next-body">
+              <span className="page-post-kicker">Up next</span>
+              <span className="page-next-title">{nextPost.title}</span>
             </div>
-            <span className="ml-auto shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5">→</span>
+            <span className="page-next-arrow" aria-hidden="true">
+              →
+            </span>
           </Link>
         )}
 
-        <div className="mt-14 flex justify-center">
-          <Link
-            href="/blog"
-            className="group inline-flex items-center gap-1.5 text-[14px] font-medium text-muted-foreground hover:text-foreground"
-          >
-            Back to blog
-            <span className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">↗</span>
+        <div className="page-backlink-row">
+          <Link href="/blog" className="page-backlink">
+            Back to blog ↗
           </Link>
         </div>
       </article>
@@ -197,6 +189,6 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
           }),
         }}
       />
-    </div>
+    </main>
   );
 }

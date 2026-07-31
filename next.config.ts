@@ -12,6 +12,15 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      // The pricing page is gone — the product is free and has no billing, so
+      // a page about price was only ever restating that. Redirected rather
+      // than 404'd so the URL's existing links and ranking signal fold into
+      // the homepage, which already carries the "free" message.
+      {
+        source: "/pricing",
+        destination: "/",
+        permanent: true,
+      },
       // Old auto-generated blog slugs -> keyword slugs (SEO).
       {
         source: "/blog/untitled-post",

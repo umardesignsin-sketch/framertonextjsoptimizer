@@ -4,6 +4,7 @@ import { load, detectFramer, extractMeta, collectStyleText, type Doc } from "./p
 import { discoverPages, normalizeRoute } from "./discover";
 import {
   collectImageUrls,
+  collectIconUrls,
   isOptimizableImage,
   optimizeToWebp,
   copyAsset,
@@ -155,10 +156,14 @@ export async function convertSite(
   const imageUrls = new Set<string>();
   const fontUrls = new Set<string>();
   const videoUrls = new Set<string>();
+  // Icons are inside imageUrls too, but tracked separately so they're copied
+  // verbatim rather than re-encoded to WebP (Safari favicon support).
+  const iconUrls = new Set<string>();
   for (const html of pageHtml.values()) {
     const $ = load(html);
     const css = collectStyleText($);
     collectImageUrls($, css).forEach((u) => imageUrls.add(u));
+    collectIconUrls($).forEach((u) => iconUrls.add(u));
     if (opts.selfHostFonts) collectFontUrls(css).forEach((u) => fontUrls.add(u));
     collectVideoUrls($).forEach((u) => videoUrls.add(u));
   }
@@ -184,7 +189,7 @@ export async function convertSite(
         const bin = await fetchBinary(url);
         if (bin.status >= 400 || bin.buffer.length === 0) return;
         const result =
-          isOptimizableImage(url) && !/image\/svg/i.test(bin.contentType)
+          isOptimizableImage(url) && !/image\/svg/i.test(bin.contentType) && !iconUrls.has(url)
             ? await optimizeToWebp(url, bin.buffer)
             : copyAsset(url, bin.buffer);
         if (!result) return;
@@ -350,5 +355,6 @@ export async function convertSite(
     stats,
     notes: [...notes],
     files: [...htmlFiles, ...assetFiles, ...platformConfigFiles()],
+    ogImage: meta.ogImage || undefined,
   };
 }

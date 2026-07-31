@@ -31,45 +31,43 @@ export default async function BlogIndexPage() {
   const [featured, ...rest] = posts;
 
   return (
-    <div className="min-h-screen w-full">
+    <main>
+      <section className="page-head">
+        <div className="page-head-box">
+          <div className="page-head-row">
+            <div className="page-head-stack">
+              <h1 className="page-title">Blog</h1>
+            </div>
+          </div>
+          <div className="page-head-row">
+            <p className="page-intro is-wide">
+              Guides and updates on converting{" "}
+              <a href="https://www.framer.com" target="_blank" rel="noopener noreferrer">
+                Framer
+              </a>{" "}
+              sites to fast <Link href="/">HTML</Link> and{" "}
+              <a href="https://nextjs.org/docs/app" target="_blank" rel="noopener noreferrer">
+                Next.js
+              </a>{" "}
+              — performance, SEO, and deployment.
+            </p>
+          </div>
+        </div>
+      </section>
 
-      <main className="mx-auto max-w-6xl px-5 pb-24">
-        <section className="pt-14 pb-6">
-          <h1 className="text-[42px] font-semibold leading-[1.05] tracking-tight sm:text-[56px]">Blog</h1>
-          <p className="mt-4 max-w-2xl text-[16px] leading-relaxed text-muted-foreground">
-            Guides and updates on converting{" "}
-            <a href="https://www.framer.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Framer</a>{" "}
-            sites to fast{" "}
-            <Link href="/framer-to-html" className="text-foreground underline underline-offset-2">HTML</Link>{" "}
-            and{" "}
-            <a href="https://nextjs.org/docs/app" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Next.js</a>{" "}
-            — performance, SEO, and deployment.
-          </p>
-        </section>
-
+      <div className="page-body is-compact">
         {posts.length === 0 ? (
-          <p className="mt-10 rounded-2xl border border-border bg-muted/30 px-5 py-16 text-center text-[14px] text-muted-foreground">
-            No posts yet — check back soon.
-          </p>
+          <p className="page-empty">No posts yet — check back soon.</p>
         ) : (
           <>
             {/* Featured post — the latest, big and unmissable */}
-            <Link
-              href={`/blog/${featured.slug}`}
-              className="group mt-8 grid gap-0 overflow-hidden rounded-lg border border-border sm:grid-cols-2"
-            >
-              <PostCover seed={featured.slug} className="h-56 sm:h-full" />
-              <div className="flex flex-col justify-center p-7 sm:p-9">
-                <span className="inline-flex w-fit items-center rounded-full border border-border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Latest
-                </span>
-                <h2 className="mt-4 text-[26px] font-semibold leading-tight tracking-tight sm:text-[30px] group-hover:underline">
-                  {featured.title}
-                </h2>
-                <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
-                  {featured.excerpt || autoExcerpt(featured.content, 40)}
-                </p>
-                <div className="mt-5 flex items-center gap-3 text-[12.5px] text-muted-foreground">
+            <Link href={`/blog/${featured.slug}`} className="page-feature">
+              <PostCover seed={featured.slug} className="page-feature-media" />
+              <div className="page-feature-body">
+                <span className="page-post-kicker">Latest</span>
+                <h2>{featured.title}</h2>
+                <p>{featured.excerpt || autoExcerpt(featured.content, 40)}</p>
+                <div className="page-post-meta">
                   <span>{featured.authorName || DEFAULT_AUTHOR}</span>
                   <span>·</span>
                   <time dateTime={(featured.publishedAt || featured.createdAt).toISOString()}>
@@ -83,54 +81,38 @@ export default async function BlogIndexPage() {
 
             {/* Grid of the rest */}
             {rest.length > 0 && (
-              <ul className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="page-cards is-3">
                 {rest.map((p) => {
                   const published = p.publishedAt || p.createdAt;
                   return (
-                    <li key={p.id}>
-                      <Link
-                        href={`/blog/${p.slug}`}
-                        className="group flex h-full flex-col overflow-hidden rounded-lg border border-border transition-colors hover:border-foreground"
-                      >
-                        <PostCover seed={p.slug} className="h-36" />
-                        <div className="flex flex-1 flex-col p-5">
-                          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                            <time dateTime={published.toISOString()}>{fmtDate(published)}</time>
-                            <span className="mx-1.5">·</span>
-                            {readingTime(p.content)} min
-                          </div>
-                          <h2 className="mt-2 text-[16.5px] font-semibold leading-snug tracking-tight group-hover:underline">
-                            {p.title}
-                          </h2>
-                          <p className="mt-2 line-clamp-3 flex-1 text-[13.5px] leading-relaxed text-muted-foreground">
-                            {p.excerpt || autoExcerpt(p.content, 24)}
-                          </p>
-                          <span className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-medium text-foreground">
-                            Read more
-                            <span className="transition-transform group-hover:translate-x-0.5">→</span>
-                          </span>
-                        </div>
-                      </Link>
-                    </li>
+                    <Link key={p.id} href={`/blog/${p.slug}`} className="page-post">
+                      <PostCover seed={p.slug} className="page-post-media" />
+                      <div className="page-post-body">
+                        <span className="page-post-kicker">
+                          <time dateTime={published.toISOString()}>{fmtDate(published)}</time>
+                          {" · "}
+                          {readingTime(p.content)} min
+                        </span>
+                        <h2>{p.title}</h2>
+                        <p>{p.excerpt || autoExcerpt(p.content, 24)}</p>
+                        <span className="page-tile-more">Read more →</span>
+                      </div>
+                    </Link>
                   );
                 })}
-              </ul>
+              </div>
             )}
           </>
         )}
 
-        <div className="mt-16 flex justify-center border-t border-border pt-10">
-          <Link
-            href="/"
-            className="group inline-flex items-center gap-1.5 text-[14px] font-medium text-muted-foreground hover:text-foreground"
-          >
-            Back to home
-            <span className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">↗</span>
+        <div className="page-backlink-row">
+          <Link href="/" className="page-backlink">
+            Back to home ↗
           </Link>
         </div>
-      </main>
+      </div>
 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(blogJsonLd(posts)) }} />
-    </div>
+    </main>
   );
 }
