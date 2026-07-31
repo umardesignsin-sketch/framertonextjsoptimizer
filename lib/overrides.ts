@@ -18,7 +18,7 @@
 // matches the old key gets the new innerHTML. Self-healing by construction —
 // it only ever fires on elements showing the stale content.
 import * as cheerio from "cheerio";
-import type { Element } from "domhandler";
+import type { AnyNode, Element, Text } from "domhandler";
 
 export interface Override {
   /** Tag name to scan (e.g. "h1", "span", "a", "img"). */
@@ -52,6 +52,11 @@ function escapeHtml(s: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+/** Inverse of escapeHtml — reverse order so a literal "&amp;lt;" in source text doesn't double-decode. */
+function decodeEscapedHtml(s: string): string {
+  return s.replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
 }
 
 /** Edits captured directly from the visual editor's iframe DOM. */
@@ -201,11 +206,22 @@ export function buildOverrides(originalHtml: string, editedHtml: string): Overri
 // Cost/safety bounds (a page can mutate 60×/s from marquees/typewriters):
 //  - scans are THROTTLED to one per 600ms, coalesced from any mutation burst
 //  - a reentrancy flag keeps our own writes from re-triggering the observer
-//  - each override stops after writing in 5 separate scan rounds — a looping
-//    animation that keeps restoring the old content would otherwise be fought
-//    forever; one round may legitimately write many breakpoint copies
+//  - each override stops after writing in ROUND_CAP separate scan rounds — a
+//    looping animation that keeps restoring the old content would otherwise
+//    be fought forever; one round may legitimately write many breakpoint
+//    copies. Was 5, which real sites were burning through — Framer's runtime
+//    re-renders (and reverts our edit) on more triggers than just initial
+//    hydration: breakpoint/resize changes, revisiting a backgrounded tab,
+//    etc. Once exhausted the edit is gone for good with no further recovery,
+//    which is indistinguishable from "publishing didn't work." 40 gives a
+//    page ~24s of 600ms-throttled corrections (still bounded, still gives up
+//    on truly-looping content) instead of giving up after the first handful
+//    of ordinary re-renders. The real fix for the *first* paint is baking
+//    edits into the served HTML directly (applyOverridesToDom, below) — this
+//    only widens the safety margin for reverts after that.
 //  - html-mode scans narrow by the recorded framer-class when available
-const RUNTIME = `(function(){var O=window.__FNO_OV__||[];var rounds=[];var applying=false;
+const ROUND_CAP = 40;
+const RUNTIME = `(function(){var O=window.__FNO_OV__||[];var rounds=[];var applying=false;var ROUND_CAP=${ROUND_CAP};
 function nm(s){return s.replace(/\\s+/g," ").trim()}
 function dec(h){var d=document.createElement("div");d.innerHTML=h;return d.textContent||""}
 function setTxt(el,h,k){var txt=dec(h);var w=document.createTreeWalker(el,4);var ns=[],n;
@@ -215,7 +231,7 @@ var hit=false;
 for(var i=0;i<ns.length;i++){if(nm(ns[i].data)===k){ns[i].data=txt;hit=true}}
 if(!hit){ns[0].data=txt;for(var j=1;j<ns.length;j++)ns[j].data=""}}
 function apply(){if(applying)return;applying=true;try{
-for(var i=0;i<O.length;i++){var o=O[i];if((rounds[i]||0)>=5)continue;var wrote=false;try{
+for(var i=0;i<O.length;i++){var o=O[i];if((rounds[i]||0)>=ROUND_CAP)continue;var wrote=false;try{
 var els=o.c?document.querySelectorAll(o.t+"."+o.c):document.getElementsByTagName(o.t);
 for(var j=0;j<els.length;j++){var el=els[j];
 if(o.m==="attr"){if(el.getAttribute(o.a)===o.k){el.setAttribute(o.a,o.h);wrote=true;}}
@@ -246,6 +262,95 @@ function isOverride(o: unknown): o is Override {
     typeof x.k === "string" &&
     typeof x.h === "string"
   );
+}
+
+/** Depth-first text nodes under `el`, in document order — server-side
+ *  equivalent of the client's `document.createTreeWalker(el, NodeFilter.SHOW_TEXT)`. */
+function collectTextNodes(el: Element): Text[] {
+  const out: Text[] = [];
+  const walk = (node: Element) => {
+    for (const child of (node.children || []) as unknown as (Element | Text)[]) {
+      if (child.type === "text") out.push(child as Text);
+      else if (child.type === "tag") walk(child as Element);
+    }
+  };
+  walk(el);
+  return out;
+}
+
+/** Mirrors the client's setTxt(): rewrite the text node still showing the old
+ *  key in place (preserving nested spans); if none match exactly, rewrite the
+ *  first and blank the rest, same as the runtime does for a stale match. */
+function setTextNode(el: Element, escapedNewText: string, oldKey: string): void {
+  const decoded = decodeEscapedHtml(escapedNewText);
+  const nodes = collectTextNodes(el);
+  if (nodes.length === 0) return;
+  const hit = nodes.find((n) => norm(n.data || "") === oldKey);
+  if (hit) {
+    hit.data = decoded;
+  } else {
+    nodes[0].data = decoded;
+    for (let i = 1; i < nodes.length; i++) nodes[i].data = "";
+  }
+}
+
+function toggleDisplayNone($el: cheerio.Cheerio<AnyNode>, hidden: boolean): void {
+  const cleaned = ($el.attr("style") || "")
+    .replace(/(^|;)\s*display\s*:[^;]*/gi, "")
+    .replace(/^;\s*/, "")
+    .trim();
+  if (hidden) {
+    $el.attr("style", cleaned ? `${cleaned}; display: none !important` : "display: none !important");
+  } else if (cleaned) {
+    $el.attr("style", cleaned);
+  } else {
+    $el.removeAttr("style");
+  }
+}
+
+/**
+ * Server-side counterpart to the client-side `apply()` inside RUNTIME —
+ * applies each override directly to the parsed document instead of leaving it
+ * to a script that only runs after the browser has already painted the
+ * original content. This is what actually fixes the "published edit flashes
+ * old-then-new" bug: the HTML this returns is what gets served, so there's
+ * nothing stale to visibly swap on first paint. The enforcer script (injected
+ * separately by injectOverrides, unchanged) still gets added afterward as a
+ * backstop for Framer's own runtime re-rendering the page from its own data
+ * post-hydration — baking the edit in here just means that backstop starts
+ * from an already-correct DOM instead of a stale one.
+ */
+export function applyOverridesToDom(html: string, overrides: Override[]): string {
+  if (overrides.length === 0) return html;
+  const $ = cheerio.load(html);
+
+  for (const o of overrides) {
+    const $els = o.c ? $(`${o.t}.${o.c}`) : $(o.t);
+    $els.each((_, el) => {
+      const $el = $(el);
+      if (o.m === "attr") {
+        if (o.a && $el.attr(o.a) === o.k) $el.attr(o.a, o.h);
+      } else if (o.m === "img") {
+        const src = $el.attr("src");
+        const srcset = $el.attr("srcset") || "";
+        if (src === o.k || srcset.includes(o.k)) {
+          $el.attr("src", o.h);
+          $el.removeAttr("srcset");
+          $el.removeAttr("sizes");
+        }
+      } else if (o.m === "txt") {
+        if (norm($el.text()) === o.k) setTextNode(el as Element, o.h, o.k);
+      } else if (o.m === "hide") {
+        const matched = o.a ? $el.attr(o.a) === o.k : norm($el.text()) === o.k;
+        if (matched) toggleDisplayNone($el, o.h === "1");
+      } else {
+        const key = o.m === "text" ? norm($el.text()) : norm($el.html() || "");
+        if (key === o.k) $el.html(o.h);
+      }
+    });
+  }
+
+  return $.html();
 }
 
 /**

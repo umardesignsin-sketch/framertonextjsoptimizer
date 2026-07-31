@@ -74,6 +74,10 @@ export async function POST(request: Request) {
               status: "ready",
               url: result.url,
               externalId: result.externalId || null,
+              // Vercel-only — must survive to redeploy time (lib/editor-publish.ts)
+              // or Publish silently targets the wrong scope. Netlify has no
+              // equivalent, so this is just null there.
+              teamId: provider === "vercel" ? teamId || null : null,
               tokenEnc: storeToken ? encryptSecret(token) : null,
             },
           })

@@ -6,7 +6,7 @@
 // editor renders original + draft overlaid, and publish reproduces exactly
 // that. Edits survive Framer's hydration via the injected override runtime.
 import type { ConvertedFile, ConvertReport } from "./types";
-import { editorOverrides, injectOverrides, type EditorEdit } from "./overrides";
+import { applyOverridesToDom, editorOverrides, injectOverrides, type EditorEdit } from "./overrides";
 import { getJob } from "./store";
 import { db } from "./db";
 import { decryptSecret, encryptionConfigured } from "./crypto";
@@ -14,7 +14,14 @@ import { redeployNetlify, redeployVercel, toDeployableFiles } from "./deploy";
 
 function injectIntoHtmlFile(f: ConvertedFile, overrides: ReturnType<typeof editorOverrides>): ConvertedFile {
   if (!f.content || !f.path.endsWith(".html")) return f;
-  return { ...f, content: injectOverrides(f.content, overrides) };
+  // Bake the edit into the served markup itself (applyOverridesToDom) BEFORE
+  // adding the enforcer script (injectOverrides) — otherwise every visitor's
+  // first paint shows the pre-edit content until the trailing script patches
+  // it a moment later. The enforcer still gets injected as a backstop for
+  // Framer's runtime re-rendering post-hydration; baking just means it starts
+  // from an already-correct DOM instead of a stale one.
+  const baked = applyOverridesToDom(f.content, overrides);
+  return { ...f, content: injectOverrides(baked, overrides) };
 }
 
 /**
@@ -76,7 +83,7 @@ export async function publishSite(siteId: string, ownerId: string): Promise<Publ
   const res =
     target.provider === "netlify"
       ? await redeployNetlify(token, target.externalId, files)
-      : await redeployVercel(token, target.externalId, files);
+      : await redeployVercel(token, target.externalId, files, target.teamId || undefined);
 
   await db.deployment
     .create({
@@ -86,6 +93,9 @@ export async function publishSite(siteId: string, ownerId: string): Promise<Publ
         status: "ready",
         url: res.url,
         externalId: target.externalId,
+        // Carry the scope forward so the NEXT publish also redeploys
+        // correctly — this row becomes the new `target` next time.
+        teamId: target.teamId,
         tokenEnc: target.tokenEnc,
       },
     })
