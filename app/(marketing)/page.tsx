@@ -363,11 +363,10 @@ function HowItWorks() {
                 <span className="mktg-card-num-label">{c.num}</span>
               </div>
               <div className="mktg-card-illus">
-                {/* These illustrations are Figma exports carrying embedded
-                    rasters (~3-8 MB each, ~19 MB across the four shown). The
-                    section sits below the fold, so deferring them keeps that
-                    weight off first paint until the real fix — re-exporting
-                    them without the embedded bitmaps — lands. */}
+                {/* Below the fold, so these stay deferred even though the
+                    files are now small (the Figma exports embedded full-res
+                    PNGs; those rasters were re-encoded to WebP in place,
+                    30 MB -> 0.6 MB across the set). */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={c.illus} alt="" loading="lazy" decoding="async" />
               </div>
@@ -389,11 +388,10 @@ function HowItWorks() {
                 <span className="mktg-card-num-label">{c.num}</span>
               </div>
               <div className="mktg-card-illus">
-                {/* These illustrations are Figma exports carrying embedded
-                    rasters (~3-8 MB each, ~19 MB across the four shown). The
-                    section sits below the fold, so deferring them keeps that
-                    weight off first paint until the real fix — re-exporting
-                    them without the embedded bitmaps — lands. */}
+                {/* Below the fold, so these stay deferred even though the
+                    files are now small (the Figma exports embedded full-res
+                    PNGs; those rasters were re-encoded to WebP in place,
+                    30 MB -> 0.6 MB across the set). */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={c.illus} alt="" loading="lazy" decoding="async" />
               </div>
