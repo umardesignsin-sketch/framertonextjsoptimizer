@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { SpeedCompare } from "@/components/SpeedCompare";
 import { AuthGateModal } from "@/components/AuthGateModal";
 import { useAuthUser } from "@/components/useAuthUser";
+import { ModeToggle } from "@/components/ModeToggle";
 import Link from "next/link";
 import { faqJsonLd, jsonLdScript } from "@/lib/site-meta";
 
@@ -197,26 +198,7 @@ function Home() {
           </div>
 
           <div className="mktg-features">
-            <div className="mktg-toggle" role="tablist" aria-label="Conversion output">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={outputMode === "nextjs"}
-                className={`mktg-tab${outputMode === "nextjs" ? " is-active" : ""}`}
-                onClick={() => setOutputMode("nextjs")}
-              >
-                Convert to Next.js
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={outputMode === "hybrid"}
-                className={`mktg-tab${outputMode === "hybrid" ? " is-active" : ""}`}
-                onClick={() => setOutputMode("hybrid")}
-              >
-                Improve Site Performance
-              </button>
-            </div>
+            <ModeToggle value={outputMode} onChange={setOutputMode} />
 
             <div className="mktg-surface">
               <div className="mktg-surface-bg" aria-hidden />

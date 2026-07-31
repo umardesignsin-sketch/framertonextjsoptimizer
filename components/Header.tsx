@@ -28,7 +28,7 @@ export function Header() {
         </Link>
 
         <nav
-          className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-8 text-[16px] leading-none text-[#1a1a1a] uppercase md:flex"
+          className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-8 text-[16px] leading-none text-[#1a1a1a] md:flex"
           aria-label="Main navigation"
         >
           <Link href="/#how-it-works" className="transition-opacity hover:opacity-60">

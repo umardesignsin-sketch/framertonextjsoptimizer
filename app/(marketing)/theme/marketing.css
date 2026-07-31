@@ -97,6 +97,32 @@ body {
   box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.2);
   display: inline-flex;
   padding: 4px;
+  position: relative;
+}
+
+/* The sliding highlight. Width and X are written as inline styles by
+   ModeToggle, measured off the active tab — the two labels differ enough in
+   length that a fixed 50% would sit visibly wrong. Hidden until the component
+   takes over, so the server-rendered markup still shows a selected tab. */
+.mktg-toggle-thumb {
+  background: #f7f6f5;
+  border-radius: 80px;
+  bottom: 4px;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  top: 4px;
+  width: 0;
+}
+
+.mktg-toggle.is-animated .mktg-toggle-thumb {
+  opacity: 1;
+}
+
+.mktg-toggle.is-animated .mktg-toggle-thumb.is-ready {
+  transition:
+    transform 0.42s cubic-bezier(0.32, 0.72, 0, 1),
+    width 0.42s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .mktg-tab {
@@ -109,8 +135,20 @@ body {
   font-weight: 500;
   line-height: 1;
   padding: 12px 24px;
-  transition: background 0.15s, color 0.15s;
+  position: relative;
+  transition: color 0.25s ease;
   white-space: nowrap;
+  z-index: 1;
+}
+
+.mktg-tab:not(.is-active):hover {
+  color: #434343;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mktg-toggle.is-animated .mktg-toggle-thumb.is-ready {
+    transition: none;
+  }
 }
 
 /* The trailing tab is drawn with a tighter right inset (pl-24 / pr-16). */

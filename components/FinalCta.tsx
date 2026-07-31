@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { ModeToggle } from "@/components/ModeToggle";
 
 // Figma: Homepage → "Final cta+Footer" → "FInal CTA" (node 5:547).
 // A repeat of the hero converter, so it deliberately reuses the hero's
@@ -38,26 +39,7 @@ export function FinalCta() {
         </div>
 
         <div className="mktg-features">
-          <div className="mktg-toggle" role="tablist" aria-label="Conversion output">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={outputMode === "nextjs"}
-              className={`mktg-tab${outputMode === "nextjs" ? " is-active" : ""}`}
-              onClick={() => setOutputMode("nextjs")}
-            >
-              Convert to Next.js
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={outputMode === "hybrid"}
-              className={`mktg-tab${outputMode === "hybrid" ? " is-active" : ""}`}
-              onClick={() => setOutputMode("hybrid")}
-            >
-              Improve Site Performance
-            </button>
-          </div>
+          <ModeToggle value={outputMode} onChange={setOutputMode} />
 
           <div className="mktg-surface">
             <div className="mktg-surface-bg" aria-hidden />
