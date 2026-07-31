@@ -1,7 +1,7 @@
 // Orchestrator: URL -> optimized static bundle (snapshot + optimize pipeline).
 import { fetchText, fetchBinary, normalizeUrl } from "./fetch";
 import { load, detectFramer, extractMeta, collectStyleText, type Doc } from "./parse";
-import { discoverPages, normalizeRoute } from "./discover";
+import { discoverPages, normalizeRoute, routeToFilePath } from "./discover";
 import {
   collectImageUrls,
   isOptimizableImage,
@@ -71,12 +71,6 @@ async function mapLimit<T, R>(
   });
   await Promise.all(workers);
   return results;
-}
-
-function routeToFilePath(route: string): string {
-  const r = normalizeRoute(route);
-  if (r === "/") return "index.html";
-  return r.replace(/^\//, "") + "/index.html";
 }
 
 export type ProgressFn = (msg: string) => void;
