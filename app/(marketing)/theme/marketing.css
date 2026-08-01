@@ -292,10 +292,24 @@ body {
   max-width: 472px;
 }
 
+/* Row carries the top/bottom rule and bleeds to the full viewport so the line
+   has no endpoint (same split as .mktg-how-cards). The track keeps the columns
+   inside the heading's 1360 box, so nothing shifts — only the line extends. */
 .mktg-benefits-row {
   border-bottom: 1px solid rgba(174, 174, 178, 0.2);
   border-top: 1px solid rgba(174, 174, 178, 0.2);
+  left: 50%;
+  position: relative;
+  transform: translateX(-50%);
+  width: 100vw;
+}
+
+.mktg-benefits-track {
+  box-sizing: border-box;
   display: flex;
+  margin: 0 auto;
+  max-width: 1360px;
+  width: 100%;
 }
 
 .mktg-benefit {
@@ -369,16 +383,36 @@ body {
   max-width: 556px;
 }
 
-/* Cards grid — border-top/bottom on section, cards share internal lines */
+/* Cards grid. The top/bottom rule must reach the true browser edges (no
+   visible endpoint), while the cards themselves stay contained and aligned
+   with the heading. So the two jobs are split:
+
+   .mktg-how-cards carries the rule and is broken OUT of .mktg-how's 1360 cap
+   to the full viewport (the standard left:50%/translateX(-50%)/100vw trick),
+   so the line has no endpoint at any width.
+
+   .mktg-how-row keeps the cards inside the same 1360 box + 80px inset the
+   heading uses (centred on the same viewport centre, so the two align), which
+   is why the cards don't stretch even though their border-carrying parent is
+   now full-bleed. */
 .mktg-how-cards {
   border-bottom: 1px solid rgba(174, 174, 178, 0.2);
   border-top: 1px solid rgba(174, 174, 178, 0.2);
   display: flex;
   flex-direction: column;
+  left: 50%;
+  position: relative;
+  transform: translateX(-50%);
+  width: 100vw;
 }
 
 .mktg-how-row {
+  box-sizing: border-box;
   display: flex;
+  margin: 0 auto;
+  max-width: 1360px;
+  padding: 0 80px;
+  width: 100%;
 }
 
 /* The card is a plain flow column at every width — number, illustration,
@@ -460,6 +494,970 @@ body {
   object-fit: contain;
 }
 
+/* Crossfade wrapper: both toggle variants occupy the same box, one fades over
+   the other. The wrapper takes its height from whichever image is in flow. */
+.mktg-card-illus-stack {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  width: 100%;
+  position: relative;
+}
+
+
+.mktg-card-illus-stack img {
+  grid-area: 1 / 1;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.mktg-card-illus-stack img.is-shown {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mktg-card-illus-stack img {
+    transition: none;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Card 02 — the conversion story, rebuilt from Figma nodes 5:333 and
+   5:664. Every measurement below is the literal design value on a
+   396×260 board; .c2-stage is scaled as a whole to fit the card, so
+   nothing here has to be re-derived as a percentage.
+   ══════════════════════════════════════════════════════════════════ */
+
+.c2-fit {
+  aspect-ratio: 396 / 260;
+  margin: 0 auto;
+  max-height: 100%;
+  max-width: 396px;
+  position: relative;
+  width: 100%;
+}
+
+.c2-stage {
+  background: #fff;
+  border: 1px solid rgba(174, 174, 178, 0.2);
+  border-radius: 28px;
+  box-sizing: border-box;
+  height: 260px;
+  left: 50%;
+  line-height: 1;
+  overflow: hidden;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(var(--c2-scale, 1));
+  width: 396px;
+}
+
+/* ── Browser chrome (shared across both tabs) ── */
+.c2-bar {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  left: 50%;
+  position: absolute;
+  top: 11px;
+  transform: translateX(-50%);
+  width: 360px;
+  z-index: 2;
+}
+
+.c2-lights {
+  display: flex;
+  gap: 3.94px;
+}
+
+.c2-light {
+  border-radius: 50%;
+  border-style: solid;
+  border-width: 0.5px;
+  box-sizing: border-box;
+  height: 10.86px;
+  width: 10.86px;
+}
+
+.c2-light--close { background: #fc5753; border-color: #df4744; }
+.c2-light--min   { background: #fdbc40; border-color: #de9f34; }
+.c2-light--max   { background: #36c84b; border-color: #27aa35; }
+
+.c2-urlgroup {
+  align-items: center;
+  display: flex;
+}
+
+/* The Framer tab collapses to a favicon when the second tab opens, so the
+   width/margin animate rather than the element simply appearing. */
+.c2-fav {
+  align-items: center;
+  background: #fff;
+  border: 0.5px solid rgba(174, 174, 178, 0.3);
+  border-radius: 6px;
+  box-sizing: border-box;
+  display: flex;
+  flex: 0 0 auto;
+  height: 22px;
+  justify-content: center;
+  margin-right: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: scale(0.55);
+  transition:
+    width 0.45s cubic-bezier(0.32, 0.72, 0, 1),
+    margin-right 0.45s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.45s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.3s ease;
+  width: 0;
+}
+
+.c2-stage.is-tab2 .c2-fav {
+  margin-right: 9px;
+  opacity: 1;
+  transform: scale(1);
+  width: 22px;
+}
+
+.c2-fav img {
+  display: block;
+  height: 15px;
+  transform: rotate(-90deg);
+  width: 12px;
+}
+
+.c2-addr {
+  align-items: center;
+  background: #fff;
+  border: 0.5px solid rgba(174, 174, 178, 0.3);
+  border-radius: 7.86px;
+  box-sizing: border-box;
+  display: flex;
+  flex: 0 0 auto;
+  height: 22px;
+  position: relative;
+  transition: width 0.45s cubic-bezier(0.32, 0.72, 0, 1);
+  width: 184px;
+}
+
+.c2-stage.is-tab2 .c2-addr { width: 149px; }
+
+.c2-addr-text {
+  font-size: 14px;
+  left: 10px;
+  padding: 0 2px;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+/* Both URLs sit at the same origin, so a plain crossfade would show them
+   overlapping. The outgoing one always leaves before the incoming one
+   arrives — in whichever direction the tab is changing. */
+.c2-addr-text--a {
+  color: #434343;
+  opacity: 1;
+  transition: opacity 0.2s ease 0.22s;
+}
+
+.c2-addr-text--b {
+  color: #767676;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.c2-stage.is-tab2 .c2-addr-text--a {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.c2-stage.is-tab2 .c2-addr-text--b {
+  opacity: 1;
+  transition: opacity 0.2s ease 0.22s;
+}
+
+/* Text selection left over from copying the URL */
+.c2-sel { background: rgba(0, 152, 255, 0.25); }
+
+.c2-divider {
+  border-left: 1px solid rgba(174, 174, 178, 0.5);
+  flex: 0 0 auto;
+  height: 20px;
+  margin: 0 9px;
+  width: 0;
+}
+
+.c2-plus {
+  display: block;
+  flex: 0 0 auto;
+  height: 14px;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+  width: 14px;
+}
+
+.c2-plus svg { display: block; }
+.c2-plus.is-pressed { opacity: 0.5; transform: scale(0.78); }
+
+.c2-brave {
+  display: block;
+  height: 16px;
+  width: 16px;
+}
+
+/* ── The two page bodies ── */
+.c2-frame {
+  inset: 0;
+  position: absolute;
+}
+
+.c2-frame--a {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity 0.4s ease,
+    transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.c2-stage.is-tab2 .c2-frame--a {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.985);
+}
+
+.c2-frame--b {
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 0.45s ease 0.1s,
+    transform 0.55s cubic-bezier(0.32, 0.72, 0, 1) 0.1s;
+}
+
+.c2-stage.is-tab2 .c2-frame--b {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Frame A: Copy link tooltip + page skeleton ── */
+.c2-tip {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  left: 50%;
+  position: absolute;
+  top: 35px;
+  transform: translateX(-50%) scale(1);
+  transition: transform 0.18s ease;
+  width: 68px;
+}
+
+.c2-tip.is-pressed { transform: translateX(-50%) scale(0.9); }
+
+.c2-tip-arrow {
+  background: url("/illustrations/card02/pointer.png") center / contain no-repeat;
+  height: 8.25px;
+  width: 9.526px;
+}
+
+.c2-tip-pill {
+  align-items: center;
+  background: #feeaaa;
+  border: 1px solid #fff;
+  border-radius: 56px;
+  box-shadow:
+    0 3px 2px rgba(0, 0, 0, 0.05),
+    0 1px 1px rgba(0, 0, 0, 0.09),
+    0 0 1px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+  color: #977a1d;
+  display: flex;
+  font-size: 12px;
+  height: 21px;
+  justify-content: center;
+  width: 100%;
+}
+
+.c2-skel {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  left: 50%;
+  opacity: 0.6;
+  position: absolute;
+  top: calc(50% + 66.5px);
+  transform: translate(-50%, -50%);
+}
+
+.c2-skel-screens {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 19px;
+}
+
+.c2-skel-boxes {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.c2-skel-box {
+  background: #d9d9d9;
+  border-radius: 8px;
+  display: block;
+  opacity: 0.2;
+}
+
+.c2-skel-box--1 { height: 22px; width: 180px; }
+.c2-skel-box--2 { height: 5px; width: 125px; }
+.c2-skel-box--3 { height: 5px; width: 73px; }
+.c2-skel-score  { height: 13px; width: 34px; }
+.c2-skel-image  { height: 85px; width: 262px; }
+
+/* ── Frame B: the converter ── */
+.c2-toggleblock {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  left: 0;
+  position: absolute;
+  top: 41px;
+  width: 394px;
+}
+
+.c2-rule {
+  background: rgba(174, 174, 178, 0.2);
+  height: 1px;
+  width: 394px;
+}
+
+.c2-toggle {
+  align-items: center;
+  background: #fff;
+  border-radius: 29px;
+  box-sizing: border-box;
+  display: flex;
+  height: 31px;
+  padding: 4px;
+}
+
+.c2-tab {
+  align-items: center;
+  border-radius: 80px;
+  box-sizing: border-box;
+  color: #8a8a8a;
+  display: flex;
+  font-size: 11px;
+  height: 23px;
+  justify-content: center;
+  white-space: nowrap;
+  width: 150px;
+}
+
+.c2-tab.is-on {
+  background: rgba(247, 246, 245, 0.7);
+  color: #434343;
+  width: 107px;
+}
+
+.c2-conv {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  left: 41px;
+  position: absolute;
+  top: 143px;
+  width: 312px;
+}
+
+.c2-input {
+  align-items: center;
+  border: 1px solid rgba(174, 174, 178, 0.2);
+  border-radius: 63px;
+  box-sizing: border-box;
+  display: flex;
+  height: 36px;
+  justify-content: space-between;
+  overflow: hidden;
+  padding: 0 4px 0 16px;
+  width: 100%;
+}
+
+/* One-shot border flash the moment the URL lands */
+.c2-input.is-pasting { animation: c2-flash 0.55s ease; }
+
+@keyframes c2-flash {
+  0%   { border-color: rgba(174, 174, 178, 0.2); }
+  35%  { border-color: rgba(0, 152, 255, 0.5); }
+  100% { border-color: rgba(174, 174, 178, 0.2); }
+}
+
+/* Held in flow even while empty so the button never shifts when it fills */
+.c2-input-url {
+  color: #434343;
+  font-size: 14px;
+  opacity: 0;
+  transform: translateY(3px);
+  transition:
+    opacity 0.28s ease,
+    transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  white-space: nowrap;
+}
+
+.c2-input-url.is-filled { opacity: 1; transform: translateY(0); }
+
+.c2-cta {
+  align-items: center;
+  background: #e9dbfe;
+  border: 1px solid #fff;
+  border-radius: 56px;
+  box-shadow:
+    0 3px 2px rgba(0, 0, 0, 0.05),
+    0 1px 1px rgba(0, 0, 0, 0.09),
+    0 0 1px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+  color: #5d4680;
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 12px;
+  height: 28px;
+  justify-content: center;
+  transition: transform 0.18s ease, filter 0.18s ease;
+  width: 108px;
+}
+
+.c2-cta.is-pressed { filter: brightness(0.96); transform: scale(0.94); }
+
+.c2-status {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  opacity: 0;
+  padding: 0 12px;
+  transform: translateY(4px);
+  transition:
+    opacity 0.35s ease,
+    transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.c2-status.is-shown { opacity: 1; transform: translateY(0); }
+
+.c2-status-mark {
+  display: block;
+  flex: 0 0 auto;
+  height: 10px;
+  width: 10.764px;
+}
+
+.c2-status-mark.is-done { animation: c2-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+@keyframes c2-pop {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}
+
+/* Rotation lives on its own element so the "done" pop can't fight it. Kept
+   applied-but-paused so stopping freezes in place instead of snapping to 0. */
+.c2-status-spin {
+  animation: c2-spin 0.9s linear infinite;
+  animation-play-state: paused;
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.c2-status-spin.is-spinning { animation-play-state: running; }
+
+@keyframes c2-spin {
+  to { transform: rotate(360deg); }
+}
+
+.c2-status-spin img {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.c2-status-text {
+  display: block;
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  height: 12px;
+  position: relative;
+  width: 88px;
+}
+
+.c2-status-label {
+  color: #767676;
+  left: 0;
+  line-height: 12px;
+  opacity: 0;
+  position: absolute;
+  right: 0;
+  text-align: center;
+  top: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 0.3s ease,
+    transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  white-space: nowrap;
+}
+
+.c2-status-label.is-current { opacity: 1; transform: translateY(0); }
+.c2-status-label.is-past { opacity: 0; transform: translateY(-6px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .c2-fav,
+  .c2-addr,
+  .c2-addr-text,
+  .c2-frame--a,
+  .c2-frame--b,
+  .c2-tip,
+  .c2-plus,
+  .c2-cta,
+  .c2-input-url,
+  .c2-status,
+  .c2-status-label {
+    transition: none;
+  }
+
+  .c2-status-spin,
+  .c2-status-mark.is-done,
+  .c2-input.is-pasting {
+    animation: none;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Card 03 — device preview + Lighthouse scores, rebuilt from the
+   Figma frames. Laid out at the design's own 299.27 × 305.51 and
+   scaled as a whole, so every number below is the literal design
+   value rather than a re-derived percentage.
+   ══════════════════════════════════════════════════════════════════ */
+
+.c3-fit {
+  aspect-ratio: 299.27 / 305.51;
+  margin: 0 auto;
+  max-height: 100%;
+  max-width: 299.27px;
+  position: relative;
+  width: 100%;
+}
+
+.c3-stage {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  height: 305.51px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(var(--c3-scale, 1));
+  width: 299.27px;
+}
+
+/* Toggle + device, 220 tall (38 toggle + 26 gap + 156 device) */
+.c3-icon-col {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  height: 220px;
+}
+
+/* ── Mobile/Desktop toggle ── */
+.c3-toggle {
+  background: #fff;
+  border: 1px solid rgba(174, 174, 178, 0.1);
+  border-radius: 24px;
+  box-sizing: border-box;
+  display: flex;
+  height: 38px;
+  padding: 4px;
+  position: relative;
+  width: 173px;
+}
+
+.c3-toggle-thumb {
+  background: #f7f6f5;
+  border-radius: 80px;
+  bottom: 4px;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  top: 4px;
+  width: 0;
+}
+
+.c3-toggle.is-animated .c3-toggle-thumb { opacity: 1; }
+
+.c3-toggle.is-animated .c3-toggle-thumb.is-ready {
+  transition:
+    transform 0.42s cubic-bezier(0.32, 0.72, 0, 1),
+    width 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Widths are Figma's (77 / 88) so the highlight lands exactly on the label */
+.c3-tab {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 80px;
+  box-sizing: border-box;
+  color: #292929;
+  cursor: pointer;
+  display: flex;
+  font-size: 14px;
+  font-weight: 500;
+  height: 30px;
+  justify-content: center;
+  line-height: 1;
+  padding: 8px 16px;
+  position: relative;
+  transition: color 0.25s ease;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.c3-tab--mobile { width: 77px; }
+.c3-tab--desktop { width: 88px; }
+.c3-tab.is-active { color: #1a1a1a; }
+
+/* ── Device artwork: both frames share one 156-tall cell so swapping
+   never nudges the layout — only the device itself moves. ── */
+.c3-devices {
+  align-items: center;
+  display: grid;
+  height: 156px;
+  justify-items: center;
+  place-items: center;
+}
+
+.c3-slot {
+  grid-area: 1 / 1;
+  line-height: 0;
+  opacity: 0;
+  transform: scale(0.9) translateY(6px);
+  transition:
+    opacity 0.3s ease,
+    transform 0.5s cubic-bezier(0.34, 1.28, 0.64, 1);
+}
+
+/* Incoming device waits a beat so the outgoing one has cleared */
+.c3-slot.is-shown {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+  transition-delay: 0.08s;
+}
+
+/* Figma puts a soft stack of shadows on the device; drop-shadow follows the
+   silhouette rather than a box, and isn't clipped by the image bounds. */
+.c3-device {
+  display: block;
+  filter:
+    drop-shadow(0 3px 2px rgba(0, 0, 0, 0.05))
+    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.09));
+  height: 156px;
+}
+
+.c3-device--phone { width: 96px; }
+.c3-device--laptop { width: 209px; }
+
+/* ── Lighthouse-style score rings ── */
+.c3-scores {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  height: 57.51px;
+  justify-content: center;
+  width: 299.27px;
+}
+
+.c3-metric {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+}
+
+.c3-ring-wrap {
+  height: 34.4px;
+  position: relative;
+  width: 34.4px;
+}
+
+.c3-ring {
+  display: block;
+  height: 100%;
+  /* start the sweep at 12 o'clock */
+  transform: rotate(-90deg);
+  width: 100%;
+}
+
+.c3-ring-track {
+  fill: none;
+  stroke: rgba(2, 209, 112, 0.16);
+}
+
+.c3-ring-bar {
+  fill: none;
+  stroke: #02d170;
+  stroke-linecap: round;
+}
+
+.c3-ring-value {
+  align-items: center;
+  color: #02d170;
+  display: flex;
+  font-size: 11px;
+  font-weight: 500;
+  height: 100%;
+  justify-content: center;
+  left: 0;
+  line-height: 1;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+.c3-metric-label {
+  color: #434343;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .c3-toggle.is-animated .c3-toggle-thumb.is-ready,
+  .c3-slot {
+    transition: none;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Card 01 — output picker. The toggle and the progress bar are real
+   elements laid over the artwork at the SVG's own coordinates, on a
+   393 × 285 board scaled as a unit. Motion matches card 03 so the
+   two cards read as one system.
+   ══════════════════════════════════════════════════════════════════ */
+
+.c1-fit {
+  aspect-ratio: 393 / 285;
+  margin: 0 auto;
+  max-height: 100%;
+  max-width: 393px;
+  position: relative;
+  width: 100%;
+}
+
+.c1-stage {
+  height: 285px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(var(--c1-scale, 1));
+  width: 393px;
+}
+
+/* Artwork layers — same lift-and-settle as card 03's device swap */
+.c1-art {
+  inset: 0;
+  line-height: 0;
+  opacity: 0;
+  position: absolute;
+  transform: scale(0.94) translateY(6px);
+  transition:
+    opacity 0.3s ease,
+    transform 0.5s cubic-bezier(0.34, 1.28, 0.64, 1);
+}
+
+.c1-art.is-shown {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+  transition-delay: 0.08s;
+}
+
+.c1-art img { display: block; height: 285px; width: 393px; }
+
+/* ── Progress bar, at the artwork's own 149.5 / 197 origin ── */
+.c1-bar {
+  background: #f7f6f5;
+  border-radius: 6px;
+  display: block;
+  height: 12px;
+  left: 149.5px;
+  overflow: hidden;
+  position: absolute;
+  top: 197px;
+  width: 93px;
+}
+
+/* The texture is pinned at full track width, so growing the fill reveals it
+   rather than stretching it. Remounted each switch to replay the keyframe. */
+.c1-bar-fill {
+  animation: c1-fill 0.9s cubic-bezier(0.32, 0.72, 0, 1) both;
+  background: url("/illustrations/card01/bar-fill.svg") left center / 93px 12px no-repeat;
+  border-radius: 6px;
+  display: block;
+  height: 12px;
+}
+
+@keyframes c1-fill {
+  from { width: 0; }
+  to { width: 93px; }
+}
+
+/* ── Toggle, rebuilt from the artwork's own measurements ── */
+.c1-toggle {
+  background: #fff;
+  border: 1px solid rgba(174, 174, 178, 0.1);
+  border-radius: 24px;
+  box-sizing: border-box;
+  display: flex;
+  height: 48px;
+  left: 4px;
+  padding: 4px;
+  position: absolute;
+  top: 4px;
+  width: 385px;
+}
+
+.c1-toggle-thumb {
+  background: #f7f6f5;
+  border-radius: 19px;
+  bottom: 4px;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  top: 4px;
+  width: 0;
+}
+
+.c1-toggle.is-animated .c1-toggle-thumb { opacity: 1; }
+
+.c1-toggle.is-animated .c1-toggle-thumb.is-ready {
+  transition:
+    transform 0.42s cubic-bezier(0.32, 0.72, 0, 1),
+    width 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Fixed widths summing to the 377px track. Figma nudges the selected pill 8px
+   wider, but animating that would make the thumb measure a stale width on the
+   frame it is placed — leaving the highlight short of the pill it sits under.
+   Splitting the difference keeps thumb and pill in exact register. */
+.c1-tab {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 19px;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  font-size: 14px;
+  font-weight: 500;
+  height: 38px;
+  justify-content: center;
+  line-height: 1;
+  position: relative;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.c1-tab--next { color: #1a1a1a; width: 163px; }
+.c1-tab--perf { color: #292929; width: 214px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .c1-art,
+  .c1-toggle.is-animated .c1-toggle-thumb.is-ready {
+    transition: none;
+  }
+
+  .c1-bar-fill { animation: none; width: 93px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Card 04 — the finished files. Three layers on the board's own
+   248 × 245 viewBox, so stacking restores Figma's exact composition.
+   Builds once on first sight, then drifts very slightly.
+   ══════════════════════════════════════════════════════════════════ */
+
+.c4-fit {
+  aspect-ratio: 248 / 245;
+  margin: 0 auto;
+  max-height: 100%;
+  max-width: 248px;
+  position: relative;
+  width: 100%;
+}
+
+.c4-stage {
+  height: 245px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(var(--c4-scale, 1));
+  width: 248px;
+}
+
+.c4-layer {
+  inset: 0;
+  line-height: 0;
+  opacity: 0;
+  position: absolute;
+  transform: translateY(10px) scale(0.96);
+  transition:
+    opacity 0.45s ease,
+    transform 0.6s cubic-bezier(0.34, 1.28, 0.64, 1);
+}
+
+.c4-layer img { display: block; height: 245px; width: 248px; }
+
+.c4-stage.is-in .c4-layer {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Back page settles first, then the zip lands on top of it, then the actions */
+.c4-stage.is-in .c4-layer--index { transition-delay: 0s; }
+.c4-stage.is-in .c4-layer--zip { transition-delay: 0.14s; }
+.c4-stage.is-in .c4-layer--buttons { transition-delay: 0.28s; }
+
+/* Drift lives on an inner element so it can't fight the entrance transform.
+   Held off until the entrance has finished, and given mismatched periods so
+   the two documents never bob in lockstep. */
+.c4-float { display: block; }
+
+/* Periods are 8% quicker than the 6.8s / 5.5s they started at; the ratio
+   between them is kept so the two stay permanently out of phase. */
+.c4-stage.is-in .c4-float--index {
+  animation: c4-drift 6.3s ease-in-out 1s infinite;
+}
+
+.c4-stage.is-in .c4-float--zip {
+  animation: c4-drift 5.09s ease-in-out 1.3s infinite;
+}
+
+@keyframes c4-drift {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .c4-layer { transition: none; }
+  .c4-stage.is-in .c4-float--index,
+  .c4-stage.is-in .c4-float--zip { animation: none; }
+}
+
+
 .mktg-card-text {
   display: flex;
   flex: 0 0 auto;
@@ -484,7 +1482,8 @@ body {
 }
 
 @media (max-width: 1359px) {
-  .mktg-how-head {
+  .mktg-how-head,
+  .mktg-how-row {
     padding: 0 40px;
   }
 }
@@ -521,9 +1520,12 @@ body {
   }
 
   /* One card per row: the side borders become the section's own edges, and
-     each card carries the divider under it instead of the row. */
+     each card carries the divider under it instead of the row. Padding
+     resets to 0 here — the 40px inset from the tier above would otherwise
+     carry through and the cards would stop being edge-to-edge. */
   .mktg-how-row {
     flex-direction: column;
+    padding: 0;
   }
 
   /* `flex: 1 0 0` sizes the MAIN axis — once the row flips to a column that
@@ -613,6 +1615,9 @@ body {
   .mktg-benefits-row {
     border-left: 0;
     border-right: 0;
+  }
+
+  .mktg-benefits-track {
     flex-direction: column;
   }
 

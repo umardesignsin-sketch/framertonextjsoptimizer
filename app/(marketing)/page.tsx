@@ -6,6 +6,10 @@ import { SpeedCompare } from "@/components/SpeedCompare";
 import { AuthGateModal } from "@/components/AuthGateModal";
 import { useAuthUser } from "@/components/useAuthUser";
 import { ModeToggle } from "@/components/ModeToggle";
+import { Card01Story } from "@/components/Card01Story";
+import { Card02Story } from "@/components/Card02Story";
+import { Card03Devices } from "@/components/Card03Devices";
+import { Card04Files } from "@/components/Card04Files";
 import Link from "next/link";
 import { faqJsonLd, jsonLdScript } from "@/lib/site-meta";
 
@@ -292,8 +296,9 @@ export default function HomePage() {
 
 
 // Figma: Homepage → "How it works + Features section" (node 5:293).
-// Full-bleed 2×2 card grid. Illustrations are static SVGs; card-0X-b.svg
-// variants exist alongside the a variants for future animation.
+// Full-bleed 2×2 card grid. Each card is its own component now: the flat SVG
+// exports could not animate their own toggles, bars or scores, so every card
+// was rebuilt from the Figma artwork as real elements.
 function HowItWorks() {
   const cards = [
     {
@@ -344,14 +349,7 @@ function HowItWorks() {
                 </div>
                 <span className="mktg-card-num-label">{c.num}</span>
               </div>
-              <div className="mktg-card-illus">
-                {/* Below the fold, so these stay deferred even though the
-                    files are now small (the Figma exports embedded full-res
-                    PNGs; those rasters were re-encoded to WebP in place,
-                    30 MB -> 0.6 MB across the set). */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={c.illus} alt="" loading="lazy" decoding="async" />
-              </div>
+              {c.num === "01" ? <Card01Story /> : <Card02Story />}
               <div className="mktg-card-text">
                 <p className="mktg-card-name">{c.name}</p>
                 <p className="mktg-card-desc">{c.desc}</p>
@@ -369,14 +367,7 @@ function HowItWorks() {
                 </div>
                 <span className="mktg-card-num-label">{c.num}</span>
               </div>
-              <div className="mktg-card-illus">
-                {/* Below the fold, so these stay deferred even though the
-                    files are now small (the Figma exports embedded full-res
-                    PNGs; those rasters were re-encoded to WebP in place,
-                    30 MB -> 0.6 MB across the set). */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={c.illus} alt="" loading="lazy" decoding="async" />
-              </div>
+              {c.num === "03" ? <Card03Devices /> : <Card04Files />}
               <div className="mktg-card-text">
                 <p className="mktg-card-name">{c.name}</p>
                 <p className="mktg-card-desc">{c.desc}</p>
@@ -482,14 +473,57 @@ function FaqSection() {
 
 // Figma: Homepage → "Frame" (node 5:275). Full-bleed section — the heading
 // row and the benefit strip both use their own 80px side padding rather than
+function useCountUp(target: number, duration = 1200) {
+  const [value, setValue] = useState(0);
+  const [started, setStarted] = useState(false);
+  const ref = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setStarted(true); io.disconnect(); } },
+      { threshold: 0.5 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!started) return;
+    const start = performance.now();
+    let raf: number;
+    const tick = (now: number) => {
+      const progress = Math.min((now - start) / duration, 1);
+      // ease-out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setValue(Math.round(eased * target));
+      if (progress < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [started, target, duration]);
+
+  return { ref, value };
+}
+
+function StatNumber({ prefix, target, suffix }: { prefix: string; target: number; suffix: string }) {
+  const { ref, value } = useCountUp(target);
+  return (
+    <span className="mktg-benefit-number" ref={ref as React.Ref<HTMLSpanElement>}>
+      {prefix}{value}{suffix}
+    </span>
+  );
+}
+
 // inheriting the page's max-width wrapper, so this renders outside the
 // `mx-auto max-w-5xl` container (see the call site) and manages its own
 // horizontal rhythm at any viewport up to 1360px.
 function ImpactStats() {
   const benefits = [
-    { stat: "~91%", label: "Less JavaScript", detail: "Reduced from 920 KB to 80 KB by removing unnecessary runtime overhead." },
-    { stat: "~68%", label: "Lighter images", detail: "Images re-encoded and optimized for faster delivery using modern WebP." },
-    { stat: "~98", label: "Lighthouse scores", detail: "Typical score measured after conversion on a representative marketing website." },
+    { prefix: "~", target: 91, suffix: "%", label: "Less JavaScript", detail: "Reduced from 920 KB to 80 KB by removing unnecessary runtime overhead." },
+    { prefix: "~", target: 68, suffix: "%", label: "Lighter images", detail: "Images re-encoded and optimized for faster delivery using modern WebP." },
+    { prefix: "~", target: 98, suffix: "", label: "Lighthouse scores", detail: "Typical score measured after conversion on a representative marketing website." },
   ];
   return (
     <section className="mktg-benefits">
@@ -499,15 +533,19 @@ function ImpactStats() {
           Built to reduce unnecessary runtime overhead while preserving the published website experience.
         </p>
       </div>
+      {/* The row is the full-bleed rule carrier; the track holds the columns
+          contained at the heading's inset (same split as .mktg-how-cards). */}
       <div className="mktg-benefits-row">
-        {benefits.map((b) => (
-          <div key={b.label} className="mktg-benefit">
-            <p className="mktg-benefit-stat">
-              <span className="mktg-benefit-number">{b.stat}</span> {b.label}
-            </p>
-            <p className="mktg-benefit-detail">{b.detail}</p>
-          </div>
-        ))}
+        <div className="mktg-benefits-track">
+          {benefits.map((b) => (
+            <div key={b.label} className="mktg-benefit">
+              <p className="mktg-benefit-stat">
+                <StatNumber prefix={b.prefix} target={b.target} suffix={b.suffix} /> {b.label}
+              </p>
+              <p className="mktg-benefit-detail">{b.detail}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );
