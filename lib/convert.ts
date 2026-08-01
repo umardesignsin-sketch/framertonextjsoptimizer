@@ -1,7 +1,7 @@
 // Orchestrator: URL -> optimized static bundle (snapshot + optimize pipeline).
 import { fetchText, fetchBinary, normalizeUrl } from "./fetch";
 import { load, detectFramer, extractMeta, collectStyleText, type Doc } from "./parse";
-import { discoverPages, normalizeRoute } from "./discover";
+import { discoverPages, normalizeRoute, routeToFilePath } from "./discover";
 import {
   collectImageUrls,
   collectIconUrls,
@@ -36,6 +36,16 @@ import {
   OptimizationStat,
 } from "./types";
 
+// Per-item wall-clock cap so one item can't stall the whole batch: workers
+// pull from a shared index, so a worker that's `await`-ing a call that never
+// settles (e.g. a pathological image wedging sharp's native encoder) never
+// returns to grab its next item — the other workers still finish theirs, but
+// Promise.all below never resolves, so the *entire* conversion hangs even
+// though almost everything else succeeded. Racing each call against a
+// timeout lets that worker move on; the callers already treat a thrown/
+// rejected item as "skip this one," so a timeout is just another way to skip.
+const ITEM_TIMEOUT_MS = 45_000;
+
 async function mapLimit<T, R>(
   items: T[],
   limit: number,
@@ -46,17 +56,22 @@ async function mapLimit<T, R>(
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
     while (i < items.length) {
       const idx = i++;
-      results[idx] = await fn(items[idx]);
+      try {
+        results[idx] = await Promise.race([
+          fn(items[idx]),
+          new Promise<R>((_, reject) =>
+            setTimeout(() => reject(new Error("mapLimit item timed out")), ITEM_TIMEOUT_MS)
+          ),
+        ]);
+      } catch {
+        // fn() already swallows its own errors and returns/skips; this only
+        // fires on the timeout path (or an fn that doesn't self-catch), so
+        // leave results[idx] undefined and move on to the next item.
+      }
     }
   });
   await Promise.all(workers);
   return results;
-}
-
-function routeToFilePath(route: string): string {
-  const r = normalizeRoute(route);
-  if (r === "/") return "index.html";
-  return r.replace(/^\//, "") + "/index.html";
 }
 
 export type ProgressFn = (msg: string) => void;
@@ -184,6 +199,13 @@ export async function convertSite(
       );
     }
     onProgress(`Optimizing ${urls.length} image(s)…`);
+    // A silent multi-minute stretch here reads as "stuck" to the caller and,
+    // worse, stops the NDJSON response from emitting any bytes — on Railway
+    // (no per-function timeout like Vercel had) a long enough gap risks the
+    // proxy treating the connection as idle. Report progress every few images
+    // so the stream keeps flowing and the UI shows real movement.
+    let imagesAttempted = 0;
+    const PROGRESS_EVERY = 10;
     await mapLimit(urls, 6, async (url) => {
       try {
         const bin = await fetchBinary(url);
@@ -200,6 +222,11 @@ export async function convertSite(
         imagesDone++;
       } catch {
         /* skip broken asset */
+      } finally {
+        imagesAttempted++;
+        if (imagesAttempted % PROGRESS_EVERY === 0 || imagesAttempted === urls.length) {
+          onProgress(`Optimizing images… ${imagesAttempted}/${urls.length}`);
+        }
       }
     });
   }

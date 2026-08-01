@@ -15,6 +15,16 @@ export function normalizeRoute(pathname: string): string {
   return pathname.replace(/\/+$/, "") || "/";
 }
 
+/** Route path -> output file path, e.g. "/blog/post-a" -> "blog/post-a/index.html".
+ *  Shared by convert.ts, nextjs-export.ts, collections-detect.ts, and
+ *  collections-render.ts so every producer/consumer of report.files agrees on
+ *  the same route<->path mapping. */
+export function routeToFilePath(route: string): string {
+  const r = normalizeRoute(route);
+  if (r === "/") return "index.html";
+  return r.replace(/^\//, "") + "/index.html";
+}
+
 function sameOrigin(u: string, origin: string): boolean {
   try {
     return new URL(u).origin === origin;

@@ -23,7 +23,14 @@ export interface Job {
 const g = globalThis as unknown as { __framerJobs?: Map<string, Job> };
 const jobs: Map<string, Job> = (g.__framerJobs ??= new Map());
 
-const MAX_JOBS = 25;
+// Was 25 — far too small at real traffic volume. Once a job aged out of this
+// cap, the next preview/download/deploy silently triggered a FULL
+// reconversion (re-fetch + re-parse + re-Sharp-encode every image) instead of
+// a cache hit, which is what actually burned through the Vercel Hobby plan's
+// Fluid Active CPU allowance. Binary assets are content-addressed and shared
+// across jobs (see serializeFiles), so raising this only costs a bit more
+// small per-job JSON metadata storage, not the expensive images.
+const MAX_JOBS = 1000;
 const TTL_MS = 1000 * 60 * 60; // 1h (in-memory cache)
 const BLOB_PREFIX = "jobs/";
 const META_PREFIX = "meta/"; // small per-job metadata for the admin dashboard
@@ -239,6 +246,14 @@ export async function getJob(id: string): Promise<Job | undefined> {
   }
 }
 
+// One reconversion per job id at a time. The editor canvas alone requests the
+// same preview from three viewport iframes at once, which without this kicks
+// off three identical full reconversions (each re-fetching and re-encoding
+// every image) in parallel — tripling the slowest operation in the app and
+// competing for the same CPU. Callers that arrive while one is running await
+// its result instead of starting their own.
+const inFlight = new Map<string, Promise<Job | undefined>>();
+
 /**
  * getJob(), but if the job is missing from BOTH the in-memory cache and Blob
  * (evicted, or — as happened when the Blob free-tier transfer cap was hit —
@@ -261,6 +276,23 @@ export async function getOrRegenerateJob(
   if (existing) return existing;
   if (!dbConfigured()) return undefined;
 
+  const running = inFlight.get(id);
+  if (running) return running;
+
+  const task = regenerateJob(id, onProgress).finally(() => inFlight.delete(id));
+  inFlight.set(id, task);
+  return task;
+}
+
+/** True if a reconversion for this id is already running (see inFlight). */
+export function isRegenerating(id: string): boolean {
+  return inFlight.has(id);
+}
+
+async function regenerateJob(
+  id: string,
+  onProgress?: (msg: string) => void
+): Promise<Job | undefined> {
   try {
     const site = await db.site.findFirst({ where: { themeRef: id } });
     if (!site?.framerUrl) return undefined;

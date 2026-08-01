@@ -3,8 +3,9 @@ import Link from "next/link";
 import { requireUser } from "@/lib/supabase/user";
 import { db, dbConfigured } from "@/lib/db";
 import type { EditorEdit } from "@/lib/overrides";
+import type { FieldSlot } from "@/lib/collections-detect";
 import { getJob } from "@/lib/store";
-import { EditorClient } from "./EditorClient";
+import { EditorClient, type EditorCollection } from "./EditorClient";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -66,6 +67,33 @@ export default async function EditorPage({ params }: { params: Promise<{ siteId:
     /* keep default */
   }
 
+  // Detected Framer CMS Collections (blog/portfolio items) for the read-only
+  // Collections panel — see lib/collections-detect.ts. Empty on sites with
+  // none detected (the overwhelming majority today) or converted before this
+  // feature shipped; the panel itself handles that state.
+  let collections: EditorCollection[] = [];
+  try {
+    const rows = await db.collection.findMany({
+      where: { siteId: site.id },
+      include: { items: { where: { deleted: false }, orderBy: { order: "asc" } } },
+      orderBy: { createdAt: "asc" },
+    });
+    collections = rows.map((c) => ({
+      id: c.id,
+      name: c.name,
+      routePrefix: c.routePrefix,
+      confidence: c.confidence,
+      fields: c.fields as unknown as FieldSlot[],
+      items: c.items.map((i) => ({
+        id: i.id,
+        slug: i.slug,
+        fields: i.fields as unknown as Record<string, string>,
+      })),
+    }));
+  } catch {
+    /* keep empty — Collections panel just shows nothing */
+  }
+
   return (
     <EditorClient
       siteId={site.id}
@@ -74,6 +102,7 @@ export default async function EditorPage({ params }: { params: Promise<{ siteId:
       pages={pages}
       initialEdits={initialEdits}
       canPublish={canPublish}
+      collections={collections}
     />
   );
 }

@@ -21,15 +21,20 @@ function vercelJson(): string {
           headers: [{ key: "Cache-Control", value: IMMUTABLE }],
         },
         {
-          // HTML: let the CDN cache it (fast TTFB) but the browser revalidate.
-          // `max-age=0, must-revalidate` previously blocked Vercel's edge cache,
-          // which made Vercel score worse than Netlify (slower TTFB/LCP). Vercel
-          // purges this automatically on each new deploy, so it stays fresh.
+          // HTML: let the CDN cache it briefly (fast TTFB on repeat requests)
+          // but the browser always revalidates. Was s-maxage=86400 (1 day) +
+          // stale-while-revalidate=604800 (7 days) on the assumption that
+          // Vercel always purges edge cache on a new deploy — that assumption
+          // doesn't hold for this raw API-based deploy path (no framework,
+          // manual vercel.json), and it's exactly why publishing an edit could
+          // leave the old page served at the edge for up to a week. A short
+          // window bounds worst-case staleness to well under a minute instead,
+          // while still absorbing a traffic burst between identical requests.
           source: "/(.*)",
           headers: [
             {
               key: "Cache-Control",
-              value: "public, max-age=0, s-maxage=86400, stale-while-revalidate=604800",
+              value: "public, max-age=0, s-maxage=30, stale-while-revalidate=60",
             },
             { key: "X-Content-Type-Options", value: "nosniff" },
           ],

@@ -18,7 +18,7 @@
 // matches the old key gets the new innerHTML. Self-healing by construction —
 // it only ever fires on elements showing the stale content.
 import * as cheerio from "cheerio";
-import type { Element } from "domhandler";
+import type { AnyNode, Element, Text } from "domhandler";
 
 export interface Override {
   /** Tag name to scan (e.g. "h1", "span", "a", "img"). */
@@ -35,8 +35,15 @@ export interface Override {
    *  - "img":  key = src (or srcset contains k)→ set src = h, drop srcset/sizes
    *  - "hide": key = attribute `a`'s value, or normalized textContent when `a`
    *            is unset → toggle display:none. h is "1" (hidden) or "0" (shown).
+   *  - "size": key = attribute `a`'s value (always "data-framer-name" — a
+   *            container has no text/src to key on, and this is the only
+   *            content-independent identity it has that survives hydration;
+   *            an unnamed container can't be targeted safely and is skipped
+   *            upstream in the editor). h is JSON {width?, height?} (CSS
+   *            values, e.g. "420px"); a present-but-empty value means
+   *            "cleared — revert to Framer's own sizing" for that axis.
    */
-  m: "txt" | "text" | "html" | "attr" | "img" | "hide";
+  m: "txt" | "text" | "html" | "attr" | "img" | "hide" | "size";
   /** Normalized old content key the element must still show. */
   k: string;
   /** New value: innerHTML (text/html) or attribute value (attr/img). */
@@ -54,12 +61,24 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
+/** Inverse of escapeHtml — reverse order so a literal "&amp;lt;" in source text doesn't double-decode. */
+function decodeEscapedHtml(s: string): string {
+  return s.replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
+}
+
 /** Edits captured directly from the visual editor's iframe DOM. */
 export type EditorEdit =
   | { kind: "text"; tag: string; oldText: string; newText: string; cls?: string }
   | { kind: "link"; oldHref: string; newHref: string }
   | { kind: "image"; oldSrc: string; newSrc: string }
-  | { kind: "visibility"; tag: string; matchAttr?: string; key: string; hidden: boolean };
+  | { kind: "visibility"; tag: string; matchAttr?: string; key: string; hidden: boolean }
+  // `name` is the container's data-framer-name — the only reliable,
+  // content-independent identity a text-less wrapper has. Applies at every
+  // breakpoint uniformly (an explicit tradeoff, not an oversight — see
+  // EditorClient.tsx's container-select handling for why per-breakpoint
+  // sizing was scoped out). width/height omitted (not "") means "leave that
+  // axis alone"; "" explicitly means "clear back to Framer's own sizing".
+  | { kind: "size"; tag: string; name: string; width?: string; height?: string };
 
 /** Turns editor-captured edits into runtime Override objects. */
 export function editorOverrides(edits: EditorEdit[]): Override[] {
@@ -85,6 +104,15 @@ export function editorOverrides(edits: EditorEdit[]): Override[] {
         k: e.matchAttr ? e.key : norm(e.key),
         a: e.matchAttr,
         h: e.hidden ? "1" : "0",
+      });
+    } else if (e.kind === "size") {
+      if (!e.name || (e.width === undefined && e.height === undefined)) continue;
+      out.push({
+        t: (e.tag || "").toLowerCase() || "*",
+        m: "size",
+        a: "data-framer-name",
+        k: e.name,
+        h: JSON.stringify({ width: e.width, height: e.height }),
       });
     }
   }
@@ -201,11 +229,22 @@ export function buildOverrides(originalHtml: string, editedHtml: string): Overri
 // Cost/safety bounds (a page can mutate 60×/s from marquees/typewriters):
 //  - scans are THROTTLED to one per 600ms, coalesced from any mutation burst
 //  - a reentrancy flag keeps our own writes from re-triggering the observer
-//  - each override stops after writing in 5 separate scan rounds — a looping
-//    animation that keeps restoring the old content would otherwise be fought
-//    forever; one round may legitimately write many breakpoint copies
+//  - each override stops after writing in ROUND_CAP separate scan rounds — a
+//    looping animation that keeps restoring the old content would otherwise
+//    be fought forever; one round may legitimately write many breakpoint
+//    copies. Was 5, which real sites were burning through — Framer's runtime
+//    re-renders (and reverts our edit) on more triggers than just initial
+//    hydration: breakpoint/resize changes, revisiting a backgrounded tab,
+//    etc. Once exhausted the edit is gone for good with no further recovery,
+//    which is indistinguishable from "publishing didn't work." 40 gives a
+//    page ~24s of 600ms-throttled corrections (still bounded, still gives up
+//    on truly-looping content) instead of giving up after the first handful
+//    of ordinary re-renders. The real fix for the *first* paint is baking
+//    edits into the served HTML directly (applyOverridesToDom, below) — this
+//    only widens the safety margin for reverts after that.
 //  - html-mode scans narrow by the recorded framer-class when available
-const RUNTIME = `(function(){var O=window.__FNO_OV__||[];var rounds=[];var applying=false;
+const ROUND_CAP = 40;
+const RUNTIME = `(function(){var O=window.__FNO_OV__||[];var rounds=[];var applying=false;var ROUND_CAP=${ROUND_CAP};
 function nm(s){return s.replace(/\\s+/g," ").trim()}
 function dec(h){var d=document.createElement("div");d.innerHTML=h;return d.textContent||""}
 function setTxt(el,h,k){var txt=dec(h);var w=document.createTreeWalker(el,4);var ns=[],n;
@@ -215,13 +254,14 @@ var hit=false;
 for(var i=0;i<ns.length;i++){if(nm(ns[i].data)===k){ns[i].data=txt;hit=true}}
 if(!hit){ns[0].data=txt;for(var j=1;j<ns.length;j++)ns[j].data=""}}
 function apply(){if(applying)return;applying=true;try{
-for(var i=0;i<O.length;i++){var o=O[i];if((rounds[i]||0)>=5)continue;var wrote=false;try{
+for(var i=0;i<O.length;i++){var o=O[i];if((rounds[i]||0)>=ROUND_CAP)continue;var wrote=false;try{
 var els=o.c?document.querySelectorAll(o.t+"."+o.c):document.getElementsByTagName(o.t);
 for(var j=0;j<els.length;j++){var el=els[j];
 if(o.m==="attr"){if(el.getAttribute(o.a)===o.k){el.setAttribute(o.a,o.h);wrote=true;}}
 else if(o.m==="img"){var s=el.getAttribute("src"),ss=el.getAttribute("srcset")||"";if(s===o.k||ss.indexOf(o.k)>=0){el.setAttribute("src",o.h);el.removeAttribute("srcset");el.removeAttribute("sizes");wrote=true;}}
 else if(o.m==="txt"){if(nm(el.textContent||"")===o.k){setTxt(el,o.h,o.k);wrote=true;}}
 else if(o.m==="hide"){var mtch=o.a?(el.getAttribute(o.a)===o.k):(nm(el.textContent||"")===o.k);if(mtch){el.style.setProperty("display",o.h==="1"?"none":"",o.h==="1"?"important":"");wrote=true;}}
+else if(o.m==="size"){if(el.getAttribute(o.a)===o.k){var sz=JSON.parse(o.h);if(sz.width!==undefined)el.style.setProperty("width",sz.width||"","important");if(sz.height!==undefined)el.style.setProperty("height",sz.height||"","important");wrote=true;}}
 else{var key=o.m==="text"?nm(el.textContent||""):nm(el.innerHTML||"");if(key===o.k){el.innerHTML=o.h;wrote=true;}}}}catch(e){}
 if(wrote)rounds[i]=(rounds[i]||0)+1;}
 }finally{applying=false}}
@@ -242,10 +282,127 @@ function isOverride(o: unknown): o is Override {
   return (
     !!x &&
     typeof x.t === "string" &&
-    (x.m === "txt" || x.m === "text" || x.m === "html" || x.m === "attr" || x.m === "img" || x.m === "hide") &&
+    (x.m === "txt" || x.m === "text" || x.m === "html" || x.m === "attr" || x.m === "img" || x.m === "hide" || x.m === "size") &&
     typeof x.k === "string" &&
     typeof x.h === "string"
   );
+}
+
+/** Depth-first text nodes under `el`, in document order — server-side
+ *  equivalent of the client's `document.createTreeWalker(el, NodeFilter.SHOW_TEXT)`. */
+function collectTextNodes(el: Element): Text[] {
+  const out: Text[] = [];
+  const walk = (node: Element) => {
+    for (const child of (node.children || []) as unknown as (Element | Text)[]) {
+      if (child.type === "text") out.push(child as Text);
+      else if (child.type === "tag") walk(child as Element);
+    }
+  };
+  walk(el);
+  return out;
+}
+
+/** Mirrors the client's setTxt(): rewrite the text node still showing the old
+ *  key in place (preserving nested spans); if none match exactly, rewrite the
+ *  first and blank the rest, same as the runtime does for a stale match. */
+function setTextNode(el: Element, escapedNewText: string, oldKey: string): void {
+  const decoded = decodeEscapedHtml(escapedNewText);
+  const nodes = collectTextNodes(el);
+  if (nodes.length === 0) return;
+  const hit = nodes.find((n) => norm(n.data || "") === oldKey);
+  if (hit) {
+    hit.data = decoded;
+  } else {
+    nodes[0].data = decoded;
+    for (let i = 1; i < nodes.length; i++) nodes[i].data = "";
+  }
+}
+
+function toggleDisplayNone($el: cheerio.Cheerio<AnyNode>, hidden: boolean): void {
+  const cleaned = ($el.attr("style") || "")
+    .replace(/(^|;)\s*display\s*:[^;]*/gi, "")
+    .replace(/^;\s*/, "")
+    .trim();
+  if (hidden) {
+    $el.attr("style", cleaned ? `${cleaned}; display: none !important` : "display: none !important");
+  } else if (cleaned) {
+    $el.attr("style", cleaned);
+  } else {
+    $el.removeAttr("style");
+  }
+}
+
+/** Mirrors the client's `el.style.setProperty("width"/"height", v||"",
+ *  "important")` — setting to "" clears the property (revert to Framer's own
+ *  sizing), a non-empty value overrides it. `undefined` (the axis wasn't
+ *  touched by this edit) leaves the existing inline value alone entirely. */
+function applyInlineSize($el: cheerio.Cheerio<AnyNode>, width: string | undefined, height: string | undefined): void {
+  let style = ($el.attr("style") || "").replace(/^;\s*/, "").trim();
+  if (width !== undefined) {
+    style = style.replace(/(^|;)\s*width\s*:[^;]*/gi, "").trim();
+    if (width) style += `${style && !style.endsWith(";") ? ";" : ""} width: ${width} !important;`;
+  }
+  if (height !== undefined) {
+    style = style.replace(/(^|;)\s*height\s*:[^;]*/gi, "").trim();
+    if (height) style += `${style && !style.endsWith(";") ? ";" : ""} height: ${height} !important;`;
+  }
+  style = style.trim();
+  if (style) $el.attr("style", style);
+  else $el.removeAttr("style");
+}
+
+/**
+ * Server-side counterpart to the client-side `apply()` inside RUNTIME —
+ * applies each override directly to the parsed document instead of leaving it
+ * to a script that only runs after the browser has already painted the
+ * original content. This is what actually fixes the "published edit flashes
+ * old-then-new" bug: the HTML this returns is what gets served, so there's
+ * nothing stale to visibly swap on first paint. The enforcer script (injected
+ * separately by injectOverrides, unchanged) still gets added afterward as a
+ * backstop for Framer's own runtime re-rendering the page from its own data
+ * post-hydration — baking the edit in here just means that backstop starts
+ * from an already-correct DOM instead of a stale one.
+ */
+export function applyOverridesToDom(html: string, overrides: Override[]): string {
+  if (overrides.length === 0) return html;
+  const $ = cheerio.load(html);
+
+  for (const o of overrides) {
+    const $els = o.c ? $(`${o.t}.${o.c}`) : $(o.t);
+    $els.each((_, el) => {
+      const $el = $(el);
+      if (o.m === "attr") {
+        if (o.a && $el.attr(o.a) === o.k) $el.attr(o.a, o.h);
+      } else if (o.m === "img") {
+        const src = $el.attr("src");
+        const srcset = $el.attr("srcset") || "";
+        if (src === o.k || srcset.includes(o.k)) {
+          $el.attr("src", o.h);
+          $el.removeAttr("srcset");
+          $el.removeAttr("sizes");
+        }
+      } else if (o.m === "txt") {
+        if (norm($el.text()) === o.k) setTextNode(el as Element, o.h, o.k);
+      } else if (o.m === "hide") {
+        const matched = o.a ? $el.attr(o.a) === o.k : norm($el.text()) === o.k;
+        if (matched) toggleDisplayNone($el, o.h === "1");
+      } else if (o.m === "size") {
+        if (o.a && $el.attr(o.a) === o.k) {
+          try {
+            const sz = JSON.parse(o.h) as { width?: string; height?: string };
+            applyInlineSize($el, sz.width, sz.height);
+          } catch {
+            /* malformed — skip rather than corrupt the element's style */
+          }
+        }
+      } else {
+        const key = o.m === "text" ? norm($el.text()) : norm($el.html() || "");
+        if (key === o.k) $el.html(o.h);
+      }
+    });
+  }
+
+  return $.html();
 }
 
 /**

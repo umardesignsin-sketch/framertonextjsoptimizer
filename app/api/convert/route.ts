@@ -49,6 +49,7 @@ export async function POST(request: Request) {
             jobId,
             outputKind: "hybrid",
             ogImage: report.ogImage,
+            report,
           }).catch(() => {});
         }
 

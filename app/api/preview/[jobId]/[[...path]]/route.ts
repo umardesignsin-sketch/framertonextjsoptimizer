@@ -1,6 +1,6 @@
 // GET /api/preview/{jobId}/{...path}
 // Serves a converted bundle's files so the result can be previewed in an iframe.
-import { getOrRegenerateJob, normalize } from "@/lib/store";
+import { getOrRegenerateJob, isRegenerating, normalize } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +36,36 @@ function mimeFor(path: string): string {
   return MIME[ext] || "application/octet-stream";
 }
 
+// How long to wait on an in-progress reconversion before handing back the
+// self-retrying page below. Comfortably under any host proxy's idle timeout.
+const REGEN_WAIT_MS = 20_000;
+
+/** Placeholder shown while a bundle is being rebuilt; refreshes itself. */
+function rebuildingResponse(): Response {
+  const html = `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="10">
+<title>Rebuilding preview…</title>
+<style>
+body{margin:0;height:100vh;display:grid;place-items:center;background:#fafafa;
+font:15px/1.5 ui-sans-serif,system-ui,-apple-system,sans-serif;color:#3f3f46}
+.c{text-align:center;max-width:22rem;padding:1.5rem}
+.s{width:26px;height:26px;margin:0 auto 1rem;border:3px solid #e4e4e7;border-top-color:#6366f1;
+border-radius:50%;animation:r .8s linear infinite}
+@keyframes r{to{transform:rotate(360deg)}}
+p{margin:.35rem 0}small{color:#71717a}
+</style>
+<div class="c"><div class="s"></div>
+<p><strong>Rebuilding this preview…</strong></p>
+<p><small>The cached build expired, so we're regenerating it. This page refreshes automatically.</small></p></div>`;
+  return new Response(html, {
+    status: 503,
+    headers: {
+      "Content-Type": MIME.html,
+      "Cache-Control": "no-store",
+      "Retry-After": "10",
+    },
+  });
+}
+
 /** True if the last path segment looks like a file (has an extension). */
 function lastSegmentHasExt(rawPath: string): boolean {
   const seg = rawPath.replace(/\/+$/, "").split("/").pop() || "";
@@ -66,8 +96,20 @@ export async function GET(
   { params }: { params: Promise<{ jobId: string; path?: string[] }> }
 ) {
   const { jobId, path } = await params;
-  const job = await getOrRegenerateJob(jobId);
+
+  // A cache miss falls back to a full reconversion, which for a large site can
+  // run for minutes. Awaiting that inline sends zero bytes the whole time, so
+  // the host's proxy tears the connection down and the visitor gets an opaque
+  // "Application failed to respond" instead of anything actionable. Give it a
+  // bounded window, then hand back a page that retries itself — the
+  // reconversion keeps running (getOrRegenerateJob dedupes by id), so a later
+  // attempt lands on a warm cache rather than starting over.
+  const job = await Promise.race([
+    getOrRegenerateJob(jobId),
+    new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), REGEN_WAIT_MS)),
+  ]);
   if (!job) {
+    if (isRegenerating(jobId)) return rebuildingResponse();
     return new Response("Job expired or not found. Re-run the conversion.", {
       status: 404,
     });

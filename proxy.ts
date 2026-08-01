@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { ADMIN_COOKIE, isValidSession } from "@/lib/admin-auth";
+import { SITE } from "@/lib/site-meta";
 
 // Gate /admin/* behind the owner password, and /dashboard/* + /editor/* behind
 // a Supabase login. Also refreshes the Supabase session cookie on every match.
@@ -13,8 +14,11 @@ export async function proxy(req: NextRequest) {
     if (pathname.startsWith("/admin/login")) return NextResponse.next();
     const ok = await isValidSession(req.cookies.get(ADMIN_COOKIE)?.value);
     if (!ok) {
-      const url = req.nextUrl.clone();
-      url.pathname = "/admin/login";
+      // Built from the fixed SITE.url, not req.nextUrl.clone() — behind
+      // Railway's proxy that resolved to the container's internal
+      // http://localhost:8080 instead of the public domain (see
+      // app/auth/callback/route.ts for the confirmed case of this).
+      const url = new URL("/admin/login", SITE.url);
       url.searchParams.set("next", pathname);
       return NextResponse.redirect(url);
     }
@@ -47,8 +51,7 @@ export async function proxy(req: NextRequest) {
     (pathname.startsWith("/dashboard") || pathname.startsWith("/editor") || pathname.startsWith("/studio")) &&
     !user
   ) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
+    const url = new URL("/login", SITE.url);
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }

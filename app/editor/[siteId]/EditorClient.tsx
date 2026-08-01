@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
+// Type-only — erased at compile time under isolatedModules, so this never
+// pulls lib/collections-detect.ts's cheerio-dependent code into the client
+// bundle (unlike a value import of the module itself).
+import type { FieldSlot } from "@/lib/collections-detect";
 
 // Mirror of lib/overrides.ts EditorEdit (not imported — that module pulls in
 // cheerio, which shouldn't ship to the browser).
@@ -10,31 +14,107 @@ type EditorEdit =
   | { kind: "text"; tag: string; oldText: string; newText: string; cls?: string }
   | { kind: "link"; oldHref: string; newHref: string }
   | { kind: "image"; oldSrc: string; newSrc: string }
-  | { kind: "visibility"; tag: string; matchAttr?: string; key: string; hidden: boolean };
+  | { kind: "visibility"; tag: string; matchAttr?: string; key: string; hidden: boolean }
+  | { kind: "size"; tag: string; name: string; width?: string; height?: string };
 
-type Tool = "text" | "link" | "image" | "preview";
-type LeftTab = "pages" | "layers" | "assets";
+export interface EditorCollection {
+  id: string;
+  name: string;
+  routePrefix: string;
+  confidence: number;
+  fields: FieldSlot[];
+  items: { id: string; slug: string; fields: Record<string, string> }[];
+}
 
-interface LayerRow {
-  icon: string;
-  label: string;
-  sub?: string;
+/** Best-effort human label for a collection item: first text field's value,
+ *  falling back to the slug when no text field has content yet. */
+function itemLabel(collection: EditorCollection, item: EditorCollection["items"][number]): string {
+  const titleField = collection.fields.find((f) => f.type === "text" && f.scope === "body");
+  const value = titleField ? item.fields[titleField.key] : undefined;
+  return value?.trim() || item.slug;
+}
+
+// A single "select" tool replaces the old text/link/image trio: clicking any
+// element now resolves what it is (image > link > text, innermost/topmost
+// under the cursor wins) and shows a contextual toolbar for it instead of
+// requiring the right tool pre-armed. Preview is the only other mode (hides
+// the editing shield so the page runs live, untouched).
+type Tool = "select" | "preview";
+type LeftTab = "pages" | "layers" | "assets" | "collections";
+
+/** What clicking an element in "select" mode resolved to. */
+type SelectedKind = "text" | "link" | "image" | "container";
+interface Selected {
   el: HTMLElement;
-  /** Attribute the hide/show + rename match keys on (e.g. "href" for nav
-   *  links, "src" for images); undefined means match by text content
-   *  (headings). */
+  kind: SelectedKind;
+  /** Attribute the hide/show (+ size) match key comes from ("href"/"src"/
+   *  "data-framer-name"); text elements match by their own text content
+   *  instead (matchAttr unset). */
   matchAttr?: string;
-  /** Nav labels and headings can be renamed inline; images can't (their
-   *  label is alt text/filename, not something with a matching edit kind —
-   *  use the Image tool to replace the file itself). */
-  renameable?: boolean;
-  hidden?: boolean;
+  /** kind:"container" only — its current width/height (an existing inline
+   *  override if one's already applied, else the rendered size), seeding the
+   *  resize toolbar's inputs so they open showing reality, not blank. */
+  size?: { width: string; height: string };
 }
-interface LayerTree {
-  nav: LayerRow[];
-  headings: LayerRow[];
-  images: LayerRow[];
+
+/** The size to seed the resize toolbar with: an existing inline override if
+ *  one's already applied (so re-opening the toolbar shows what you set, not
+ *  the pre-override render), else the element's current rendered size. */
+function readContainerSize(el: HTMLElement): { width: string; height: string } {
+  const rect = el.getBoundingClientRect();
+  return {
+    width: el.style.width || `${Math.round(rect.width)}px`,
+    height: el.style.height || `${Math.round(rect.height)}px`,
+  };
 }
+interface SelectedRect {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * One node of the real page structure. Previously the Layers panel was four
+ * flat lists (nav/headings/buttons/images) with no hierarchy at all, so a
+ * page read as a jumble of matches rather than the sections it's actually
+ * built from. This mirrors the live DOM instead.
+ */
+interface LayerNode {
+  /** Index-path key ("r.2.0"), stable across rebuilds of the same page. */
+  key: string;
+  label: string;
+  icon: string;
+  el: HTMLElement;
+  /** What clicking it selects; "group" = a structural section (hide/show
+   *  only — there's no single text/link/image to edit on a wrapper). */
+  kind: SelectedKind | "group";
+  /** Attribute the hide/show + rename match keys on ("href"/"src"/
+   *  "data-framer-name"); undefined means match by text content. */
+  matchAttr?: string;
+  renameable: boolean;
+  hidden: boolean;
+  /** Inside <header>/<nav>/<footer> — i.e. markup Framer treats as a shared
+   *  component, repeated on every page. Overrides are content-keyed and
+   *  injected into EVERY page's HTML (see lib/editor-publish.ts), so editing
+   *  one of these already applies site-wide; this flag exists to make that
+   *  behaviour visible instead of surprising. */
+  shared: boolean;
+  children: LayerNode[];
+}
+
+/** Tags that are never layers (and #fno-shield, our own overlay). */
+const LAYER_SKIP_TAGS = /^(SCRIPT|STYLE|NOSCRIPT|LINK|META|TEMPLATE|BR|HR|PATH|DEFS|CLIPPATH|LINEARGRADIENT|STOP)$/;
+/** Semantic containers worth showing as their own layer. */
+const LAYER_SECTION_TAGS = /^(HEADER|NAV|MAIN|FOOTER|SECTION|ARTICLE|ASIDE|FORM)$/;
+/** Containers Framer treats as shared components across pages. */
+const LAYER_SHARED_TAGS = /^(HEADER|NAV|FOOTER)$/;
+/** Tags eligible for the resize toolbar — deliberately excludes A/IMG/text
+ *  tags, which the click-priority order (image > link > text > container)
+ *  already claims first; this only ever matches a plain layout wrapper. */
+const RESIZABLE_TAGS = /^(DIV|SECTION|HEADER|FOOTER|NAV|MAIN|ARTICLE|ASIDE|FORM)$/;
+const LAYER_MAX_NODES = 500;
+const LAYER_MAX_DEPTH = 14;
 
 const FRAMES: { bp: string; w: number }[] = [
   { bp: "Desktop", w: 1280 },
@@ -45,14 +125,30 @@ const GAP = 72;
 const LABEL_H = 34;
 
 const TOOLS: { id: Tool; label: string; key: string; hint: string }[] = [
-  { id: "text", label: "Text", key: "T", hint: "Click any text to edit it" },
-  { id: "link", label: "Link", key: "L", hint: "Click a link to change where it goes" },
-  { id: "image", label: "Image", key: "I", hint: "Click an image to swap it" },
+  { id: "select", label: "Select", key: "V", hint: "Click any text, link, or image to edit it" },
   { id: "preview", label: "Preview", key: "P", hint: "Interact with the live site — effects run" },
 ];
 
 // ---- inline icon set (stroke = currentColor, sized by prop) ----------------
 const ICON_PATHS: Record<string, ReactNode> = {
+  select: <path d="M4 3.5 19 10l-6.5 2 2 6.5z" />,
+  button: (
+    <>
+      <rect x="3" y="8" width="18" height="8" rx="4" />
+      <path d="M8 12h.01M12 12h.01M16 12h.01" />
+    </>
+  ),
+  box: <rect x="4" y="4" width="16" height="16" rx="2" />,
+  chevronRight: <path d="m9.5 6 6 6-6 6" />,
+  chevronDown: <path d="m6 9.5 6 6 6-6" />,
+  // Framer marks components with a diamond; same idea for shared header/footer.
+  component: <path d="m12 3 9 9-9 9-9-9z" />,
+  footer: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 15h18" />
+    </>
+  ),
   text: (
     <>
       <path d="M4 7V5h16v2" />
@@ -150,7 +246,17 @@ const ICON_PATHS: Record<string, ReactNode> = {
   ),
 };
 
-function Icon({ name, size = 14, className }: { name: string; size?: number; className?: string }) {
+function Icon({
+  name,
+  size = 14,
+  className,
+  title,
+}: {
+  name: string;
+  size?: number;
+  className?: string;
+  title?: string;
+}) {
   return (
     <svg
       width={size}
@@ -162,8 +268,12 @@ function Icon({ name, size = 14, className }: { name: string; size?: number; cla
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
-      aria-hidden
+      // A titled icon carries meaning on its own (the shared-component
+      // marker), so it stays in the a11y tree; decorative ones don't.
+      aria-hidden={title ? undefined : true}
+      role={title ? "img" : undefined}
     >
+      {title && <title>{title}</title>}
       {ICON_PATHS[name]}
     </svg>
   );
@@ -171,28 +281,129 @@ function Icon({ name, size = 14, className }: { name: string; size?: number; cla
 
 const BP_ICON: Record<string, string> = { Desktop: "desktop", Tablet: "tablet", Phone: "phone" };
 
-/** One collapsible section of the Layers tree — nav links, heading outline,
- *  or images — styled after Framer's Layers panel (small icon + label,
- *  indented, row highlights on hover). Rows jump-to-and-highlight on click;
- *  renameable rows (nav + headings) get an inline rename pencil, and every
- *  row gets a hide/show eye toggle. */
-function LayerGroup({
-  title,
-  icon,
-  rows,
-  onSelect,
-  onRename,
-  onToggleHide,
-  renamingEl,
-  renameValue,
-  onRenameChange,
-  onRenameCommit,
-  onRenameCancel,
-}: {
-  title: string;
-  icon: string;
-  rows: LayerRow[];
-  onSelect: (el: HTMLElement) => void;
+// ---- layer tree construction ---------------------------------------------
+
+/** Human label for a layer row. `data-framer-name` is the name the designer
+ *  typed in Framer and it survives conversion, so preferring it makes this
+ *  panel read like Framer's own Layers list rather than a pile of div/span. */
+function layerLabel(el: HTMLElement): string {
+  const name = (el.getAttribute("data-framer-name") || "").trim();
+  if (name) return name.slice(0, 44);
+
+  const tag = el.tagName.toUpperCase();
+  if (tag === "IMG") {
+    const alt = norm(el.getAttribute("alt") || "");
+    if (alt) return alt.slice(0, 44);
+    const file = (el.getAttribute("src") || "").split("/").pop() || "";
+    return file.split("?")[0].slice(0, 30) || "Image";
+  }
+  if (LAYER_SECTION_TAGS.test(tag)) return tag.charAt(0) + tag.slice(1).toLowerCase();
+
+  const text = norm(el.textContent || "");
+  if (text) return text.slice(0, 44);
+  return tag.toLowerCase();
+}
+
+function layerIcon(el: HTMLElement): string {
+  const tag = el.tagName.toUpperCase();
+  if (tag === "IMG") return "image";
+  if (tag === "A") return "link";
+  if (tag === "BUTTON") return "button";
+  if (/^H[1-6]$/.test(tag)) return "heading";
+  if (tag === "HEADER" || tag === "NAV") return "nav";
+  if (tag === "FOOTER") return "footer";
+  if (tag === "P") return "text";
+  return "box";
+}
+
+/** What the floating toolbar should offer for this node. */
+function layerKind(el: HTMLElement): SelectedKind | "group" {
+  const tag = el.tagName.toUpperCase();
+  if (tag === "IMG") return "image";
+  if (tag === "A") return "link";
+  if (/^(H[1-6]|P|BUTTON|LI|SPAN)$/.test(tag) && norm(el.textContent || "")) return "text";
+  if (RESIZABLE_TAGS.test(tag) && (el.getAttribute("data-framer-name") || "").trim()) return "container";
+  return "group";
+}
+
+/** Attribute whose value becomes the hide/show match key. Structural
+ *  containers prefer `data-framer-name`: matching a big wrapper by its full
+ *  text content would make an enormous, brittle key, while the layer name is
+ *  short and stable (and is exactly how Framer identifies it). */
+function layerMatchAttr(el: HTMLElement): string | undefined {
+  const tag = el.tagName.toUpperCase();
+  if (tag === "IMG") return "src";
+  if (tag === "A") return "href";
+  if ((el.getAttribute("data-framer-name") || "").trim()) return "data-framer-name";
+  return undefined;
+}
+
+function isLayerWorthShowing(el: HTMLElement): boolean {
+  if ((el.getAttribute("data-framer-name") || "").trim()) return true;
+  const tag = el.tagName.toUpperCase();
+  if (LAYER_SECTION_TAGS.test(tag)) return true;
+  if (/^(H[1-6]|IMG|A|BUTTON)$/.test(tag)) return true;
+  if (tag === "P" && norm(el.textContent || "")) return true;
+  return false;
+}
+
+/**
+ * Walks the live document into a nested layer tree. Elements that aren't
+ * worth a row (Framer's many anonymous wrapper divs) are flattened away —
+ * their children get hoisted to the parent's level — so the tree shows
+ * structure without the noise.
+ */
+function buildLayerNodes(root: HTMLElement, isHidden: (el: HTMLElement) => boolean): LayerNode[] {
+  let budget = LAYER_MAX_NODES;
+
+  const walk = (parent: HTMLElement, depth: number, keyPrefix: string, shared: boolean): LayerNode[] => {
+    if (depth > LAYER_MAX_DEPTH || budget <= 0) return [];
+    const out: LayerNode[] = [];
+    const kids = Array.from(parent.children) as HTMLElement[];
+
+    for (let i = 0; i < kids.length; i++) {
+      if (budget <= 0) break;
+      const el = kids[i];
+      const tag = el.tagName.toUpperCase();
+      if (LAYER_SKIP_TAGS.test(tag) || tag === "SVG") continue;
+      if (el.id === "fno-shield") continue;
+
+      const key = `${keyPrefix}.${i}`;
+      const nodeShared = shared || LAYER_SHARED_TAGS.test(tag);
+
+      if (isLayerWorthShowing(el)) {
+        budget--;
+        out.push({
+          key,
+          label: layerLabel(el),
+          icon: layerIcon(el),
+          el,
+          kind: layerKind(el),
+          matchAttr: layerMatchAttr(el),
+          // Images are labelled by alt/filename, not by editable text — use
+          // the Replace action instead of an inline rename.
+          renameable: tag !== "IMG" && !!norm(el.textContent || ""),
+          hidden: isHidden(el),
+          shared: nodeShared,
+          children: walk(el, depth + 1, key, nodeShared),
+        });
+      } else {
+        out.push(...walk(el, depth + 1, key, nodeShared));
+      }
+    }
+    return out;
+  };
+
+  return walk(root, 0, "r", false);
+}
+
+interface LayerRowsProps {
+  nodes: LayerNode[];
+  depth: number;
+  expanded: Set<string>;
+  onToggleExpand: (key: string) => void;
+  selectedEl: HTMLElement | null;
+  onSelect: (node: LayerNode) => void;
   onRename: (el: HTMLElement) => void;
   onToggleHide: (el: HTMLElement, matchAttr?: string) => void;
   renamingEl: HTMLElement | null;
@@ -200,83 +411,232 @@ function LayerGroup({
   onRenameChange: (value: string) => void;
   onRenameCommit: () => void;
   onRenameCancel: () => void;
-}) {
-  if (rows.length === 0) return null;
+}
+
+/** Recursive layer-tree renderer. Indents by depth and lets any node with
+ *  children collapse, so a deep Framer page stays navigable in a 224px rail. */
+function LayerRows(props: LayerRowsProps) {
+  const { nodes, depth, expanded, onToggleExpand, selectedEl, onSelect, onRename, onToggleHide } = props;
   return (
-    <div>
-      <div className="flex items-center gap-1.5 px-1 text-[10.5px] font-semibold uppercase tracking-wide text-neutral-600">
-        <Icon name={icon} size={10} />
-        {title}
-        <span className="text-neutral-700">{rows.length}</span>
-      </div>
-      <ul className="mt-1 space-y-0.5">
-        {rows.map((r, i) => {
-          const isRenaming = renamingEl === r.el;
-          return (
-            <li key={i}>
-              <div
-                className={`group flex w-full items-center gap-1 rounded-md py-1 pl-3 pr-1 transition-colors hover:bg-[#1c1c1f] ${
-                  r.hidden ? "opacity-40" : ""
-                }`}
-              >
+    <ul className="space-y-px">
+      {nodes.map((n) => {
+        const isRenaming = props.renamingEl === n.el;
+        const isSelected = selectedEl === n.el;
+        const isOpen = expanded.has(n.key);
+        return (
+          <li key={n.key}>
+            <div
+              className={`group flex w-full items-center gap-1 rounded-md py-1 pr-1 transition-colors ${
+                isSelected ? "bg-[#26262b]" : "hover:bg-[#1c1c1f]"
+              } ${n.hidden ? "opacity-40" : ""}`}
+              style={{ paddingLeft: 2 + depth * 11 }}
+            >
+              {n.children.length > 0 ? (
                 <button
-                  onClick={() => !isRenaming && onSelect(r.el)}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleExpand(n.key);
+                  }}
+                  aria-label={isOpen ? "Collapse" : "Expand"}
+                  className="shrink-0 rounded p-0.5 text-neutral-600 transition-colors hover:text-neutral-300"
                 >
-                  {r.sub && r.icon === "heading" ? (
-                    <span className="w-4 shrink-0 text-center text-[9.5px] font-bold uppercase text-neutral-600">
-                      {r.sub}
-                    </span>
-                  ) : (
-                    <Icon name={r.icon} size={11} className="shrink-0 text-neutral-600 group-hover:text-neutral-400" />
-                  )}
-                  {isRenaming ? (
-                    <input
-                      autoFocus
-                      value={renameValue}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => onRenameChange(e.target.value)}
-                      onKeyDown={(e) => {
-                        e.stopPropagation();
-                        if (e.key === "Enter") onRenameCommit();
-                        else if (e.key === "Escape") onRenameCancel();
-                      }}
-                      onBlur={onRenameCommit}
-                      className="min-w-0 flex-1 rounded border border-blue-500/60 bg-[#0e0e10] px-1 py-0.5 text-[12px] text-neutral-100 outline-none"
-                    />
-                  ) : (
-                    <span className="min-w-0 flex-1 truncate text-neutral-300">{r.label}</span>
-                  )}
+                  <Icon name={isOpen ? "chevronDown" : "chevronRight"} size={10} />
                 </button>
-                <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                  {r.renameable && !isRenaming && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRename(r.el);
-                      }}
-                      title="Rename"
-                      className="rounded p-0.5 text-neutral-500 transition-colors hover:bg-[#26262b] hover:text-neutral-200"
-                    >
-                      <Icon name="pencil" size={11} />
-                    </button>
-                  )}
+              ) : (
+                <span className="w-[15px] shrink-0" />
+              )}
+              <button
+                onClick={() => !isRenaming && onSelect(n)}
+                className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+              >
+                <Icon
+                  name={n.icon}
+                  size={11}
+                  className={`shrink-0 ${isSelected ? "text-blue-400" : "text-neutral-600 group-hover:text-neutral-400"}`}
+                />
+                {isRenaming ? (
+                  <input
+                    autoFocus
+                    value={props.renameValue}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => props.onRenameChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === "Enter") props.onRenameCommit();
+                      else if (e.key === "Escape") props.onRenameCancel();
+                    }}
+                    onBlur={props.onRenameCommit}
+                    className="min-w-0 flex-1 rounded border border-blue-500/60 bg-[#0e0e10] px-1 py-0.5 text-[12px] text-neutral-100 outline-none"
+                  />
+                ) : (
+                  <span className={`min-w-0 flex-1 truncate ${isSelected ? "text-white" : "text-neutral-300"}`}>
+                    {n.label}
+                  </span>
+                )}
+              </button>
+              {n.shared && !isRenaming && (
+                <Icon
+                  name="component"
+                  size={9}
+                  className="shrink-0 text-violet-400/70"
+                  title="Shared — edits here apply on every page"
+                />
+              )}
+              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                {n.renameable && !isRenaming && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onToggleHide(r.el, r.matchAttr);
+                      onRename(n.el);
                     }}
-                    title={r.hidden ? "Show" : "Hide"}
+                    title="Rename"
                     className="rounded p-0.5 text-neutral-500 transition-colors hover:bg-[#26262b] hover:text-neutral-200"
                   >
-                    <Icon name={r.hidden ? "eyeOff" : "eye"} size={11} />
+                    <Icon name="pencil" size={11} />
                   </button>
-                </div>
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleHide(n.el, n.matchAttr);
+                  }}
+                  title={n.hidden ? "Show" : "Hide"}
+                  className="rounded p-0.5 text-neutral-500 transition-colors hover:bg-[#26262b] hover:text-neutral-200"
+                >
+                  <Icon name={n.hidden ? "eyeOff" : "eye"} size={11} />
+                </button>
               </div>
-            </li>
-          );
-        })}
-      </ul>
+            </div>
+            {n.children.length > 0 && isOpen && <LayerRows {...props} nodes={n.children} depth={depth + 1} />}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Floating pill of contextual actions for whatever's currently selected —
+ *  the "click any element, see one panel" replacement for pre-arming a
+ *  Text/Link/Image tool. No click-away catcher needed: the shield's own
+ *  click handler already clears/reassigns selection on every click (empty
+ *  space -> null, a different element -> that element), so clicking through
+ *  to the canvas underneath just works without an extra dismiss step. */
+/** Strips a trailing "px" for display in the compact number inputs — typed
+ *  values are re-suffixed with "px" on commit unless they already carry a
+ *  unit (%, vw, auto, etc.), so "420" and "420px" both work as input. */
+function displayDim(v: string): string {
+  return v.replace(/px$/, "");
+}
+function normalizeDim(raw: string): string {
+  const v = raw.trim();
+  if (!v || v === "auto" || /[a-z%]/i.test(v)) return v; // already unitless keyword or has its own unit
+  return `${v}px`;
+}
+
+function SelectionToolbar({
+  kind,
+  rect,
+  hidden,
+  size,
+  onEditText,
+  onEditLink,
+  onReplaceImage,
+  onToggleHide,
+  onResize,
+}: {
+  kind: SelectedKind;
+  rect: SelectedRect;
+  hidden: boolean;
+  size?: { width: string; height: string };
+  onEditText: () => void;
+  onEditLink: () => void;
+  onReplaceImage: () => void;
+  onToggleHide: () => void;
+  onResize: (width: string, height: string) => void;
+}) {
+  const [w, setW] = useState(size ? displayDim(size.width) : "");
+  const [h, setH] = useState(size ? displayDim(size.height) : "");
+  const commit = () => onResize(normalizeDim(w), normalizeDim(h));
+
+  const TOOLBAR_H = 34;
+  const HEADER_H = 52;
+  const above = rect.top - TOOLBAR_H - 8 >= HEADER_H;
+  const top = above ? rect.top - TOOLBAR_H - 8 : rect.top + rect.height + 8;
+  const viewportW = typeof window !== "undefined" ? window.innerWidth : 1200;
+  const left = Math.min(Math.max(rect.left, 8), viewportW - 300);
+
+  return (
+    <div
+      className="fixed z-50 flex items-center gap-1 rounded-lg border border-[#2a2a2e] bg-[#1c1c1f] px-1.5 py-1 text-[12px] text-neutral-300 shadow-xl"
+      style={{ top, left }}
+    >
+      {(kind === "text" || kind === "link") && (
+        <button
+          onClick={onEditText}
+          className="flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-[#2a2a2e] hover:text-white"
+        >
+          <Icon name="text" size={12} />
+          Edit Text
+        </button>
+      )}
+      {kind === "link" && (
+        <button
+          onClick={onEditLink}
+          className="flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-[#2a2a2e] hover:text-white"
+        >
+          <Icon name="link" size={12} />
+          Edit Link
+        </button>
+      )}
+      {kind === "image" && (
+        <button
+          onClick={onReplaceImage}
+          className="flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-[#2a2a2e] hover:text-white"
+        >
+          <Icon name="image" size={12} />
+          Replace
+        </button>
+      )}
+      {kind === "container" && (
+        <>
+          <Icon name="box" size={12} className="ml-0.5 text-neutral-500" />
+          <label className="flex items-center gap-1">
+            <span className="text-neutral-500">W</span>
+            <input
+              value={w}
+              onChange={(e) => setW(e.target.value)}
+              onBlur={commit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              placeholder="auto"
+              className="w-14 rounded border border-[#333338] bg-[#0e0e10] px-1.5 py-1 text-[12px] text-neutral-100 outline-none focus:border-blue-500"
+            />
+          </label>
+          <label className="flex items-center gap-1">
+            <span className="text-neutral-500">H</span>
+            <input
+              value={h}
+              onChange={(e) => setH(e.target.value)}
+              onBlur={commit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              placeholder="auto"
+              className="w-14 rounded border border-[#333338] bg-[#0e0e10] px-1.5 py-1 text-[12px] text-neutral-100 outline-none focus:border-blue-500"
+            />
+          </label>
+        </>
+      )}
+      <div className="mx-0.5 h-4 w-px bg-[#2a2a2e]" />
+      <button
+        onClick={onToggleHide}
+        title={hidden ? "Show" : "Hide"}
+        className="flex items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-[#2a2a2e] hover:text-white"
+      >
+        <Icon name={hidden ? "eyeOff" : "eye"} size={12} />
+        {hidden ? "Show" : "Hide"}
+      </button>
     </div>
   );
 }
@@ -348,6 +708,52 @@ const framerClass = (el: Element): string | undefined =>
   (el.getAttribute("class") || "").split(/\s+/).find((c) => /^framer-[A-Za-z0-9]+$/.test(c)) ||
   undefined;
 
+// Names Framer gives collapsible/overlay UI. Mirrors (and extends) the
+// MENU_NAME list in lib/overlays.ts, which deliberately refuses to touch these
+// for the same reason: they're runtime-controlled UI state, not stuck content.
+const CLOSED_UI_NAME = /menu|nav|drawer|hamburger|modal|overlay|dropdown|popup|dialog|lightbox|sheet/i;
+
+/**
+ * True when an element's low opacity is a CLOSED UI STATE (a collapsed nav
+ * dropdown, an unopened modal) rather than a pending appear animation.
+ *
+ * This distinction is the whole bug: revealAppear() below force-reveals
+ * anything sitting at inline opacity < 0.5, on the assumption it's an
+ * appear/scroll-reveal frozen mid-animation. But Framer hides a CLOSED menu
+ * exactly the same way — so every nav dropdown on the page was being forced
+ * permanently open, covering the hero and making it unclickable/uneditable.
+ *
+ * Signals, any one of which is enough to leave the element alone:
+ *  - pointer-events:none — a closed menu disables hit-testing so it doesn't
+ *    swallow clicks while invisible; an appear-animating element never does
+ *    (it's about to become interactive). Strongest single signal.
+ *  - visibility:hidden — same intent, different mechanism.
+ *  - aria-hidden / role=dialog|menu — the accessibility tree already says
+ *    "this is closed UI".
+ *  - a menu-ish data-framer-name on the element or any ancestor (the layer
+ *    name the designer typed, which survives conversion).
+ *
+ * Deliberately does NOT treat `data-framer-appear-id` as disqualifying: that
+ * attribute marks a genuine appear animation, so those still get revealed.
+ */
+function looksLikeClosedUi(el: HTMLElement): boolean {
+  const st = el.style;
+  if (st.pointerEvents === "none") return true;
+  if (st.visibility === "hidden") return true;
+  if (el.getAttribute("aria-hidden") === "true") return true;
+  const role = el.getAttribute("role") || "";
+  if (/^(dialog|menu|alertdialog)$/i.test(role)) return true;
+  // Walk up a bounded number of ancestors: Framer nests the animated inner
+  // wrapper a few levels below the element carrying the menu's name.
+  let node: HTMLElement | null = el;
+  for (let i = 0; node && i < 6; i++) {
+    if (CLOSED_UI_NAME.test(node.getAttribute("data-framer-name") || "")) return true;
+    if (node.getAttribute("aria-hidden") === "true") return true;
+    node = node.parentElement;
+  }
+  return false;
+}
+
 function textContainer(node: EventTarget | null): HTMLElement | null {
   let el = node as HTMLElement | null;
   while (el && el.nodeType === 1) {
@@ -370,6 +776,7 @@ export function EditorClient({
   pages,
   initialEdits,
   canPublish,
+  collections,
 }: {
   siteId: string;
   siteName: string;
@@ -377,9 +784,16 @@ export function EditorClient({
   pages: { route: string; path: string }[];
   initialEdits: EditorEdit[];
   canPublish: boolean;
+  collections: EditorCollection[];
 }) {
-  const [tool, setTool] = useState<Tool>("text");
+  const [tool, setTool] = useState<Tool>("select");
   const [leftTab, setLeftTab] = useState<LeftTab>("pages");
+  // Current selection (canvas click or Layers row) + its on-screen rect for
+  // positioning the floating contextual toolbar. Kept separate from `tool`
+  // since selecting doesn't change mode — only preview does.
+  const [selected, setSelected] = useState<Selected | null>(null);
+  const [selRect, setSelRect] = useState<SelectedRect | null>(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [pagePath, setPagePath] = useState(pages[0]?.path || "");
   const [edits, setEdits] = useState<EditorEdit[]>(initialEdits);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
@@ -399,7 +813,16 @@ export function EditorClient({
   // Which breakpoint artboards are shown. All iframes stay mounted (hidden via
   // CSS) so the wiring, measured heights, and refs stay stable.
   const [visibleBps, setVisibleBps] = useState<Set<string>>(() => new Set(FRAMES.map((f) => f.bp)));
-  const [layerTree, setLayerTree] = useState<LayerTree | null>(null);
+  const [layerTree, setLayerTree] = useState<LayerNode[] | null>(null);
+  const [expandedLayers, setExpandedLayers] = useState<Set<string>>(() => new Set());
+  const toggleLayerExpand = useCallback((key: string) => {
+    setExpandedLayers((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
   // Branded loading state: true from mount (and again on every page switch)
   // until the first artboard has actually wired up, masking the blank/dark
   // moment before the live site's iframes have anything to show. Reset
@@ -455,13 +878,16 @@ export function EditorClient({
               ? `link|${e.oldHref}`
               : e.kind === "image"
                 ? `image|${e.oldSrc}`
-                : `vis|${e.tag}|${e.matchAttr || ""}|${e.key}`;
+                : e.kind === "size"
+                  ? `size|${e.tag}|${e.name}`
+                  : `vis|${e.tag}|${e.matchAttr || ""}|${e.key}`;
         const key = idOf(edit);
         const filtered = prev.filter((e) => idOf(e) !== key);
         const isNoop =
           (edit.kind === "text" && norm(edit.newText) === norm(edit.oldText)) ||
           (edit.kind === "link" && edit.newHref === edit.oldHref) ||
           (edit.kind === "image" && edit.newSrc === edit.oldSrc) ||
+          (edit.kind === "size" && edit.width === undefined && edit.height === undefined) ||
           // Toggling a layer back to visible always matches the natural,
           // no-edit state — dropping it (rather than recording hidden:false)
           // keeps the Changes list free of no-op entries.
@@ -652,6 +1078,93 @@ export function EditorClient({
     const orig = img.getAttribute("data-fno-orig-src") ?? (img.getAttribute("src") || "");
     setDialog({ kind: "image", el: img, orig, value: img.getAttribute("src") || orig });
   }, []);
+
+  /** An element's on-screen rect in the OUTER document's viewport coordinate
+   *  space — same math as jumpTo below, but returned instead of used to
+   *  scroll, so the floating selection toolbar can position itself with
+   *  `position: fixed` (viewport-relative, so no separate canvas-scroll
+   *  offset accounting needed). */
+  const computeScreenRect = useCallback((el: HTMLElement): SelectedRect | null => {
+    const iframe = el.ownerDocument?.defaultView?.frameElement as HTMLIFrameElement | null;
+    if (!iframe) return null;
+    const iframeRect = iframe.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const scale = iframeRect.height / (iframe.offsetHeight || 1);
+    return {
+      top: iframeRect.top + elRect.top * scale,
+      left: iframeRect.left + elRect.left * scale,
+      width: elRect.width * scale,
+      height: elRect.height * scale,
+    };
+  }, []);
+
+  // Bumped on every selection so the resize toolbar's width/height inputs
+  // (local state, for a smooth typing feel) reset cleanly via a React `key`
+  // instead of trying to sync controlled inputs against a changing prop.
+  const [selectionId, setSelectionId] = useState(0);
+
+  /** Select an element for the floating contextual toolbar (canvas click or
+   *  a Layers row). `matchAttr` can be passed explicitly (Layers rows already
+   *  know it); canvas clicks omit it and get the default for `kind`. */
+  const selectElement = useCallback(
+    (el: HTMLElement, kind: SelectedKind, matchAttr?: string) => {
+      setSelected({
+        el,
+        kind,
+        matchAttr:
+          matchAttr ??
+          (kind === "link" ? "href" : kind === "image" ? "src" : kind === "container" ? "data-framer-name" : undefined),
+        size: kind === "container" ? readContainerSize(el) : undefined,
+      });
+      setSelRect(computeScreenRect(el));
+      setSelectionId((n) => n + 1);
+    },
+    [computeScreenRect]
+  );
+
+  // Keep the floating toolbar glued to its element while the canvas scrolls
+  // or zooms — computeScreenRect already reflects both live (it's just
+  // getBoundingClientRect math), this just re-runs it on demand.
+  useEffect(() => {
+    if (!selected) return;
+    const recompute = () => setSelRect(computeScreenRect(selected.el));
+    recompute();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        recompute();
+      });
+    };
+    canvas.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      canvas.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [selected, zoom, computeScreenRect]);
+
+  // A selection only makes sense for the page/tool it was made on — clear it
+  // on page switch or when leaving Select for Preview. Adjusted during render
+  // (React's documented pattern for "reset state when a prop/value changes")
+  // rather than an effect, same as initialLoading/loadingForPath above.
+  const [selectionForPage, setSelectionForPage] = useState(pagePath);
+  if (pagePath !== selectionForPage) {
+    setSelectionForPage(pagePath);
+    if (selected) setSelected(null);
+    if (selRect) setSelRect(null);
+  }
+  const [selectionForTool, setSelectionForTool] = useState(tool);
+  if (tool !== selectionForTool) {
+    setSelectionForTool(tool);
+    if (tool === "preview") {
+      if (selected) setSelected(null);
+      if (selRect) setSelRect(null);
+    }
+  }
+
   const applyDialog = useCallback(() => {
     if (!dialog) return;
     const value = dialog.value.trim();
@@ -668,6 +1181,8 @@ export function EditorClient({
       recordEdit({ kind: "image", oldSrc: dialog.orig, newSrc: value });
     }
     setDialog(null);
+    setSelected(null);
+    setSelRect(null);
   }, [dialog, recordEdit]);
 
   // ---- wire a frame's document on load ----
@@ -705,19 +1220,24 @@ export function EditorClient({
         return els.filter((el) => el !== shield);
       };
 
-      // Resolve the first element in the stack the active tool can act on.
-      const resolveTarget = (x: number, y: number): HTMLElement | null => {
-        const t = toolRef.current;
+      // Resolve the innermost/topmost thing under the cursor the unified
+      // Select tool can act on — image > link > text, no tool pre-arming
+      // needed. Priority means clicking the exact pixel of an image inside a
+      // link selects the image; clicking the link's text elsewhere selects
+      // the link (with a separate "Edit Text" action for its label).
+      const resolveTarget = (x: number, y: number): { el: HTMLElement; kind: SelectedKind } | null => {
         for (const el of pickStack(x, y)) {
-          const m =
-            t === "text"
-              ? textContainer(el)
-              : t === "link"
-                ? (el.closest("a") as HTMLElement | null)
-                : t === "image"
-                  ? ((el.tagName === "IMG" ? el : el.closest("img")) as HTMLElement | null)
-                  : null;
-          if (m) return m;
+          if (el.tagName === "IMG") return { el, kind: "image" };
+          const a = el.closest("a") as HTMLElement | null;
+          if (a) return { el: a, kind: "link" };
+          const tc = textContainer(el);
+          if (tc) return { el: tc, kind: "text" };
+          // A named layout wrapper with nothing to edit but its size — only
+          // named ones (Framer's own data-framer-name) qualify, since an
+          // anonymous div has no content-independent key to target safely.
+          if (RESIZABLE_TAGS.test(el.tagName) && (el.getAttribute("data-framer-name") || "").trim()) {
+            return { el, kind: "container" };
+          }
         }
         return null;
       };
@@ -729,13 +1249,14 @@ export function EditorClient({
       shield.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const t = toolRef.current;
-        if (t === "preview") return;
-        const target = resolveTarget(e.clientX, e.clientY);
-        if (!target) return;
-        if (t === "text") beginTextEdit(target, doc);
-        else if (t === "link") editLink(target as HTMLAnchorElement);
-        else if (t === "image") editImage(target as HTMLImageElement);
+        if (toolRef.current === "preview") return;
+        const hit = resolveTarget(e.clientX, e.clientY);
+        if (!hit) {
+          setSelected(null);
+          setSelRect(null);
+          return;
+        }
+        selectElement(hit.el, hit.kind);
       });
 
       let hovered: HTMLElement | null = null;
@@ -748,8 +1269,8 @@ export function EditorClient({
         if (toolRef.current === "preview") return;
         const cand = resolveTarget(e.clientX, e.clientY);
         if (cand) {
-          cand.style.outline = "1.5px dashed rgba(37,99,235,0.7)";
-          hovered = cand;
+          cand.el.style.outline = "1.5px dashed rgba(37,99,235,0.7)";
+          hovered = cand.el;
         }
       });
 
@@ -852,6 +1373,10 @@ export function EditorClient({
         doc.querySelectorAll<HTMLElement>('[style*="opacity"]').forEach((el) => {
           const st = el.style;
           if (!st.opacity || parseFloat(st.opacity) >= 0.5) return;
+          // A closed nav dropdown/modal is hidden the exact same way as a
+          // pending appear animation — revealing it pins the menu open over
+          // the hero forever. See looksLikeClosedUi().
+          if (looksLikeClosedUi(el)) return;
           st.setProperty("opacity", "1", "important");
           if (st.transform && st.transform !== "none") st.setProperty("transform", "none", "important");
           if ((st.filter || "").includes("blur")) st.setProperty("filter", "none", "important");
@@ -860,6 +1385,7 @@ export function EditorClient({
         // A few appear elements carry the low opacity via a class/appear-id
         // rather than inline — catch those by computed style.
         doc.querySelectorAll<HTMLElement>("[data-framer-appear-id]").forEach((el) => {
+          if (looksLikeClosedUi(el)) return;
           if (parseFloat(doc.defaultView!.getComputedStyle(el).opacity) < 0.5)
             el.style.setProperty("opacity", "1", "important");
         });
@@ -957,7 +1483,7 @@ export function EditorClient({
         subtree: true,
       });
     },
-    [applyAll, beginTextEdit, editImage, editLink, uploadAndSwap]
+    [applyAll, uploadAndSwap, selectElement]
   );
 
   useEffect(() => {
@@ -1063,17 +1589,16 @@ export function EditorClient({
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
-  // Keyboard shortcuts: T/L/I/P switch tools, +/− zoom, 0 fits to width.
+  // Keyboard shortcuts: V/P switch tools, Escape deselects, +/− zoom, 0 fits.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (dialog || e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       const k = e.key.toLowerCase();
-      if (k === "t") setTool("text");
-      else if (k === "l") setTool("link");
-      else if (k === "i") setTool("image");
+      if (k === "v") setTool("select");
       else if (k === "p") setTool("preview");
+      else if (k === "escape") setSelected(null);
       else if (k === "=" || k === "+") setZoom((z) => Math.min(1, +(z + 0.05).toFixed(2)));
       else if (k === "-") setZoom((z) => Math.max(0.1, +(z - 0.05).toFixed(2)));
       else if (k === "0") fitZoom();
@@ -1082,11 +1607,10 @@ export function EditorClient({
     return () => window.removeEventListener("keydown", onKey);
   }, [dialog, fitZoom]);
 
-  /** Read-only structural summary of the live page — nav links, heading
-   *  outline, images — built from whichever artboard is currently visible.
-   *  Mirrors the orientation comment extracted for generated route.ts files
-   *  (lib/nextjs-export.ts), applied here to the live iframe DOM instead so
-   *  rows can jump-scroll to the real element on the canvas. */
+  /** Builds the nested layer tree from whichever artboard is currently
+   *  visible. Was four flat lists (nav/headings/buttons/images) that showed
+   *  no structure and silently omitted most of the page; this walks the real
+   *  DOM instead, so what you see matches how the page is actually built. */
   const buildLayerTree = useCallback(() => {
     const idx = FRAMES.findIndex((f) => visibleBps.has(f.bp));
     const doc = frameRefs.current[idx < 0 ? 0 : idx]?.contentDocument;
@@ -1095,44 +1619,32 @@ export function EditorClient({
     const isHidden = (el: HTMLElement) =>
       el.style.display === "none" || (view ? view.getComputedStyle(el).display === "none" : false);
 
-    const nav: LayerRow[] = [];
-    const seenHrefs = new Set<string>();
-    doc.querySelectorAll<HTMLAnchorElement>("nav a[href], header a[href]").forEach((a) => {
-      const href = a.getAttribute("href") || "";
-      const text = norm(a.textContent || "");
-      if (!href || !text || seenHrefs.has(href) || nav.length >= 15) return;
-      seenHrefs.add(href);
-      nav.push({ icon: "link", label: text, el: a, matchAttr: "href", renameable: true, hidden: isHidden(a) });
+    const nodes = buildLayerNodes(doc.body, isHidden);
+    setLayerTree(nodes);
+    // Open the top two levels by default: enough to see the page's sections
+    // (and that header/footer are shared) without a wall of nested rows.
+    setExpandedLayers((prev) => {
+      if (prev.size) return prev; // keep whatever the user has opened/closed
+      const open = new Set<string>();
+      const seed = (list: LayerNode[], depth: number) => {
+        for (const n of list) {
+          if (depth >= 2 || !n.children.length) continue;
+          open.add(n.key);
+          seed(n.children, depth + 1);
+        }
+      };
+      seed(nodes, 0);
+      return open;
     });
-
-    const headings: LayerRow[] = [];
-    doc.querySelectorAll<HTMLElement>("h1, h2, h3").forEach((el) => {
-      const text = norm(el.textContent || "");
-      if (!text || headings.length >= 30) return;
-      headings.push({
-        icon: "heading",
-        label: text,
-        sub: el.tagName.toLowerCase(),
-        el,
-        renameable: true,
-        hidden: isHidden(el),
-      });
-    });
-
-    const images: LayerRow[] = [];
-    doc.querySelectorAll<HTMLImageElement>("img").forEach((el) => {
-      if (images.length >= 20) return;
-      const alt = norm(el.getAttribute("alt") || "");
-      const name = (el.getAttribute("src") || "").split("/").pop()?.slice(0, 30) || "image";
-      images.push({ icon: "image", label: alt || name, sub: alt ? name : undefined, el, matchAttr: "src", hidden: isHidden(el) });
-    });
-
-    setLayerTree({ nav, headings, images });
   }, [visibleBps]);
 
+  // Rebuilds on every edit too (not just tab-open/page-switch) — previously
+  // the list only synced when you clicked "Refresh from canvas" by hand, so
+  // a rename or hide done straight on the canvas left the Layers list stale
+  // until you remembered to refresh it.
   useEffect(() => {
     if (leftTab === "layers") buildLayerTree();
-  }, [leftTab, pagePath, buildLayerTree]);
+  }, [leftTab, pagePath, edits, buildLayerTree]);
 
   // ---- inline layer rename (Layers panel pencil icon) ----
   const [renaming, setRenaming] = useState<{ el: HTMLElement; value: string } | null>(null);
@@ -1165,6 +1677,41 @@ export function EditorClient({
       buildLayerTree();
     },
     [recordEdit, buildLayerTree]
+  );
+
+  /** Same toggle, driven by the floating selection toolbar instead of a
+   *  Layers row — reuses toggleHideLayer's key/edit logic exactly, then
+   *  clears the selection since the toolbar's job is done. */
+  const toggleHideSelected = useCallback(() => {
+    if (!selected) return;
+    toggleHideLayer(selected.el, selected.matchAttr);
+    setSelected(null);
+    setSelRect(null);
+  }, [selected, toggleHideLayer]);
+
+  /**
+   * Commits a width/height change from the resize toolbar. Both values are
+   * always sent together (the toolbar's local state holds the current pair,
+   * seeded from readContainerSize() at selection time — which itself prefers
+   * an already-applied inline override over the rendered size), so this
+   * never needs to merge against a prior edit for the same element: the
+   * value it's about to record already IS the merge.
+   *
+   * Deliberately does NOT clear the selection afterward (unlike
+   * toggleHideSelected/applyDialog) — resizing is normally iterative
+   * (nudge, look, nudge again), so the toolbar stays open for the next tweak
+   * instead of forcing a re-select per adjustment.
+   */
+  const resizeSelected = useCallback(
+    (width: string, height: string) => {
+      if (!selected || selected.kind !== "container") return;
+      const name = selected.el.getAttribute("data-framer-name") || "";
+      if (!name) return;
+      selected.el.style.setProperty("width", width || "", "important");
+      selected.el.style.setProperty("height", height || "", "important");
+      recordEdit({ kind: "size", tag: selected.el.tagName, name, width, height });
+    },
+    [selected, recordEdit]
   );
 
   /** Scroll the canvas so a live element (found via the layer tree) centers
@@ -1280,18 +1827,23 @@ export function EditorClient({
         {/* Left panel */}
         <aside className="flex w-56 shrink-0 flex-col border-r border-[#26262b] bg-[#161618]">
           <div className="flex gap-1 border-b border-[#26262b] p-1.5 text-[12px]">
-            {(["pages", "layers", "assets"] as LeftTab[]).map((tb) => (
-              <button
-                key={tb}
-                onClick={() => setLeftTab(tb)}
-                className={`rounded-md px-2 py-1 capitalize transition-colors ${
-                  leftTab === tb ? "bg-[#26262b] font-medium text-white" : "text-neutral-500 hover:text-neutral-300"
-                }`}
-              >
-                {tb}
-                {tb === "pages" && <span className="ml-1 text-[10px] text-neutral-500">{pages.length}</span>}
-              </button>
-            ))}
+            {(["pages", "layers", "assets", ...(collections.length ? ["collections" as const] : [])] as LeftTab[]).map(
+              (tb) => (
+                <button
+                  key={tb}
+                  onClick={() => setLeftTab(tb)}
+                  className={`rounded-md px-2 py-1 capitalize transition-colors ${
+                    leftTab === tb ? "bg-[#26262b] font-medium text-white" : "text-neutral-500 hover:text-neutral-300"
+                  }`}
+                >
+                  {tb}
+                  {tb === "pages" && <span className="ml-1 text-[10px] text-neutral-500">{pages.length}</span>}
+                  {tb === "collections" && (
+                    <span className="ml-1 text-[10px] text-neutral-500">{collections.length}</span>
+                  )}
+                </button>
+              )
+            )}
           </div>
           <div className="flex-1 overflow-auto p-2 text-[12.5px]">
             {leftTab === "pages" ? (
@@ -1325,33 +1877,103 @@ export function EditorClient({
                 </button>
                 {!layerTree ? (
                   <p className="px-1 py-2 leading-relaxed text-neutral-500">Loading page structure…</p>
+                ) : layerTree.length === 0 ? (
+                  <p className="px-1 py-2 leading-relaxed text-neutral-500">Nothing detected on this page yet.</p>
                 ) : (
-                  <>
-                    {(["nav", "headings", "images"] as const).map((groupKey) => (
-                      <LayerGroup
-                        key={groupKey}
-                        title={groupKey === "nav" ? "Navigation" : groupKey === "headings" ? "Sections" : "Images"}
-                        icon={groupKey === "nav" ? "nav" : groupKey === "headings" ? "heading" : "image"}
-                        rows={layerTree[groupKey]}
-                        onSelect={jumpTo}
-                        onRename={startRename}
-                        onToggleHide={toggleHideLayer}
-                        renamingEl={renaming?.el ?? null}
-                        renameValue={renaming?.value ?? ""}
-                        onRenameChange={(v) => setRenaming((r) => (r ? { ...r, value: v } : r))}
-                        onRenameCommit={commitRename}
-                        onRenameCancel={cancelRename}
-                      />
-                    ))}
-                    {!layerTree.nav.length && !layerTree.headings.length && !layerTree.images.length && (
-                      <p className="px-1 py-2 leading-relaxed text-neutral-500">Nothing detected on this page yet.</p>
-                    )}
-                  </>
+                  <LayerRows
+                    nodes={layerTree}
+                    depth={0}
+                    expanded={expandedLayers}
+                    onToggleExpand={toggleLayerExpand}
+                    selectedEl={selected?.el ?? null}
+                    onSelect={(n) => {
+                      jumpTo(n.el);
+                      // "group" nodes are structural wrappers with nothing
+                      // single to edit — select them as text so the toolbar
+                      // still offers Hide/Show, which is the useful action.
+                      selectElement(n.el, n.kind === "group" ? "text" : n.kind, n.matchAttr);
+                    }}
+                    onRename={startRename}
+                    onToggleHide={toggleHideLayer}
+                    renamingEl={renaming?.el ?? null}
+                    renameValue={renaming?.value ?? ""}
+                    onRenameChange={(v) => setRenaming((r) => (r ? { ...r, value: v } : r))}
+                    onRenameCommit={commitRename}
+                    onRenameCancel={cancelRename}
+                  />
                 )}
                 <p className="px-1 pt-1 text-[11px] leading-relaxed text-neutral-600">
-                  Click a row to jump to it. Pencil renames text, the eye hides/shows it. Use the Text/Link/Image
-                  tools on the canvas for anything else.
+                  Click a row to jump to it and select it. Rows marked{" "}
+                  <Icon name="component" size={8} className="inline text-violet-400/70" /> are shared — editing them
+                  changes every page at once.
                 </p>
+              </div>
+            ) : leftTab === "collections" ? (
+              <div className="space-y-2">
+                {(() => {
+                  const selectedCollection = collections.find((c) => c.id === selectedCollectionId) || null;
+                  if (!collections.length) {
+                    return (
+                      <p className="px-1 py-2 leading-relaxed text-neutral-500">
+                        No CMS Collections detected on this site.
+                      </p>
+                    );
+                  }
+                  if (selectedCollection) {
+                    return (
+                      <>
+                        <button
+                          onClick={() => setSelectedCollectionId(null)}
+                          className="flex items-center gap-1 px-1 py-1 text-[11.5px] text-neutral-400 transition-colors hover:text-neutral-200"
+                        >
+                          <Icon name="back" size={11} />
+                          Collections
+                        </button>
+                        <div className="px-1 pb-1 text-[11px] text-neutral-500">
+                          {selectedCollection.routePrefix} · {selectedCollection.items.length} item
+                          {selectedCollection.items.length === 1 ? "" : "s"}
+                        </div>
+                        <ul className="space-y-0.5">
+                          {selectedCollection.items.map((item) => (
+                            <li
+                              key={item.id}
+                              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-neutral-300"
+                            >
+                              <Icon name="page" size={13} className="text-neutral-600" />
+                              <span className="truncate">{itemLabel(selectedCollection, item)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {!selectedCollection.items.length && (
+                          <p className="px-1 py-2 leading-relaxed text-neutral-500">No items yet.</p>
+                        )}
+                        <p className="px-1 pt-2 text-[11px] leading-relaxed text-neutral-600">
+                          Read-only for now — adding, editing, and publishing items is coming soon.
+                        </p>
+                      </>
+                    );
+                  }
+                  return (
+                    <ul className="space-y-0.5">
+                      {collections.map((c) => (
+                        <li key={c.id}>
+                          <button
+                            onClick={() => setSelectedCollectionId(c.id)}
+                            className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-neutral-400 transition-colors hover:bg-[#1c1c1f] hover:text-neutral-200"
+                          >
+                            <Icon
+                              name="page"
+                              size={13}
+                              className="text-neutral-600 group-hover:text-neutral-400"
+                            />
+                            <span className="truncate">{c.name}</span>
+                            <span className="ml-auto shrink-0 text-[10px] text-neutral-500">{c.items.length}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  );
+                })()}
               </div>
             ) : (
               <p className="px-2 py-4 leading-relaxed text-neutral-500">
@@ -1360,7 +1982,8 @@ export function EditorClient({
             )}
           </div>
           <div className="border-t border-[#26262b] px-3 py-2 text-[10.5px] leading-relaxed text-neutral-600">
-            <span className="text-neutral-500">Shortcuts</span> — T L I P tools · +/− zoom · 0 fit · Ctrl-scroll zoom
+            <span className="text-neutral-500">Shortcuts</span> — V/P tools · Esc deselect · +/− zoom · 0 fit ·
+            Ctrl-scroll zoom
           </div>
         </aside>
 
@@ -1456,6 +2079,48 @@ export function EditorClient({
             </div>
           </div>
         </main>
+
+        {/* Floating contextual toolbar — appears on any canvas/Layers-row
+            selection, offering exactly the actions that element supports
+            (text/link/image + hide, per selected.kind) instead of requiring
+            a tool pre-armed before clicking. position:fixed is viewport-
+            relative like the getBoundingClientRect math in
+            computeScreenRect/jumpTo, so no ancestor-scroll offset needed —
+            safe here since no ancestor between this and <body> has its own
+            transform (the zoom scale lives deeper, inside <main>). */}
+        {selected && selRect && (
+          <SelectionToolbar
+            // Remounts on every new selection so the width/height inputs'
+            // local state (needed for a smooth typing feel) always starts
+            // from THIS element's values instead of the previous one's.
+            key={selectionId}
+            kind={selected.kind}
+            rect={selRect}
+            size={selected.size}
+            hidden={
+              selected.el.style.display === "none" ||
+              selected.el.ownerDocument?.defaultView?.getComputedStyle(selected.el).display === "none"
+            }
+            onEditText={() => {
+              const doc = selected.el.ownerDocument;
+              if (doc) beginTextEdit(selected.el, doc);
+              setSelected(null);
+              setSelRect(null);
+            }}
+            onEditLink={() => {
+              editLink(selected.el as HTMLAnchorElement);
+              setSelected(null);
+              setSelRect(null);
+            }}
+            onReplaceImage={() => {
+              editImage(selected.el as HTMLImageElement);
+              setSelected(null);
+              setSelRect(null);
+            }}
+            onToggleHide={toggleHideSelected}
+            onResize={resizeSelected}
+          />
+        )}
 
         {/* Right panel — an inline Inspector replaces the Changes list while
             editing a link/image (Framer's canvas uses a persistent side
@@ -1604,10 +2269,12 @@ export function EditorClient({
                             ? "bg-violet-500/15 text-violet-400"
                             : e.kind === "image"
                               ? "bg-emerald-500/15 text-emerald-400"
-                              : "bg-amber-500/15 text-amber-400"
+                              : e.kind === "size"
+                                ? "bg-orange-500/15 text-orange-400"
+                                : "bg-amber-500/15 text-amber-400"
                       }`}
                     >
-                      <Icon name={e.kind === "visibility" ? "eyeOff" : e.kind} size={11} />
+                      <Icon name={e.kind === "visibility" ? "eyeOff" : e.kind === "size" ? "box" : e.kind} size={11} />
                     </span>
                     <div className="min-w-0 flex-1">
                       {e.kind === "text" ? (
@@ -1629,6 +2296,13 @@ export function EditorClient({
                             className="h-8 w-12 shrink-0 rounded border border-[#26262b] object-cover"
                           />
                           <span className="text-neutral-300">Image replaced</span>
+                        </div>
+                      ) : e.kind === "size" ? (
+                        <div className="truncate text-neutral-300">
+                          Resized <span className="text-neutral-500">{e.name}</span>:{" "}
+                          <span className="text-neutral-400">
+                            {e.width || "auto"} × {e.height || "auto"}
+                          </span>
                         </div>
                       ) : (
                         <div className="truncate text-neutral-300">

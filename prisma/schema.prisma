@@ -1,7 +1,8 @@
 // CMS platform — data model.
-// Phase 1: multi-tenant foundation (User, Site, Deployment). CMS content
-// entities (Page, BlogPost, Collection, Media, Nav, Forms, Seo, Settings,
-// Domain) are added in their respective phases.
+// Phase 1: multi-tenant foundation (User, Site, Deployment). Collection is
+// now built (converted-site CMS Collections — see Collection/CollectionItem
+// below). Remaining CMS content entities (Page, BlogPost, Media, Nav, Forms,
+// Seo, Settings, Domain) are added in their respective phases.
 
 generator client {
   provider = "prisma-client-js"
@@ -85,9 +86,70 @@ model Site {
   updatedAt  DateTime   @updatedAt
 
   deployments Deployment[]
+  collections Collection[]
 
   @@index([ownerId])
   @@index([status])
+}
+
+/// A Framer CMS Collection detected in a converted site's original bundle
+/// (e.g. a blog's N post pages sharing one template) — see
+/// lib/collections-detect.ts. `templateSourcePath` points into the immutable
+/// original bundle (Site.themeRef -> lib/store.ts's job store), never copied
+/// here, so the template stays the single source of truth. Item content
+/// lives in CollectionItem rows below; publish re-renders the template with
+/// current item field values (lib/collections-render.ts).
+model Collection {
+  id                  String   @id @default(cuid())
+  siteId              String
+  site                Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  name                String
+  /// e.g. "/blog" — the shared parent path of every item route.
+  routePrefix         String
+  /// report.files[] path (in the original bundle) the template markup is
+  /// re-read from at publish/preview time.
+  templateSourcePath  String
+  /// FieldSlot[] — see lib/collections-detect.ts.
+  fields              Json
+  /// 0..1 structural-match confidence from detection (informational).
+  confidence          Float    @default(0)
+  /// e.g. "/blog" if a listing/index page exists for this collection.
+  listingRoute        String?
+  /// Set once listing-page repeater detection succeeds:
+  /// { containerPath: number[], cardFields: FieldSlot[] }.
+  listingCardTemplate Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  items CollectionItem[]
+
+  @@unique([siteId, routePrefix])
+  @@index([siteId])
+}
+
+/// One item (e.g. a blog post) within a Collection. `fields` holds the
+/// per-item content (Record<fieldKey, string>; richtext values are
+/// sanitized HTML). Postgres rows ARE the draft state here — unlike
+/// Site.draftEdits, there's no separate staging blob (see plan rationale:
+/// item CRUD has its own lifecycle, publish is idempotent re-render).
+model CollectionItem {
+  id           String     @id @default(cuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  slug         String
+  fields       Json
+  /// Original route this item was seeded from at detection time; null for
+  /// items created after conversion (added directly in the CMS).
+  sourceRoute  String?
+  /// Soft-delete for seeded items so publish knows to drop that file; items
+  /// created post-conversion hard-delete instead.
+  deleted      Boolean    @default(false)
+  order        Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([collectionId, slug])
+  @@index([collectionId])
 }
 
 /// A blog post published on the marketing site (founders panel authors these).
@@ -123,6 +185,15 @@ model Deployment {
   log             String?
   /// Provider-side target for redeploys: Netlify site id / Vercel project name.
   externalId      String?
+  /// Vercel team/scope id the project was created under, if any (a personal
+  /// account has none). Required on every redeploy, not just the first
+  /// deploy — omitting it makes Vercel's API default to the token's personal
+  /// scope, which silently creates/updates a DIFFERENT, orphaned project
+  /// instead of the real one when the original deploy was team-scoped. Was
+  /// missing here entirely: Publish always redeployed with no teamId, so any
+  /// team-scoped Vercel project's live site never actually updated even
+  /// though publish reported success. Netlify has no equivalent concept.
+  teamId          String?
   /// User's deploy token, AES-256-GCM encrypted (lib/crypto.ts). Stored only
   /// when the user opts in ("save for AI edits"); enables the AI editor to
   /// push changes back to the same live site.
