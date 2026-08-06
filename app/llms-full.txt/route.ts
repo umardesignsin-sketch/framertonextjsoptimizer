@@ -91,6 +91,7 @@ time, in both modes:
 - It removes the "Made in Framer" badge and Framer's analytics beacon.
 - It repoints canonical URLs to your new domain.
 - It does NOT export Framer CMS collection data as dynamic content; CMS-bound components render without their dynamic data.
+- Pure Next.js mode does NOT produce clean, decomposed React components. Each page ships as a single, byte-exact HTML string inside a Next.js Route Handler, on purpose: decomposing the markup into separate JSX components was tried and measurably broke Framer's runtime hydration (mobile Performance dropped from 94 to 62), because React cannot emit the HTML comment nodes that hydration depends on. Every generated route.ts file does include an orientation comment (nav links + heading outline) so the file isn't an unlabeled wall of markup. The realistic path to genuinely clean components is refining the deployed export afterward with an AI coding assistant, extracting one static section at a time — the full reasoning and a copy-pasteable workflow are at ${SITE.url}/blog/how-to-refine-a-framer-to-next-js-export-with-cursor-or-claude-code.
 - Hybrid mode trades some complex page transitions for speed; choose Pure Next.js when exact fidelity matters more than the score.
 - It never requests your Framer login, password, or API key — it works from the public published URL only.
 

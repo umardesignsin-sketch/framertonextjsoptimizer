@@ -61,7 +61,7 @@ const NEXTJS_FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Is the generated code clean, hand-editable React components?",
-    a: "No, and we'd rather say so than oversell it: each page ships as a single, byte-exact HTML string, because decomposing it into separate JSX components breaks Framer's runtime hydration (we measured this directly — 94 down to 62 mobile Performance). Every route.ts file does include an orientation comment with the page's nav links and heading outline. For genuinely clean components, the realistic move is refining the deployed export with an AI coding assistant afterward, extracting one static section at a time.",
+    a: "No, and we'd rather say so than oversell it: each page ships as a single, byte-exact HTML string, because decomposing it into separate JSX components breaks Framer's runtime hydration (we measured this directly — 94 down to 62 mobile Performance). Every route.ts file does include an orientation comment with the page's nav links and heading outline. For genuinely clean components, the realistic move is refining the deployed export with an AI coding assistant afterward, extracting one static section at a time — see the full breakdown below.",
   },
 ];
 
@@ -441,6 +441,16 @@ function NextJsConverter() {
               </details>
             ))}
           </div>
+          <p className="mt-4 text-[13.5px] leading-relaxed text-muted-foreground">
+            More on the components question above:{" "}
+            <Link
+              href="/blog/how-to-refine-a-framer-to-next-js-export-with-cursor-or-claude-code"
+              className="text-foreground underline underline-offset-2"
+            >
+              why the export isn&apos;t pre-split into components, and how to refine it into clean ones with Cursor or Claude Code
+            </Link>
+            .
+          </p>
         </section>
       </main>
 
@@ -507,6 +517,16 @@ function NextjsSeoShell() {
               </details>
             ))}
           </div>
+          <p className="mt-4 text-[13.5px] leading-relaxed text-muted-foreground">
+            More on the components question above:{" "}
+            <Link
+              href="/blog/how-to-refine-a-framer-to-next-js-export-with-cursor-or-claude-code"
+              className="text-foreground underline underline-offset-2"
+            >
+              why the export isn&apos;t pre-split into components, and how to refine it into clean ones with Cursor or Claude Code
+            </Link>
+            .
+          </p>
         </section>
       </main>
       {nextjsJsonLd().map((obj, i) => (

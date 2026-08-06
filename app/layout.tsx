@@ -24,7 +24,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
   title: {
-    default: "Framer to Next.js Converter | Export Framer Sites",
+    default: "Free Framer to Next.js Converter | Export Framer Sites",
     template: "%s — Framer → Next.js Optimizer",
   },
   description:
@@ -68,14 +68,14 @@ export const metadata: Metadata = {
     type: "website",
     url: "/",
     siteName: SITE.name,
-    title: "Framer to Next.js Converter | Export Framer Sites",
+    title: "Free Framer to Next.js Converter | Export Framer Sites",
     description:
       "The free Framer to Next.js converter — turn any published Framer site into a production-ready Next.js project or clean static HTML. Strip Framer lock-in, boost Lighthouse & SEO, host anywhere.",
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Framer to Next.js Converter | Export Framer Sites",
+    title: "Free Framer to Next.js Converter | Export Framer Sites",
     description:
       "The free Framer to Next.js converter — turn any published Framer site into a production-ready Next.js project or clean static HTML. Strip Framer lock-in, boost Lighthouse & SEO, host anywhere.",
   },

@@ -23,6 +23,7 @@ const ROWS: [string, string, string][] = [
   ["Live preview before committing", "Built-in — preview the converted site in-app before downloading or deploying.", "Not part of the automated workflow."],
   ["Deploy", "One-click to Netlify or Vercel with your own token, or download the project.", "Download the exported ZIP and deploy it yourself."],
   ["Edit after export", "Visual editor: change text, links, and images and publish to your live site.", "Not included — edit the exported code directly."],
+  ["Code structure", "Pure Next.js mode ships each page as one byte-exact HTML string, on purpose — decomposing it into JSX broke Framer's hydration in testing (94→62 mobile Performance). Details below.", "Positions itself around structured, decomposed React/Next.js code organized into files — the stated goal of ConvertFramer's paid tiers."],
   ["Turnaround", "Typically under a minute for a full multi-page conversion.", "Automated tier is fast; Production Migration is a 7–10 business day turnaround."],
 ];
 
@@ -131,6 +132,18 @@ export default function VsConvertFramerPage() {
           <p className="mt-3 text-[12.5px] text-muted-foreground">
             Comparison reflects publicly available information at the time of writing;
             ConvertFramer&apos;s features and pricing may change — verify on their site.
+          </p>
+          <p className="mt-2 text-[12.5px] text-muted-foreground">
+            On code structure specifically: we&apos;d rather be straightforward about this one than
+            oversell it —{" "}
+            <Link
+              href="/blog/how-to-refine-a-framer-to-next-js-export-with-cursor-or-claude-code"
+              className="text-foreground underline underline-offset-2"
+            >
+              here&apos;s exactly why Pure Next.js output isn&apos;t pre-split into components, and the
+              realistic way to get clean ones afterward
+            </Link>
+            .
           </p>
         </section>
 
