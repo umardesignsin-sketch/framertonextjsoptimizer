@@ -53,56 +53,58 @@ export function EmailOtpForm({ next, cta }: { next: string; cta: string }) {
     }
   }
 
-  const input =
-    "h-11 w-full rounded-lg border border-border-strong bg-background px-3.5 text-[15px] outline-none focus:border-foreground";
-  const button =
-    "h-11 w-full rounded-lg bg-foreground text-[15px] font-medium text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40";
-
   if (step === "code") {
     return (
-      <div className="space-y-2">
-        {info && <p className="text-[13px] text-muted-foreground">{info}</p>}
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 10))}
-          onKeyDown={(e) => e.key === "Enter" && verify()}
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          placeholder="Code from your email"
-          className={`${input} text-center tracking-[0.3em]`}
-          autoFocus
-        />
-        <button onClick={verify} disabled={busy || code.trim().length < 6} className={button}>
-          {busy ? "Verifying…" : "Verify & continue"}
+      <>
+        {info && <p className="muted-copy">{info}</p>}
+        <div className="field-row">
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            onKeyDown={(e) => e.key === "Enter" && verify()}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="Code from your email"
+            style={{ textAlign: "center", letterSpacing: "0.3em" }}
+            autoFocus
+          />
+        </div>
+        {error && <p className="global-error">{error}</p>}
+        <button className="primary-button" type="button" onClick={verify} disabled={busy || code.trim().length < 6}>
+          <span>{busy ? "Verifying…" : "Verify & continue"}</span>
         </button>
-        {error && <p className="text-[13px] text-red-600">{error}</p>}
-        <div className="flex items-center justify-between text-[12.5px] text-muted-foreground">
-          <button onClick={() => { setStep("email"); setCode(""); setError(""); }} className="underline">
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
+          <button
+            type="button"
+            className="text-link"
+            onClick={() => { setStep("email"); setCode(""); setError(""); }}
+          >
             Use a different email
           </button>
-          <button onClick={sendCode} disabled={busy} className="underline disabled:opacity-50">
+          <button type="button" className="text-link" onClick={sendCode} disabled={busy}>
             Resend code
           </button>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="space-y-2">
-      <input
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && sendCode()}
-        type="email"
-        placeholder="you@example.com"
-        className={input}
-        autoFocus
-      />
-      <button onClick={sendCode} disabled={busy || !email.trim()} className={button}>
-        {busy ? "Sending…" : cta}
+    <>
+      <div className="field-row">
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && sendCode()}
+          type="email"
+          placeholder="you@example.com"
+          autoFocus
+        />
+      </div>
+      {error && <p className="global-error">{error}</p>}
+      <button className="primary-button" type="button" onClick={sendCode} disabled={busy || !email.trim()}>
+        <span>{busy ? "Sending…" : cta}</span>
       </button>
-      {error && <p className="text-[13px] text-red-600">{error}</p>}
-    </div>
+    </>
   );
 }

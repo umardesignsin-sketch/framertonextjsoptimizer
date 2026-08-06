@@ -40,6 +40,8 @@ export interface ConvertReport {
   stats: OptimizationStat[];
   notes: string[];
   files: ConvertedFile[];
+  /** og:image scraped from the source page — used as a dashboard card thumbnail. */
+  ogImage?: string;
   /**
    * Preview-only static HTML, one per route — NOT part of the downloadable
    * project (excluded from files/the zip). The Pure Next.js export ships

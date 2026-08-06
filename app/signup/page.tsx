@@ -6,6 +6,7 @@ import Link from "next/link";
 import { createSupabaseBrowser } from "@/lib/supabase/client";
 import { GoogleAuthButton } from "@/components/GoogleAuthButton";
 import { EmailOtpForm } from "@/components/EmailOtpForm";
+import { Icon } from "@/app/dashboard/theme/Icon";
 
 function SignupForm() {
   const params = useSearchParams();
@@ -42,73 +43,121 @@ function SignupForm() {
     }
   }
 
+  const loginHref = `/login${params.get("next") ? `?next=${params.get("next")}` : ""}`;
+
   if (check) {
     return (
-      <div className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-5">
-        <h1 className="text-2xl font-semibold">Check your email</h1>
-        <p className="mt-2 text-[14px] text-muted-foreground">
-          We sent a confirmation link to {email}. Click it, then{" "}
-          <Link href="/login" className="underline">
-            log in
+      <main className="auth-shell">
+        <header className="auth-topbar">
+          <Link className="brand" href="/" aria-label="FramerToNextJS home">
+            <span className="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span>FramerToNextJS</span>
           </Link>
-          .
+          <Link className="quiet-link" href={loginHref}>Sign in</Link>
+        </header>
+
+        <section className="auth-card" aria-live="polite">
+          <div className="auth-copy">
+            <p className="eyebrow">Verify email</p>
+            <h1>Check your inbox.</h1>
+            <p>We sent a confirmation link to {email}. Click it, then sign in.</p>
+          </div>
+        </section>
+
+        <p className="security-note">
+          Protected by email verification. We only ask for what is needed to keep your projects accessible.
         </p>
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-5">
-      <h1 className="text-2xl font-semibold">Create an account</h1>
-
-      <div className="mt-6">
-        <GoogleAuthButton next={next} label="Sign up with Google" />
-      </div>
-      <div className="my-5 flex items-center gap-3 text-[12px] text-muted-foreground">
-        <span className="h-px flex-1 bg-border" />
-        or
-        <span className="h-px flex-1 bg-border" />
-      </div>
-
-      {otpEnabled ? (
-        // OTP mandatory: no password bypass on signup — every account is
-        // verified by construction (Google or a real emailed code).
-        <EmailOtpForm next={next} cta="Email me a verification code" />
-      ) : (
-        <div className="space-y-2">
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            type="email"
-            placeholder="Email"
-            className="h-11 w-full rounded-lg border border-border-strong bg-background px-3.5 text-[15px] outline-none focus:border-foreground"
-          />
-          <input
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            type="password"
-            placeholder="Password (min. 6 characters)"
-            className="h-11 w-full rounded-lg border border-border-strong bg-background px-3.5 text-[15px] outline-none focus:border-foreground"
-          />
-          <button
-            onClick={submit}
-            disabled={busy || !email.trim() || password.length < 6}
-            className="h-11 w-full rounded-lg bg-foreground text-[15px] font-medium text-background hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {busy ? "Creating…" : "Sign up"}
-          </button>
-          {error && <p className="text-[13px] text-red-600">{error}</p>}
-        </div>
-      )}
-
-      <p className="mt-4 text-[13px] text-muted-foreground">
-        Already have an account?{" "}
-        <Link href={`/login${params.get("next") ? `?next=${params.get("next")}` : ""}`} className="underline">
-          Log in
+    <main className="auth-shell">
+      <header className="auth-topbar">
+        <Link className="brand" href="/" aria-label="FramerToNextJS home">
+          <span className="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>FramerToNextJS</span>
         </Link>
+        <Link className="quiet-link" href={loginHref}>Sign in</Link>
+      </header>
+
+      <section className="auth-card" aria-live="polite">
+        <div className="auth-copy">
+          <p className="eyebrow">Create workspace</p>
+          <h1>Start converting Framer sites.</h1>
+          <p>Create an account to save projects, download exports, and deploy when you are ready.</p>
+        </div>
+
+        <div className="auth-form">
+          <GoogleAuthButton next={next} label="Sign up with Google" />
+
+          <div className="auth-divider" role="separator">
+            <span>or</span>
+          </div>
+
+          {otpEnabled ? (
+            // OTP mandatory: no password bypass on signup — every account is
+            // verified by construction (Google or a real emailed code).
+            <EmailOtpForm next={next} cta="Email me a verification code" />
+          ) : (
+            <>
+              <div className="field-row" data-field="email">
+                <label htmlFor="email">Email</label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+
+              <div className="field-row" data-field="password">
+                <label htmlFor="password">Password</label>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="Password (min. 6 characters)"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submit()}
+                />
+              </div>
+
+              <div className="notice form-note">
+                <span>i</span>
+                <p>No card required. Your workspace is created after email verification.</p>
+              </div>
+
+              {error && <p className="global-error">{error}</p>}
+
+              <button
+                className="primary-button"
+                type="button"
+                disabled={busy || !email.trim() || password.length < 6}
+                onClick={submit}
+              >
+                <span>{busy ? "Creating…" : "Create account"}</span>
+                <Icon name="arrow-right" className="icon icon-sm" />
+              </button>
+            </>
+          )}
+        </div>
+
+        <footer className="auth-footer">
+          <span>Already have an account?</span>
+          <Link href={loginHref}>Sign in</Link>
+        </footer>
+      </section>
+
+      <p className="security-note">
+        Protected by email verification. We only ask for what is needed to keep your projects accessible.
       </p>
-    </div>
+    </main>
   );
 }
 

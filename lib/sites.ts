@@ -9,6 +9,7 @@ export async function recordConversion(
     sourceUrl: string;
     jobId: string;
     outputKind: "hybrid" | "nextjs";
+    ogImage?: string;
     /** Hybrid only — used for CMS Collection detection (lib/collections-detect.ts). */
     report?: ConvertReport;
   }
@@ -28,6 +29,7 @@ export async function recordConversion(
       framerUrl: params.sourceUrl,
       outputKind: params.outputKind,
       themeRef: params.jobId,
+      previewImage: params.ogImage || null,
       status: "ready",
     },
   });

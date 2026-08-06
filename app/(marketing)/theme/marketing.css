@@ -1,0 +1,3381 @@
+/* The shared dashboard stylesheet sets `body { font-family: var(--sans) }`,
+   which is Inter — and being unlayered it beats the Geist the root layout
+   loads. The marketing site is drawn entirely in Geist, so re-point the body
+   font here. This file is imported last by the marketing layout, so it only
+   affects these routes; the dashboard keeps Inter. */
+body {
+  background: #ffffff;
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* ── Marketing hero ───────────────────────────────────────────────────────
+   Figma: Homepage → Hero section (node 5:237). Frame is 1360 wide; the nav
+   sits in an 80px gutter while the hero content is a fixed 952px column
+   centred in the frame — the two do NOT share a padding value.
+
+   Vertical rhythm inside the 815px hero frame:
+     nav      0 → 56
+     content  128 → 802   (so 72px below the nav, which the header owns)
+   The header element also carries the 24px the Homepage frame leaves above
+   the nav, so .mktg-hero only needs the remaining 72px. */
+
+.mktg-hero {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  margin: 0 auto;
+  /* 952px content column + the 20px mobile gutters on either side. */
+  max-width: 992px;
+  padding: 72px 20px 0;
+  text-align: center;
+}
+
+.mktg-banner {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.mktg-badge {
+  background: #f7f6f5;
+  border-radius: 48px;
+  color: #0081d8;
+  display: inline-block;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 8px 14px;
+  text-transform: uppercase;
+}
+
+.mktg-title-area {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.mktg-title {
+  color: #1a1a1a;
+  font-size: clamp(34px, 5vw, 56px);
+  font-weight: 600;
+  letter-spacing: -0.75px;
+  line-height: 1.2;
+  margin: 0;
+  max-width: 640px;
+}
+
+.mktg-subtitle {
+  color: #767676;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0;
+  max-width: 456px;
+}
+
+/* ── Mode toggle ────────────────────────────────────────────────────── */
+
+.mktg-features {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  width: 100%;
+}
+
+/* No gap: the 426 × 48 track is exactly 4 + 184 + 234 + 4, so the two tabs
+   butt up against each other and the 4px padding is the only inset. The
+   hairline is an inset shadow rather than a border because Figma draws the
+   stroke *inside* the frame — a real border would push this to 428 × 50. */
+.mktg-toggle {
+  background: #fff;
+  border-radius: 29px;
+  box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.2);
+  display: inline-flex;
+  padding: 4px;
+  position: relative;
+}
+
+/* The sliding highlight. Width and X are written as inline styles by
+   ModeToggle, measured off the active tab — the two labels differ enough in
+   length that a fixed 50% would sit visibly wrong. Hidden until the component
+   takes over, so the server-rendered markup still shows a selected tab. */
+.mktg-toggle-thumb {
+  background: #f7f6f5;
+  border-radius: 80px;
+  bottom: 4px;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  top: 4px;
+  width: 0;
+}
+
+.mktg-toggle.is-animated .mktg-toggle-thumb {
+  opacity: 1;
+}
+
+.mktg-toggle.is-animated .mktg-toggle-thumb.is-ready {
+  transition:
+    transform 0.42s cubic-bezier(0.32, 0.72, 0, 1),
+    width 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.mktg-tab {
+  background: transparent;
+  border: 0;
+  border-radius: 80px;
+  color: #767676;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 12px 24px;
+  position: relative;
+  transition: color 0.25s ease;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.mktg-tab:not(.is-active):hover {
+  color: #434343;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mktg-toggle.is-animated .mktg-toggle-thumb.is-ready {
+    transition: none;
+  }
+}
+
+/* The trailing tab is drawn with a tighter right inset (pl-24 / pr-16). */
+.mktg-tab:last-child {
+  padding-right: 16px;
+}
+
+.mktg-tab.is-active {
+  background: #f7f6f5;
+  color: #1a1a1a;
+}
+
+/* ── Convert surface ─────────────────────────────────────────────────
+   952 × 280 clip with square corners. The blue artwork behind it is a
+   1632 × 550 image centred in — and overflowing — that clip, so it must be
+   sized absolutely rather than `cover`ed to the box. */
+
+.mktg-surface {
+  height: 280px;
+  overflow: hidden;
+  position: relative;
+  width: min(952px, 100%);
+}
+
+.mktg-surface-bg {
+  background: url("/hero-bg.png") center center / 1632px 550px no-repeat;
+  inset: 0;
+  position: absolute;
+}
+
+.mktg-pill-wrapper {
+  align-items: center;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+/* 483 = 24 (pl) + 243 (field) + 48 (gap) + 160 (CTA) + 8 (pr) */
+.mktg-pill {
+  align-items: center;
+  background: #fff;
+  border-radius: 63px;
+  display: flex;
+  gap: 48px;
+  overflow: hidden;
+  padding: 8px 8px 8px 24px;
+  width: min(483px, calc(100% - 40px));
+}
+
+.mktg-pill input {
+  background: transparent;
+  border: 0;
+  color: #1a1a1a;
+  flex: 1;
+  font-size: 18px;
+  line-height: 1;
+  min-width: 0;
+  outline: 0;
+}
+
+.mktg-pill input::placeholder {
+  color: #8a8a8a;
+}
+
+.mktg-pill input:focus,
+.mktg-pill input:focus-visible {
+  border: 0;
+  box-shadow: none;
+  outline: 0;
+}
+
+.mktg-pill button {
+  background: #0a0a0a;
+  border: 0;
+  border-radius: 72px;
+  color: #fafafa;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 16px 24px;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.mktg-pill button:hover {
+  opacity: 0.85;
+}
+
+.mktg-pill button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* The 1360px composition doesn't survive below ~640: the 426px segmented
+   track and the 483px pill both exceed the viewport. Everything keeps its
+   proportions, just at a smaller scale. */
+/* ── Benefits strip ────────────────────────────────────────────────────
+   Figma: Homepage → "Frame" (node 5:275). A full-bleed section: 80px side
+   padding on both the heading row and the benefit strip, independent of the
+   80px nav gutter above it and the max-w-5xl content column below it. */
+
+.mktg-benefits {
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 60px;
+  margin: 96px auto 0;
+  max-width: 1360px;
+}
+
+.mktg-benefits-head {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  justify-content: space-between;
+  padding: 0 80px;
+}
+
+.mktg-benefits-title {
+  color: #292929;
+  font-size: 40px;
+  font-weight: 500;
+  letter-spacing: -0.75px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.mktg-benefits-subtitle {
+  color: #767676;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 0;
+  max-width: 472px;
+}
+
+/* Row carries the top/bottom rule and bleeds to the full viewport so the line
+   has no endpoint (same split as .mktg-how-cards). The track keeps the columns
+   inside the heading's 1360 box, so nothing shifts — only the line extends. */
+.mktg-benefits-row {
+  border-bottom: 1px solid rgba(174, 174, 178, 0.2);
+  border-top: 1px solid rgba(174, 174, 178, 0.2);
+  left: 50%;
+  position: relative;
+  transform: translateX(-50%);
+  width: 100vw;
+}
+
+.mktg-benefits-track {
+  box-sizing: border-box;
+  display: flex;
+  margin: 0 auto;
+  max-width: 1360px;
+  width: 100%;
+}
+
+.mktg-benefit {
+  border-right: 1px solid rgba(174, 174, 178, 0.3);
+  flex: 1 0 0;
+  padding: 40px 20px 40px 80px;
+}
+
+.mktg-benefit:first-child {
+  border-left: 1px solid rgba(174, 174, 178, 0.3);
+}
+
+.mktg-benefit-stat {
+  color: #434343;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1;
+  margin: 0 0 12px;
+}
+
+.mktg-benefit-number {
+  color: #0081d8;
+}
+
+.mktg-benefit-detail {
+  color: #767676;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 0;
+  max-width: 320px;
+}
+
+/* ── How it works section ──────────────────────────────────────────────
+   Figma: Homepage → "How it works + Features section" (node 5:293).
+   Same full-bleed rhythm as benefits: 80px side gutters up to 1360px. */
+
+.mktg-how {
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 60px;
+  margin: 96px auto 0;
+  max-width: 1360px;
+}
+
+.mktg-how-head {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 80px;
+}
+
+.mktg-how-title {
+  color: #292929;
+  font-size: 40px;
+  font-weight: 500;
+  letter-spacing: -0.75px;
+  line-height: 1.2;
+  margin: 0;
+  max-width: 462px;
+}
+
+.mktg-how-subtitle {
+  color: #767676;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 0;
+  max-width: 556px;
+}
+
+/* Cards grid. The top/bottom rule must reach the true browser edges (no
+   visible endpoint), while the cards themselves stay contained and aligned
+   with the heading. So the two jobs are split:
+
+   .mktg-how-cards carries the rule and is broken OUT of .mktg-how's 1360 cap
+   to the full viewport (the standard left:50%/translateX(-50%)/100vw trick),
+   so the line has no endpoint at any width.
+
+   .mktg-how-row keeps the cards inside the same 1360 box + 80px inset the
+   heading uses (centred on the same viewport centre, so the two align), which
+   is why the cards don't stretch even though their border-carrying parent is
+   now full-bleed. */
+.mktg-how-cards {
+  border-bottom: 1px solid rgba(174, 174, 178, 0.2);
+  border-top: 1px solid rgba(174, 174, 178, 0.2);
+  display: flex;
+  flex-direction: column;
+  left: 50%;
+  position: relative;
+  transform: translateX(-50%);
+  width: 100vw;
+}
+
+.mktg-how-row {
+  box-sizing: border-box;
+  display: flex;
+  margin: 0 auto;
+  max-width: 1360px;
+  padding: 0 80px;
+  width: 100%;
+}
+
+/* The card is a plain flow column at every width — number, illustration,
+   text — rather than three absolutely-positioned pieces. Figma draws it with
+   absolute coordinates, but those only hold at exactly 600px wide: once the
+   column narrows the description wraps to more lines and slides under the
+   illustration. Flow layout reproduces the same 494px composition on desktop
+   (the illustration flexes into whatever the text doesn't use) and degrades
+   correctly at every size below it. */
+.mktg-card {
+  background: #fff;
+  border-right: 1px solid rgba(174, 174, 178, 0.2);
+  display: flex;
+  flex: 1 0 0;
+  flex-direction: column;
+  gap: 24px;
+  /* Fixed, not min-, so every card in the grid is the 494px Figma draws even
+     when an illustration's intrinsic height is larger — the illustration is
+     the flexible row, so it scales down into whatever the text leaves. */
+  height: 494px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 20px;
+}
+
+/* Vertical border between rows */
+.mktg-how-row:first-child .mktg-card {
+  border-bottom: 1px solid rgba(174, 174, 178, 0.2);
+}
+
+/* Left outer border on left-column cards */
+.mktg-how-row .mktg-card:first-child {
+  border-left: 1px solid rgba(174, 174, 178, 0.2);
+}
+
+/* ·· 01 badge — two 4×4px dots + number */
+.mktg-card-num {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.mktg-card-num-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.mktg-card-num-dot {
+  background: #292929;
+  border-radius: 1px;
+  height: 4px;
+  width: 4px;
+}
+
+.mktg-card-num-label {
+  color: #292929;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+/* Illustration takes whatever vertical room the text leaves. min-height: 0
+   lets it actually shrink below the image's intrinsic height — without it the
+   flex item refuses to compress and pushes the text out of the card. */
+.mktg-card-illus {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 0;
+}
+
+.mktg-card-illus img {
+  display: block;
+  height: auto;
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+/* Crossfade wrapper: both toggle variants occupy the same box, one fades over
+   the other. The wrapper takes its height from whichever image is in flow. */
+.mktg-card-illus-stack {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  width: 100%;
+  position: relative;
+}
+
+
+.mktg-card-illus-stack img {
+  grid-area: 1 / 1;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.mktg-card-illus-stack img.is-shown {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mktg-card-illus-stack img {
+    transition: none;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Card 02 — the conversion story, rebuilt from Figma nodes 5:333 and
+   5:664. Every measurement below is the literal design value on a
+   396×260 board; .c2-stage is scaled as a whole to fit the card, so
+   nothing here has to be re-derived as a percentage.
+   ══════════════════════════════════════════════════════════════════ */
+
+.c2-fit {
+  aspect-ratio: 396 / 260;
+  margin: 0 auto;
+  max-height: 100%;
+  max-width: 396px;
+  position: relative;
+  width: 100%;
+}
+
+.c2-stage {
+  background: #fff;
+  border: 1px solid rgba(174, 174, 178, 0.2);
+  border-radius: 28px;
+  box-sizing: border-box;
+  height: 260px;
+  left: 50%;
+  line-height: 1;
+  overflow: hidden;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(var(--c2-scale, 1));
+  width: 396px;
+}
+
+/* ── Browser chrome (shared across both tabs) ── */
+.c2-bar {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  left: 50%;
+  position: absolute;
+  top: 11px;
+  transform: translateX(-50%);
+  width: 360px;
+  z-index: 2;
+}
+
+.c2-lights {
+  display: flex;
+  gap: 3.94px;
+}
+
+.c2-light {
+  border-radius: 50%;
+  border-style: solid;
+  border-width: 0.5px;
+  box-sizing: border-box;
+  height: 10.86px;
+  width: 10.86px;
+}
+
+.c2-light--close { background: #fc5753; border-color: #df4744; }
+.c2-light--min   { background: #fdbc40; border-color: #de9f34; }
+.c2-light--max   { background: #36c84b; border-color: #27aa35; }
+
+.c2-urlgroup {
+  align-items: center;
+  display: flex;
+}
+
+/* The Framer tab collapses to a favicon when the second tab opens, so the
+   width/margin animate rather than the element simply appearing. */
+.c2-fav {
+  align-items: center;
+  background: #fff;
+  border: 0.5px solid rgba(174, 174, 178, 0.3);
+  border-radius: 6px;
+  box-sizing: border-box;
+  display: flex;
+  flex: 0 0 auto;
+  height: 22px;
+  justify-content: center;
+  margin-right: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: scale(0.55);
+  transition:
+    width 0.45s cubic-bezier(0.32, 0.72, 0, 1),
+    margin-right 0.45s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.45s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.3s ease;
+  width: 0;
+}
+
+.c2-stage.is-tab2 .c2-fav {
+  margin-right: 9px;
+  opacity: 1;
+  transform: scale(1);
+  width: 22px;
+}
+
+.c2-fav img {
+  display: block;
+  height: 15px;
+  transform: rotate(-90deg);
+  width: 12px;
+}
+
+.c2-addr {
+  align-items: center;
+  background: #fff;
+  border: 0.5px solid rgba(174, 174, 178, 0.3);
+  border-radius: 7.86px;
+  box-sizing: border-box;
+  display: flex;
+  flex: 0 0 auto;
+  height: 22px;
+  position: relative;
+  transition: width 0.45s cubic-bezier(0.32, 0.72, 0, 1);
+  width: 184px;
+}
+
+.c2-stage.is-tab2 .c2-addr { width: 149px; }
+
+.c2-addr-text {
+  font-size: 14px;
+  left: 10px;
+  padding: 0 2px;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+/* Both URLs sit at the same origin, so a plain crossfade would show them
+   overlapping. The outgoing one always leaves before the incoming one
+   arrives — in whichever direction the tab is changing. */
+.c2-addr-text--a {
+  color: #434343;
+  opacity: 1;
+  transition: opacity 0.2s ease 0.22s;
+}
+
+.c2-addr-text--b {
+  color: #767676;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.c2-stage.is-tab2 .c2-addr-text--a {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.c2-stage.is-tab2 .c2-addr-text--b {
+  opacity: 1;
+  transition: opacity 0.2s ease 0.22s;
+}
+
+/* Text selection left over from copying the URL */
+.c2-sel { background: rgba(0, 152, 255, 0.25); }
+
+.c2-divider {
+  border-left: 1px solid rgba(174, 174, 178, 0.5);
+  flex: 0 0 auto;
+  height: 20px;
+  margin: 0 9px;
+  width: 0;
+}
+
+.c2-plus {
+  display: block;
+  flex: 0 0 auto;
+  height: 14px;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+  width: 14px;
+}
+
+.c2-plus svg { display: block; }
+.c2-plus.is-pressed { opacity: 0.5; transform: scale(0.78); }
+
+.c2-brave {
+  display: block;
+  height: 16px;
+  width: 16px;
+}
+
+/* ── The two page bodies ── */
+.c2-frame {
+  inset: 0;
+  position: absolute;
+}
+
+.c2-frame--a {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity 0.4s ease,
+    transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.c2-stage.is-tab2 .c2-frame--a {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.985);
+}
+
+.c2-frame--b {
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 0.45s ease 0.1s,
+    transform 0.55s cubic-bezier(0.32, 0.72, 0, 1) 0.1s;
+}
+
+.c2-stage.is-tab2 .c2-frame--b {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Frame A: Copy link tooltip + page skeleton ── */
+.c2-tip {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  left: 50%;
+  position: absolute;
+  top: 35px;
+  transform: translateX(-50%) scale(1);
+  transition: transform 0.18s ease;
+  width: 68px;
+}
+
+.c2-tip.is-pressed { transform: translateX(-50%) scale(0.9); }
+
+.c2-tip-arrow {
+  background: url("/illustrations/card02/pointer.png") center / contain no-repeat;
+  height: 8.25px;
+  width: 9.526px;
+}
+
+.c2-tip-pill {
+  align-items: center;
+  background: #feeaaa;
+  border: 1px solid #fff;
+  border-radius: 56px;
+  box-shadow:
+    0 3px 2px rgba(0, 0, 0, 0.05),
+    0 1px 1px rgba(0, 0, 0, 0.09),
+    0 0 1px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+  color: #977a1d;
+  display: flex;
+  font-size: 12px;
+  height: 21px;
+  justify-content: center;
+  width: 100%;
+}
+
+.c2-skel {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  left: 50%;
+  opacity: 0.6;
+  position: absolute;
+  top: calc(50% + 66.5px);
+  transform: translate(-50%, -50%);
+}
+
+.c2-skel-screens {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 19px;
+}
+
+.c2-skel-boxes {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.c2-skel-box {
+  background: #d9d9d9;
+  border-radius: 8px;
+  display: block;
+  opacity: 0.2;
+}
+
+.c2-skel-box--1 { height: 22px; width: 180px; }
+.c2-skel-box--2 { height: 5px; width: 125px; }
+.c2-skel-box--3 { height: 5px; width: 73px; }
+.c2-skel-score  { height: 13px; width: 34px; }
+.c2-skel-image  { height: 85px; width: 262px; }
+
+/* ── Frame B: the converter ── */
+.c2-toggleblock {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  left: 0;
+  position: absolute;
+  top: 41px;
+  width: 394px;
+}
+
+.c2-rule {
+  background: rgba(174, 174, 178, 0.2);
+  height: 1px;
+  width: 394px;
+}
+
+.c2-toggle {
+  align-items: center;
+  background: #fff;
+  border-radius: 29px;
+  box-sizing: border-box;
+  display: flex;
+  height: 31px;
+  padding: 4px;
+}
+
+.c2-tab {
+  align-items: center;
+  border-radius: 80px;
+  box-sizing: border-box;
+  color: #8a8a8a;
+  display: flex;
+  font-size: 11px;
+  height: 23px;
+  justify-content: center;
+  white-space: nowrap;
+  width: 150px;
+}
+
+.c2-tab.is-on {
+  background: rgba(247, 246, 245, 0.7);
+  color: #434343;
+  width: 107px;
+}
+
+.c2-conv {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  left: 41px;
+  position: absolute;
+  top: 143px;
+  width: 312px;
+}
+
+.c2-input {
+  align-items: center;
+  border: 1px solid rgba(174, 174, 178, 0.2);
+  border-radius: 63px;
+  box-sizing: border-box;
+  display: flex;
+  height: 36px;
+  justify-content: space-between;
+  overflow: hidden;
+  padding: 0 4px 0 16px;
+  width: 100%;
+}
+
+/* One-shot border flash the moment the URL lands */
+.c2-input.is-pasting { animation: c2-flash 0.55s ease; }
+
+@keyframes c2-flash {
+  0%   { border-color: rgba(174, 174, 178, 0.2); }
+  35%  { border-color: rgba(0, 152, 255, 0.5); }
+  100% { border-color: rgba(174, 174, 178, 0.2); }
+}
+
+/* Held in flow even while empty so the button never shifts when it fills */
+.c2-input-url {
+  color: #434343;
+  font-size: 14px;
+  opacity: 0;
+  transform: translateY(3px);
+  transition:
+    opacity 0.28s ease,
+    transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  white-space: nowrap;
+}
+
+.c2-input-url.is-filled { opacity: 1; transform: translateY(0); }
+
+.c2-cta {
+  align-items: center;
+  background: #e9dbfe;
+  border: 1px solid #fff;
+  border-radius: 56px;
+  box-shadow:
+    0 3px 2px rgba(0, 0, 0, 0.05),
+    0 1px 1px rgba(0, 0, 0, 0.09),
+    0 0 1px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+  color: #5d4680;
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 12px;
+  height: 28px;
+  justify-content: center;
+  transition: transform 0.18s ease, filter 0.18s ease;
+  width: 108px;
+}
+
+.c2-cta.is-pressed { filter: brightness(0.96); transform: scale(0.94); }
+
+.c2-status {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  opacity: 0;
+  padding: 0 12px;
+  transform: translateY(4px);
+  transition:
+    opacity 0.35s ease,
+    transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.c2-status.is-shown { opacity: 1; transform: translateY(0); }
+
+.c2-status-mark {
+  display: block;
+  flex: 0 0 auto;
+  height: 10px;
+  width: 10.764px;
+}
+
+.c2-status-mark.is-done { animation: c2-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+@keyframes c2-pop {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}
+
+/* Rotation lives on its own element so the "done" pop can't fight it. Kept
+   applied-but-paused so stopping freezes in place instead of snapping to 0. */
+.c2-status-spin {
+  animation: c2-spin 0.9s linear infinite;
+  animation-play-state: paused;
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.c2-status-spin.is-spinning { animation-play-state: running; }
+
+@keyframes c2-spin {
+  to { transform: rotate(360deg); }
+}
+
+.c2-status-spin img {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.c2-status-text {
+  display: block;
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  height: 12px;
+  position: relative;
+  width: 88px;
+}
+
+.c2-status-label {
+  color: #767676;
+  left: 0;
+  line-height: 12px;
+  opacity: 0;
+  position: absolute;
+  right: 0;
+  text-align: center;
+  top: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 0.3s ease,
+    transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  white-space: nowrap;
+}
+
+.c2-status-label.is-current { opacity: 1; transform: translateY(0); }
+.c2-status-label.is-past { opacity: 0; transform: translateY(-6px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .c2-fav,
+  .c2-addr,
+  .c2-addr-text,
+  .c2-frame--a,
+  .c2-frame--b,
+  .c2-tip,
+  .c2-plus,
+  .c2-cta,
+  .c2-input-url,
+  .c2-status,
+  .c2-status-label {
+    transition: none;
+  }
+
+  .c2-status-spin,
+  .c2-status-mark.is-done,
+  .c2-input.is-pasting {
+    animation: none;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Card 03 — device preview + Lighthouse scores, rebuilt from the
+   Figma frames. Laid out at the design's own 299.27 × 305.51 and
+   scaled as a whole, so every number below is the literal design
+   value rather than a re-derived percentage.
+   ══════════════════════════════════════════════════════════════════ */
+
+.c3-fit {
+  aspect-ratio: 299.27 / 305.51;
+  margin: 0 auto;
+  max-height: 100%;
+  max-width: 299.27px;
+  position: relative;
+  width: 100%;
+}
+
+.c3-stage {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  height: 305.51px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(var(--c3-scale, 1));
+  width: 299.27px;
+}
+
+/* Toggle + device, 220 tall (38 toggle + 26 gap + 156 device) */
+.c3-icon-col {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  height: 220px;
+}
+
+/* ── Mobile/Desktop toggle ── */
+.c3-toggle {
+  background: #fff;
+  border: 1px solid rgba(174, 174, 178, 0.1);
+  border-radius: 24px;
+  box-sizing: border-box;
+  display: flex;
+  height: 38px;
+  padding: 4px;
+  position: relative;
+  width: 173px;
+}
+
+.c3-toggle-thumb {
+  background: #f7f6f5;
+  border-radius: 80px;
+  bottom: 4px;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  top: 4px;
+  width: 0;
+}
+
+.c3-toggle.is-animated .c3-toggle-thumb { opacity: 1; }
+
+.c3-toggle.is-animated .c3-toggle-thumb.is-ready {
+  transition:
+    transform 0.42s cubic-bezier(0.32, 0.72, 0, 1),
+    width 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Widths are Figma's (77 / 88) so the highlight lands exactly on the label */
+.c3-tab {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 80px;
+  box-sizing: border-box;
+  color: #292929;
+  cursor: pointer;
+  display: flex;
+  font-size: 14px;
+  font-weight: 500;
+  height: 30px;
+  justify-content: center;
+  line-height: 1;
+  padding: 8px 16px;
+  position: relative;
+  transition: color 0.25s ease;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.c3-tab--mobile { width: 77px; }
+.c3-tab--desktop { width: 88px; }
+.c3-tab.is-active { color: #1a1a1a; }
+
+/* ── Device artwork: both frames share one 156-tall cell so swapping
+   never nudges the layout — only the device itself moves. ── */
+.c3-devices {
+  align-items: center;
+  display: grid;
+  height: 156px;
+  justify-items: center;
+  place-items: center;
+}
+
+.c3-slot {
+  grid-area: 1 / 1;
+  line-height: 0;
+  opacity: 0;
+  transform: scale(0.9) translateY(6px);
+  transition:
+    opacity 0.3s ease,
+    transform 0.5s cubic-bezier(0.34, 1.28, 0.64, 1);
+}
+
+/* Incoming device waits a beat so the outgoing one has cleared */
+.c3-slot.is-shown {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+  transition-delay: 0.08s;
+}
+
+/* Figma puts a soft stack of shadows on the device; drop-shadow follows the
+   silhouette rather than a box, and isn't clipped by the image bounds. */
+.c3-device {
+  display: block;
+  filter:
+    drop-shadow(0 3px 2px rgba(0, 0, 0, 0.05))
+    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.09));
+  height: 156px;
+}
+
+.c3-device--phone { width: 96px; }
+.c3-device--laptop { width: 209px; }
+
+/* ── Lighthouse-style score rings ── */
+.c3-scores {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  height: 57.51px;
+  justify-content: center;
+  width: 299.27px;
+}
+
+.c3-metric {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+}
+
+.c3-ring-wrap {
+  height: 34.4px;
+  position: relative;
+  width: 34.4px;
+}
+
+.c3-ring {
+  display: block;
+  height: 100%;
+  /* start the sweep at 12 o'clock */
+  transform: rotate(-90deg);
+  width: 100%;
+}
+
+.c3-ring-track {
+  fill: none;
+  stroke: rgba(2, 209, 112, 0.16);
+}
+
+.c3-ring-bar {
+  fill: none;
+  stroke: #02d170;
+  stroke-linecap: round;
+}
+
+.c3-ring-value {
+  align-items: center;
+  color: #02d170;
+  display: flex;
+  font-size: 11px;
+  font-weight: 500;
+  height: 100%;
+  justify-content: center;
+  left: 0;
+  line-height: 1;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+.c3-metric-label {
+  color: #434343;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .c3-toggle.is-animated .c3-toggle-thumb.is-ready,
+  .c3-slot {
+    transition: none;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Card 01 — output picker. The toggle and the progress bar are real
+   elements laid over the artwork at the SVG's own coordinates, on a
+   393 × 285 board scaled as a unit. Motion matches card 03 so the
+   two cards read as one system.
+   ══════════════════════════════════════════════════════════════════ */
+
+.c1-fit {
+  aspect-ratio: 393 / 285;
+  margin: 0 auto;
+  max-height: 100%;
+  max-width: 393px;
+  position: relative;
+  width: 100%;
+}
+
+.c1-stage {
+  height: 285px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(var(--c1-scale, 1));
+  width: 393px;
+}
+
+/* Artwork layers — same lift-and-settle as card 03's device swap */
+.c1-art {
+  inset: 0;
+  line-height: 0;
+  opacity: 0;
+  position: absolute;
+  transform: scale(0.94) translateY(6px);
+  transition:
+    opacity 0.3s ease,
+    transform 0.5s cubic-bezier(0.34, 1.28, 0.64, 1);
+}
+
+.c1-art.is-shown {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+  transition-delay: 0.08s;
+}
+
+.c1-art img { display: block; height: 285px; width: 393px; }
+
+/* ── Progress bar, at the artwork's own 149.5 / 197 origin ── */
+.c1-bar {
+  background: #f7f6f5;
+  border-radius: 6px;
+  display: block;
+  height: 12px;
+  left: 149.5px;
+  overflow: hidden;
+  position: absolute;
+  top: 197px;
+  width: 93px;
+}
+
+/* The texture is pinned at full track width, so growing the fill reveals it
+   rather than stretching it. Remounted each switch to replay the keyframe. */
+.c1-bar-fill {
+  animation: c1-fill 0.9s cubic-bezier(0.32, 0.72, 0, 1) both;
+  background: url("/illustrations/card01/bar-fill.svg") left center / 93px 12px no-repeat;
+  border-radius: 6px;
+  display: block;
+  height: 12px;
+}
+
+@keyframes c1-fill {
+  from { width: 0; }
+  to { width: 93px; }
+}
+
+/* ── Toggle, rebuilt from the artwork's own measurements ── */
+.c1-toggle {
+  background: #fff;
+  border: 1px solid rgba(174, 174, 178, 0.1);
+  border-radius: 24px;
+  box-sizing: border-box;
+  display: flex;
+  height: 48px;
+  left: 4px;
+  padding: 4px;
+  position: absolute;
+  top: 4px;
+  width: 385px;
+}
+
+.c1-toggle-thumb {
+  background: #f7f6f5;
+  border-radius: 19px;
+  bottom: 4px;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  top: 4px;
+  width: 0;
+}
+
+.c1-toggle.is-animated .c1-toggle-thumb { opacity: 1; }
+
+.c1-toggle.is-animated .c1-toggle-thumb.is-ready {
+  transition:
+    transform 0.42s cubic-bezier(0.32, 0.72, 0, 1),
+    width 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Fixed widths summing to the 377px track. Figma nudges the selected pill 8px
+   wider, but animating that would make the thumb measure a stale width on the
+   frame it is placed — leaving the highlight short of the pill it sits under.
+   Splitting the difference keeps thumb and pill in exact register. */
+.c1-tab {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 19px;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  font-size: 14px;
+  font-weight: 500;
+  height: 38px;
+  justify-content: center;
+  line-height: 1;
+  position: relative;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.c1-tab--next { color: #1a1a1a; width: 163px; }
+.c1-tab--perf { color: #292929; width: 214px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .c1-art,
+  .c1-toggle.is-animated .c1-toggle-thumb.is-ready {
+    transition: none;
+  }
+
+  .c1-bar-fill { animation: none; width: 93px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Card 04 — the finished files. Three layers on the board's own
+   248 × 245 viewBox, so stacking restores Figma's exact composition.
+   Builds once on first sight, then drifts very slightly.
+   ══════════════════════════════════════════════════════════════════ */
+
+.c4-fit {
+  aspect-ratio: 248 / 245;
+  margin: 0 auto;
+  max-height: 100%;
+  max-width: 248px;
+  position: relative;
+  width: 100%;
+}
+
+.c4-stage {
+  height: 245px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(var(--c4-scale, 1));
+  width: 248px;
+}
+
+.c4-layer {
+  inset: 0;
+  line-height: 0;
+  opacity: 0;
+  position: absolute;
+  transform: translateY(10px) scale(0.96);
+  transition:
+    opacity 0.45s ease,
+    transform 0.6s cubic-bezier(0.34, 1.28, 0.64, 1);
+}
+
+.c4-layer img { display: block; height: 245px; width: 248px; }
+
+.c4-stage.is-in .c4-layer {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Back page settles first, then the zip lands on top of it, then the actions */
+.c4-stage.is-in .c4-layer--index { transition-delay: 0s; }
+.c4-stage.is-in .c4-layer--zip { transition-delay: 0.14s; }
+.c4-stage.is-in .c4-layer--buttons { transition-delay: 0.28s; }
+
+/* Drift lives on an inner element so it can't fight the entrance transform.
+   Held off until the entrance has finished, and given mismatched periods so
+   the two documents never bob in lockstep. */
+.c4-float { display: block; }
+
+/* Periods are 8% quicker than the 6.8s / 5.5s they started at; the ratio
+   between them is kept so the two stay permanently out of phase. */
+.c4-stage.is-in .c4-float--index {
+  animation: c4-drift 6.3s ease-in-out 1s infinite;
+}
+
+.c4-stage.is-in .c4-float--zip {
+  animation: c4-drift 5.09s ease-in-out 1.3s infinite;
+}
+
+@keyframes c4-drift {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .c4-layer { transition: none; }
+  .c4-stage.is-in .c4-float--index,
+  .c4-stage.is-in .c4-float--zip { animation: none; }
+}
+
+
+.mktg-card-text {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mktg-card-name {
+  color: #434343;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1;
+  margin: 0;
+}
+
+.mktg-card-desc {
+  color: #767676;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 0;
+}
+
+@media (max-width: 1359px) {
+  .mktg-how-head,
+  .mktg-how-row {
+    padding: 0 40px;
+  }
+}
+
+/* Below ~1100 the two-up grid narrows each card enough that the description
+   wraps to more lines than the 494px frame budgets for, so stop pinning the
+   height and let the row grow instead of squeezing the illustration away. */
+@media (max-width: 1100px) {
+  .mktg-card {
+    height: auto;
+    min-height: 440px;
+  }
+}
+
+@media (max-width: 900px) {
+  .mktg-how {
+    gap: 40px;
+    margin-top: 72px;
+  }
+
+  .mktg-how-head {
+    flex-direction: column;
+    gap: 16px;
+    padding: 0 20px;
+  }
+
+  .mktg-how-title {
+    font-size: 32px;
+    max-width: none;
+  }
+
+  .mktg-how-subtitle {
+    max-width: none;
+  }
+
+  /* One card per row: the side borders become the section's own edges, and
+     each card carries the divider under it instead of the row. Padding
+     resets to 0 here — the 40px inset from the tier above would otherwise
+     carry through and the cards would stop being edge-to-edge. */
+  .mktg-how-row {
+    flex-direction: column;
+    padding: 0;
+  }
+
+  /* `flex: 1 0 0` sizes the MAIN axis — once the row flips to a column that
+     is the height, so the card would collapse to zero and `overflow: hidden`
+     would clip everything but the number badge. Size to content instead. */
+  .mktg-card {
+    border-bottom: 1px solid rgba(174, 174, 178, 0.2);
+    border-left: 0;
+    border-right: 0;
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 0;
+  }
+
+  .mktg-how-row .mktg-card:first-child {
+    border-left: 0;
+  }
+
+  /* The last card's border would double up with the section's own bottom
+     rule, so drop it. */
+  .mktg-how-row:last-child .mktg-card:last-child {
+    border-bottom: 0;
+  }
+
+  /* Illustrations are drawn at ~400px wide; give them a floor so they don't
+     collapse to a sliver, and a ceiling so they don't dominate the card. */
+  .mktg-card-illus {
+    min-height: 240px;
+    padding: 8px 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .mktg-how-title {
+    font-size: 28px;
+  }
+
+  .mktg-card {
+    gap: 20px;
+    padding: 24px 20px;
+  }
+
+  .mktg-card-illus {
+    min-height: 180px;
+  }
+
+  .mktg-card-name {
+    font-size: 18px;
+  }
+
+  .mktg-card-desc {
+    font-size: 15px;
+  }
+}
+
+@media (max-width: 1359px) {
+  .mktg-benefits-head {
+    padding: 0 40px;
+  }
+
+  .mktg-benefit {
+    padding-left: 40px;
+  }
+}
+
+@media (max-width: 900px) {
+  .mktg-benefits {
+    gap: 40px;
+    margin-top: 72px;
+  }
+
+  .mktg-benefits-head {
+    flex-direction: column;
+    gap: 16px;
+    padding: 0 20px;
+  }
+
+  .mktg-benefits-title {
+    font-size: 32px;
+  }
+
+  .mktg-benefits-subtitle {
+    font-size: 18px;
+    max-width: none;
+  }
+
+  .mktg-benefits-row {
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .mktg-benefits-track {
+    flex-direction: column;
+  }
+
+  .mktg-benefit {
+    border-left: 0 !important;
+    border-right: 0;
+    border-top: 1px solid rgba(174, 174, 178, 0.3);
+    padding: 24px 20px;
+  }
+
+  .mktg-benefit:first-child {
+    border-top: 0;
+  }
+
+  /* The 320px cap exists to hold the desktop column's measure; once the
+     benefit spans the viewport it just leaves a ragged gap on the right. */
+  .mktg-benefit-detail {
+    max-width: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .mktg-benefits-title {
+    font-size: 28px;
+  }
+
+  .mktg-benefits-subtitle {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  .mktg-hero {
+    gap: 32px;
+    padding-top: 48px;
+  }
+
+  .mktg-toggle {
+    max-width: 100%;
+  }
+
+  .mktg-tab,
+  .mktg-tab:last-child {
+    font-size: 13px;
+    padding: 10px 14px;
+  }
+
+  /* The surface stops being a fixed 280px window and hugs the stacked pill,
+     so the pill goes back into normal flow to give it a height. It stays
+     `relative` rather than `static` — the tiled background is absolutely
+     positioned, so an unpositioned pill would paint underneath it. */
+  .mktg-surface {
+    height: auto;
+    padding: 40px 16px;
+  }
+
+  .mktg-pill-wrapper {
+    height: auto;
+    inset: auto;
+    position: relative;
+  }
+
+  .mktg-pill {
+    border-radius: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0 auto;
+    padding: 14px;
+    width: 100%;
+  }
+
+  .mktg-pill input {
+    font-size: 16px;
+    min-width: 100%;
+    order: 1;
+    padding: 4px 0;
+  }
+
+  .mktg-pill button {
+    flex: 1;
+    order: 2;
+    text-align: center;
+  }
+}
+
+/* ── FAQ section ───────────────────────────────────────────────────────
+   Figma: Homepage → "FAQ section" (node 5:474).
+   Two-column layout: left info/CTA, right accordion panel. Same 80px gutters. */
+
+.mktg-faq {
+  align-items: flex-start;
+  background: #ffffff;
+  display: flex;
+  margin: 96px auto 0;
+  max-width: 1360px;
+  padding: 0 80px 96px;
+}
+
+.mktg-faq-left {
+  display: flex;
+  flex: 1 0 0;
+  flex-direction: column;
+  gap: 40px;
+  min-width: 0;
+  padding-right: 68px;
+}
+
+.mktg-faq-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.mktg-faq-title {
+  color: #292929;
+  font-size: 40px;
+  font-weight: 500;
+  letter-spacing: -0.75px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.mktg-faq-subtitle {
+  color: #767676;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.mktg-faq-cta {
+  align-items: center;
+  background: #292929;
+  border-radius: 72px;
+  color: #fafafa;
+  display: inline-flex;
+  font-size: 16px;
+  font-weight: 500;
+  justify-content: center;
+  padding: 16px 24px;
+  text-decoration: none;
+  transition: background 0.15s;
+  white-space: nowrap;
+  width: fit-content;
+}
+
+.mktg-faq-cta:hover {
+  background: #434343;
+}
+
+.mktg-faq-right {
+  background: rgba(247, 246, 245, 0.4);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  padding: 32px;
+  width: 678px;
+}
+
+.mktg-faq-item {
+  border-top: 1px solid rgba(174, 174, 178, 0.2);
+  padding: 24px 0;
+}
+
+.mktg-faq-item:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.mktg-faq-item:last-child {
+  padding-bottom: 0;
+}
+
+.mktg-faq-item-header {
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.mktg-faq-item-question {
+  color: #434343;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.mktg-faq-item-icon {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
+
+.mktg-faq-item-answer {
+  color: #767676;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 16px 0 0;
+}
+
+@media (max-width: 1100px) {
+  .mktg-faq-right {
+    flex-shrink: 1;
+    width: auto;
+    flex: 1 0 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .mktg-faq {
+    flex-direction: column;
+    gap: 48px;
+    padding: 0 40px 72px;
+  }
+
+  .mktg-faq-left {
+    padding-right: 0;
+    padding-top: 0;
+  }
+
+  .mktg-faq-right {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .mktg-faq {
+    padding: 0 20px 60px;
+  }
+
+  .mktg-faq-title {
+    font-size: 28px;
+  }
+
+  .mktg-faq-item-question {
+    font-size: 17px;
+  }
+}
+
+/* ── Final CTA ─────────────────────────────────────────────────────────
+   Figma: Homepage → "Final cta+Footer" → "FInal CTA" (node 5:547).
+   Full-bleed rule top and bottom; the inner box carries the vertical rules
+   and is exactly 952 (surface) + 48px padding either side = 1048px. The
+   toggle/surface/pill are the hero's, reused rather than restated. */
+
+.mktg-final-cta {
+  border-bottom: 1px solid rgba(174, 174, 178, 0.2);
+  border-top: 1px solid rgba(174, 174, 178, 0.2);
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+/* The vertical rules are inset shadows, not borders: Figma draws the stroke
+   *inside* the frame, so real borders would eat 2px out of the content box
+   and leave the 952px surface at 950. */
+.mktg-final-cta-box {
+  align-items: center;
+  box-shadow:
+    inset 1px 0 0 rgba(174, 174, 178, 0.2),
+    inset -1px 0 0 rgba(174, 174, 178, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  padding: 48px;
+  width: min(1048px, 100%);
+}
+
+.mktg-final-cta-head {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  text-align: center;
+  width: 100%;
+}
+
+.mktg-final-cta-title {
+  color: #292929;
+  font-size: 40px;
+  font-weight: 500;
+  letter-spacing: -0.75px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.mktg-final-cta-subtitle {
+  color: #767676;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 0;
+  max-width: 409px;
+}
+
+/* ── Footer ────────────────────────────────────────────────────────────
+   Figma: Homepage → "Final cta+Footer" → "FOOTER" (node 5:564). Same
+   1360px / 80px gutter rhythm as the sections above, so the brand column
+   lines up with their headings. */
+
+.mktg-footer {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 80px;
+  margin: 64px auto 0;
+  max-width: 1360px;
+  padding: 0 80px 24px;
+  width: 100%;
+}
+
+.mktg-footer-grid {
+  align-items: flex-start;
+  display: flex;
+  gap: 40px;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.mktg-footer-brand {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mktg-footer-logo {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+  text-decoration: none;
+}
+
+.mktg-footer-mark {
+  background: #fff;
+  display: block;
+  flex-shrink: 0;
+  height: 48px;
+  overflow: hidden;
+  position: relative;
+  width: 48px;
+}
+
+.mktg-footer-mark > span {
+  display: block;
+  inset: 19.58% 17.22% 18.65% 16.29%;
+  position: absolute;
+}
+
+.mktg-footer-mark img {
+  display: block;
+  height: 100%;
+  inset: 0;
+  max-width: none;
+  position: absolute;
+  width: 100%;
+}
+
+.mktg-footer-wordmark {
+  color: #000;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.mktg-footer-tagline {
+  color: #575757;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 0;
+  max-width: 342px;
+}
+
+.mktg-footer-links {
+  align-items: flex-start;
+  display: flex;
+  gap: 56px;
+  padding-top: 8px;
+}
+
+.mktg-footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.mktg-footer-col-heading {
+  color: #292929;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+  margin: 0;
+}
+
+.mktg-footer-col-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mktg-footer-col-list a {
+  color: #575757;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  text-decoration: none;
+  transition: color 0.15s;
+  white-space: nowrap;
+}
+
+.mktg-footer-col-list a:hover {
+  color: #292929;
+}
+
+.mktg-footer-legal {
+  color: #767676;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .mktg-final-cta-box {
+    gap: 32px;
+    padding: 40px 20px;
+  }
+
+  .mktg-final-cta-title {
+    font-size: 32px;
+  }
+
+  .mktg-footer {
+    gap: 48px;
+    padding: 0 40px 24px;
+  }
+
+  .mktg-footer-grid {
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  .mktg-footer-links {
+    flex-wrap: wrap;
+    gap: 40px;
+    padding-top: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .mktg-final-cta-title {
+    font-size: 28px;
+  }
+
+  .mktg-footer {
+    padding: 0 20px 24px;
+  }
+
+  .mktg-footer-links {
+    gap: 28px 32px;
+  }
+}
+
+/* ── Legal pages (Terms, Privacy) ──────────────────────────────────────
+   Figma: "Terms & Service" (node 5:760). The header band is full-bleed with
+   rules top and bottom; the 1200px box inside carries the vertical rules and
+   insets its text a further 80px — which is why the page title sits to the
+   right of the body copy below it. That offset is intentional in the design. */
+
+.page-head {
+  border-bottom: 1px solid rgba(174, 174, 178, 0.2);
+  border-top: 1px solid rgba(174, 174, 178, 0.2);
+  display: flex;
+  justify-content: center;
+  margin-top: 120px;
+  width: 100%;
+}
+
+/* Inset shadow rather than a border, matching .mktg-final-cta-box: Figma
+   draws the stroke inside the frame, so a border would shrink the content. */
+.page-head-box {
+  box-shadow:
+    inset 1px 0 0 rgba(174, 174, 178, 0.2),
+    inset -1px 0 0 rgba(174, 174, 178, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 48px 0;
+  width: min(1200px, 100%);
+}
+
+.page-head-row {
+  align-items: center;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  padding: 0 80px;
+}
+
+.page-title {
+  color: #292929;
+  font-size: 40px;
+  font-weight: 600;
+  letter-spacing: -0.75px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.page-updated {
+  color: #767676;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.page-intro {
+  color: #767676;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0;
+  max-width: 553px;
+}
+
+.page-body {
+  display: flex;
+  flex-direction: column;
+  gap: 80px;
+  margin: 144px auto 0;
+  max-width: 1360px;
+  padding: 0 80px 144px;
+}
+
+.page-section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.page-section h2 {
+  color: #292929;
+  font-size: 40px;
+  font-weight: 600;
+  letter-spacing: -0.75px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+/* Consecutive paragraphs read as continuous lines here — the design has no
+   inter-paragraph gap, only the 24px between heading and body. */
+.page-prose {
+  color: #767676;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.page-prose p {
+  margin: 0;
+}
+
+.page-list {
+  list-style: disc;
+  margin: 0;
+  padding-left: 30px;
+}
+
+.page-list li {
+  margin: 0;
+}
+
+.page-link {
+  color: #0081d8;
+  text-decoration: none;
+}
+
+.page-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+  .page-head {
+    margin-top: 80px;
+  }
+
+  .page-head-box {
+    padding: 40px 0;
+  }
+
+  .page-head-row {
+    padding: 0 40px;
+  }
+
+  .page-title {
+    font-size: 32px;
+  }
+
+  .page-body {
+    gap: 56px;
+    margin-top: 72px;
+    padding: 0 40px 72px;
+  }
+
+  .page-section h2 {
+    font-size: 28px;
+  }
+
+  .page-prose {
+    font-size: 17px;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-head {
+    margin-top: 56px;
+  }
+
+  .page-head-box {
+    padding: 32px 0;
+  }
+
+  .page-head-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 20px;
+  }
+
+  .page-title {
+    font-size: 28px;
+  }
+
+  .page-body {
+    gap: 48px;
+    margin-top: 56px;
+    padding: 0 20px 60px;
+  }
+
+  .page-section h2 {
+    font-size: 24px;
+  }
+
+  .page-prose {
+    font-size: 16px;
+  }
+}
+
+/* ── Shared page primitives ────────────────────────────────────────────
+   The vocabulary the content pages are built from, so they inherit the
+   homepage's type scale, hairlines and colours instead of restating
+   Tailwind utilities. Modifiers: .is-narrow (tighter reading measure),
+   .is-compact (smaller headings / section gap). */
+
+.page-body.is-narrow {
+  max-width: 1000px;
+  padding-left: 40px;
+  padding-right: 40px;
+}
+
+.page-body.is-compact {
+  gap: 56px;
+  margin-top: 80px;
+  padding-bottom: 96px;
+}
+
+.page-section.is-compact h2 {
+  font-size: 32px;
+}
+
+.page-prose.is-sm {
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.page-prose.is-sm p + p,
+.page-prose p + ul,
+.page-prose ul + p {
+  margin-top: 12px;
+}
+
+.page-prose strong {
+  color: #292929;
+  font-weight: 500;
+}
+
+.page-prose a:not(.page-link) {
+  color: #292929;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.page-breadcrumb {
+  color: #767676;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.page-breadcrumb a {
+  color: #767676;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.page-breadcrumb a:hover {
+  color: #292929;
+}
+
+.page-lede {
+  color: #767676;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.page-note {
+  color: #8a8a8a;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* Cards — square, hairline-bounded, matching the how-it-works treatment
+   rather than the old rounded-2xl look. */
+.page-grid-2 {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.page-card {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 28px;
+}
+
+.page-card h3 {
+  color: #434343;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.page-card ul {
+  color: #767676;
+  display: flex;
+  flex-direction: column;
+  font-size: 16px;
+  gap: 10px;
+  line-height: 1.4;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.page-card strong {
+  color: #292929;
+  font-weight: 500;
+}
+
+/* Comparison table */
+.page-table-wrap {
+  box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.2);
+  overflow-x: auto;
+}
+
+.page-table {
+  border-collapse: collapse;
+  min-width: 720px;
+  width: 100%;
+}
+
+.page-table th {
+  background: #f7f6f5;
+  color: #434343;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 14px 20px;
+  text-align: left;
+}
+
+.page-table td {
+  border-top: 1px solid rgba(174, 174, 178, 0.2);
+  color: #767676;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.5;
+  padding: 18px 20px;
+  vertical-align: top;
+}
+
+.page-table td:first-child {
+  color: #292929;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Native <details> accordion, styled to match the homepage FAQ. */
+.page-faq {
+  background: rgba(247, 246, 245, 0.4);
+  display: flex;
+  flex-direction: column;
+  padding: 8px 32px;
+}
+
+.page-faq details {
+  border-top: 1px solid rgba(174, 174, 178, 0.2);
+  padding: 24px 0;
+}
+
+.page-faq details:first-of-type {
+  border-top: 0;
+}
+
+.page-faq summary {
+  align-items: center;
+  color: #434343;
+  cursor: pointer;
+  display: flex;
+  font-size: 18px;
+  font-weight: 500;
+  gap: 16px;
+  justify-content: space-between;
+  line-height: 1.3;
+  list-style: none;
+}
+
+.page-faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.page-faq summary::after {
+  color: #292929;
+  content: "+";
+  flex-shrink: 0;
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+.page-faq details[open] summary::after {
+  transform: rotate(45deg);
+}
+
+.page-faq details > p {
+  color: #767676;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 16px 0 0;
+  max-width: 760px;
+}
+
+/* Centered CTA block used at the foot of content pages. */
+.page-cta {
+  align-items: center;
+  background: rgba(247, 246, 245, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 48px 32px;
+  text-align: center;
+}
+
+.page-cta h2 {
+  color: #292929;
+  font-size: 32px;
+  font-weight: 500;
+  letter-spacing: -0.75px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.page-cta p {
+  color: #767676;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 0;
+  max-width: 480px;
+}
+
+.page-cta-form {
+  margin-top: 4px;
+  max-width: 520px;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .page-body.is-narrow {
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+
+  .page-grid-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page-section.is-compact h2 {
+    font-size: 26px;
+  }
+
+  .page-lede {
+    font-size: 17px;
+  }
+
+  .page-faq {
+    padding: 8px 20px;
+  }
+
+  .page-cta {
+    padding: 40px 20px;
+  }
+
+  .page-cta h2 {
+    font-size: 26px;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-body.is-narrow {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .page-card {
+    padding: 20px;
+  }
+
+  .page-faq summary {
+    font-size: 16px;
+  }
+}
+
+/* Breadcrumb + title stacked inside the page header band. */
+.page-head-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.page-intro.is-wide {
+  max-width: 760px;
+}
+
+.page-intro strong {
+  color: #292929;
+  font-weight: 500;
+}
+
+.page-intro a {
+  color: #292929;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Badge sits inside the header stack on editorial pages. */
+.page-head-stack .mktg-badge {
+  align-self: flex-start;
+}
+
+/* Numbered editorial list (manifesto). */
+.page-articles {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.page-article {
+  border-top: 1px solid rgba(174, 174, 178, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 32px;
+}
+
+.page-article:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.page-article-num {
+  color: #0081d8;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.page-article h2 {
+  color: #292929;
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.5px;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.page-article p {
+  color: #767676;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Pill buttons — the dark CTA and its outlined secondary. */
+.page-btn-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+.page-btn {
+  align-items: center;
+  background: #0a0a0a;
+  border-radius: 72px;
+  color: #fafafa;
+  display: inline-flex;
+  font-size: 16px;
+  font-weight: 500;
+  justify-content: center;
+  line-height: 1;
+  padding: 16px 24px;
+  text-decoration: none;
+  transition: opacity 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+
+.page-btn:hover {
+  opacity: 0.85;
+}
+
+.page-btn.is-ghost {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.5);
+  color: #292929;
+}
+
+.page-btn.is-ghost:hover {
+  background: #f7f6f5;
+  opacity: 1;
+}
+
+/* Numbered step cards (guides). */
+.page-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.page-step {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+}
+
+.page-step-name {
+  align-items: center;
+  color: #292929;
+  display: flex;
+  font-size: 16px;
+  font-weight: 500;
+  gap: 10px;
+  line-height: 1.3;
+}
+
+.page-step-num {
+  align-items: center;
+  background: #0a0a0a;
+  border-radius: 999px;
+  color: #fafafa;
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 12px;
+  height: 22px;
+  justify-content: center;
+  width: 22px;
+}
+
+.page-step p {
+  color: #767676;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.page-table tr.is-highlight td {
+  background: rgba(0, 129, 216, 0.05);
+}
+
+.page-cta a {
+  color: #292929;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.mktg-auth-link {
+  color: #0081d8;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.mktg-auth-link:hover {
+  opacity: 0.75;
+}
+
+/* ── Listing, tool and article pages ───────────────────────────────────
+   Card grids (tools, blog, templates), the interactive-widget wrapper, and
+   the article furniture (meta row, tags, up-next, back link). Same hairline
+   + square-corner treatment as .page-card, so a listing page reads as part
+   of the same system as the prose pages rather than a separate app UI. */
+
+.page-cards {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+}
+
+.page-cards.is-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* Link tile — the whole card is the target, so no nested anchor. */
+.page-tile {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 28px;
+  text-decoration: none;
+  transition: box-shadow 0.15s;
+}
+
+.page-tile:hover {
+  box-shadow: inset 0 0 0 1px rgba(41, 41, 41, 0.35);
+}
+
+.page-tile h2,
+.page-tile h3 {
+  color: #292929;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.page-tile p {
+  color: #767676;
+  flex: 1;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.page-tile-more {
+  color: #0081d8;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  margin-top: 4px;
+}
+
+/* Wrapper for the interactive tool components, which carry their own
+   internal styling — this only owns the page-level placement. */
+.page-widget {
+  display: flex;
+  flex-direction: column;
+}
+
+.page-code {
+  background: rgba(247, 246, 245, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.25);
+  color: #434343;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  padding: 2px 6px;
+}
+
+.page-empty {
+  background: rgba(247, 246, 245, 0.4);
+  color: #767676;
+  font-size: 15px;
+  font-weight: 400;
+  margin: 0;
+  padding: 64px 24px;
+  text-align: center;
+}
+
+/* Featured post — image left, copy right, collapsing to stacked on mobile. */
+.page-feature {
+  box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.2);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  text-decoration: none;
+  transition: box-shadow 0.15s;
+}
+
+.page-feature:hover {
+  box-shadow: inset 0 0 0 1px rgba(41, 41, 41, 0.35);
+}
+
+.page-feature-media {
+  min-height: 300px;
+  width: 100%;
+}
+
+.page-feature-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+  padding: 44px;
+}
+
+.page-feature-body h2 {
+  color: #292929;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.page-feature-body p {
+  color: #767676;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.page-post-kicker {
+  color: #8a8a8a;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.6px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.page-post-meta {
+  color: #8a8a8a;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  font-weight: 400;
+  gap: 8px;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+/* Post card in the listing grid. */
+.page-post {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.2);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  text-decoration: none;
+  transition: box-shadow 0.15s;
+}
+
+.page-post:hover {
+  box-shadow: inset 0 0 0 1px rgba(41, 41, 41, 0.35);
+}
+
+.page-post-media {
+  height: 170px;
+  width: 100%;
+}
+
+.page-post-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px;
+}
+
+.page-post-body h2 {
+  color: #292929;
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.page-post-body p {
+  color: #767676;
+  flex: 1;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Article body: a tighter measure and rhythm than the prose pages, whose
+   80px section gap is meant for headed sections rather than a flowing post. */
+.page-body.is-article {
+  gap: 32px;
+  margin-top: 72px;
+  max-width: 900px;
+  padding-bottom: 96px;
+}
+
+.page-meta-row {
+  align-items: flex-start;
+  border-top: 1px solid rgba(174, 174, 178, 0.2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px 48px;
+  padding-top: 24px;
+}
+
+.page-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.page-meta-label {
+  color: #8a8a8a;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.page-meta-value {
+  color: #292929;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.page-meta-row .page-backlink {
+  margin-left: auto;
+}
+
+.page-hero-img {
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+/* Article hero — the generative cover, sized by ratio rather than a fixed
+   height so it scales with the reading measure. */
+.page-post-hero {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+}
+
+.page-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.page-tags.has-rule {
+  border-top: 1px solid rgba(174, 174, 178, 0.2);
+  padding-top: 24px;
+}
+
+.page-tag {
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.4);
+  color: #767676;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1;
+  padding: 7px 12px;
+}
+
+/* Horizontal CTA strip — the inline version of .page-cta, for mid-article
+   placement where a full centered block would break the reading flow. */
+.page-banner {
+  align-items: center;
+  background: rgba(247, 246, 245, 0.6);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: space-between;
+  padding: 28px 32px;
+}
+
+.page-banner h2 {
+  color: #292929;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.3px;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.page-banner p {
+  color: #767676;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 6px 0 0;
+}
+
+.page-next {
+  align-items: center;
+  box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.2);
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  text-decoration: none;
+  transition: box-shadow 0.15s;
+}
+
+.page-next:hover {
+  box-shadow: inset 0 0 0 1px rgba(41, 41, 41, 0.35);
+}
+
+.page-next-media {
+  flex-shrink: 0;
+  height: 64px;
+  width: 96px;
+}
+
+.page-next-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.page-next-title {
+  color: #292929;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-next-arrow {
+  color: #767676;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.page-backlink {
+  align-items: center;
+  color: #767676;
+  display: inline-flex;
+  font-size: 15px;
+  font-weight: 500;
+  gap: 6px;
+  line-height: 1;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.page-backlink:hover {
+  color: #292929;
+}
+
+.page-backlink-row {
+  border-top: 1px solid rgba(174, 174, 178, 0.2);
+  display: flex;
+  justify-content: center;
+  padding-top: 40px;
+}
+
+/* Template card — image on top, copy and two actions below. */
+.page-tpl {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.2);
+  display: flex;
+  flex-direction: column;
+  scroll-margin-top: 100px;
+}
+
+.page-tpl-img {
+  aspect-ratio: 16 / 10;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+.page-tpl-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  padding: 24px;
+}
+
+.page-tpl-name {
+  color: #292929;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.page-tpl-tagline {
+  color: #434343;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  margin: -6px 0 0;
+}
+
+.page-tpl-desc {
+  color: #767676;
+  flex: 1;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.page-tpl-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.page-btn.is-sm {
+  font-size: 14px;
+  padding: 12px 18px;
+}
+
+/* Small uppercase section label. The compound selector is required: a bare
+   .page-eyebrow loses to .page-section h2 on specificity, and these labels
+   are h2s so the heading outline stays intact for SEO. */
+.page-eyebrow,
+.page-section h2.page-eyebrow {
+  color: #8a8a8a;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.8px;
+  line-height: 1;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+/* Status-tagged entry list (roadmap). */
+.page-entries {
+  display: flex;
+  flex-direction: column;
+}
+
+.page-entry {
+  border-top: 1px solid rgba(174, 174, 178, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px 0;
+}
+
+.page-entry:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.page-entry-head {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.page-entry h3 {
+  color: #292929;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.page-entry p {
+  color: #767676;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.page-status {
+  border-radius: 999px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 6px 12px;
+}
+
+.page-status.is-live {
+  background: rgba(0, 129, 216, 0.08);
+  color: #0081d8;
+}
+
+.page-status.is-building {
+  box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.4);
+  color: #767676;
+}
+
+/* Converter form panel on the satellite landing pages. */
+.page-form-panel {
+  box-shadow: inset 0 0 0 1px rgba(174, 174, 178, 0.2);
+  display: flex;
+  flex-direction: column;
+  padding: 28px;
+}
+
+.page-form-panel h2 {
+  color: #292929;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.page-form-panel p {
+  color: #767676;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.4;
+  margin: 6px 0 16px;
+}
+
+/* Left-aligned variant of the CTA block, for mid-page placement where a
+   centered block would read as the end of the page. */
+.page-cta.is-left {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.page-cta.is-left .page-btn-row {
+  justify-content: flex-start;
+}
+
+@media (max-width: 640px) {
+  .page-entry-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .page-form-panel {
+    padding: 22px 20px;
+  }
+}
+
+@media (max-width: 900px) {
+  .page-cards.is-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .page-feature {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page-feature-media {
+    min-height: 220px;
+  }
+
+  .page-feature-body {
+    padding: 32px;
+  }
+
+  .page-feature-body h2 {
+    font-size: 24px;
+  }
+
+  .page-body.is-article {
+    margin-top: 56px;
+    padding-bottom: 72px;
+  }
+
+  .page-banner {
+    padding: 24px;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-cards,
+  .page-cards.is-3 {
+    gap: 16px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page-tile {
+    padding: 22px;
+  }
+
+  .page-feature-body {
+    padding: 24px;
+  }
+
+  .page-feature-body h2 {
+    font-size: 21px;
+  }
+
+  .page-meta-row {
+    gap: 20px 32px;
+  }
+
+  .page-meta-row .page-backlink {
+    margin-left: 0;
+  }
+
+  .page-banner {
+    padding: 22px 20px;
+  }
+
+  .page-tpl-body {
+    padding: 20px;
+  }
+}

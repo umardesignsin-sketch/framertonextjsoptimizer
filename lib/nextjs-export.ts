@@ -17,6 +17,7 @@ import { discoverPages, normalizeRoute } from "./discover";
 import { toRootRelative } from "./seo";
 import {
   collectImageUrls,
+  collectIconUrls,
   isOptimizableImage,
   optimizeToWebp,
   copyAsset,
@@ -320,6 +321,23 @@ function processDocument(
   // weight + a pointless privacy leak), unlike the runtime bundle itself.
   $('script[src^="https://events.framer.com/"]').remove();
 
+  // Remove the "Made in Framer" badge. Framer injects this as a fixed-position
+  // anchor in the corner of every published site; it's purely promotional and
+  // has no bearing on the page's content or the runtime's hydration.
+  const badgeSel = [
+    "#__framer-badge-container",
+    ".framer-badge-container",
+    ".framer-badge",
+    "[data-framer-badge]",
+    'a[href*="framer.com/?via"]',
+    'a[href^="https://www.framer.com/?via"]',
+  ].join(",");
+  $(badgeSel).remove();
+  $("a").each((_, el) => {
+    const txt = $(el).text().trim().toLowerCase();
+    if (txt === "made in framer" || txt === "made with framer") $(el).remove();
+  });
+
   // The runtime bundle itself still loads from Framer's CDN (images and
   // fonts are now self-hosted) — preconnecting shaves the DNS+TLS handshake
   // off the very first request instead of paying it mid-render.
@@ -565,10 +583,14 @@ export async function convertToNextJs(
   const MAX_IMAGES = 300;
   const imageUrls = new Set<string>();
   const fontUrls = new Set<string>();
+  // Icons are inside imageUrls too, but tracked separately so they're copied
+  // verbatim rather than re-encoded to WebP (Safari favicon support).
+  const iconUrls = new Set<string>();
   for (const html of pageHtml.values()) {
     const $ = load(html);
     const css = collectStyleText($);
     collectImageUrls($, css).forEach((u) => imageUrls.add(u));
+    collectIconUrls($).forEach((u) => iconUrls.add(u));
     collectFontUrls(css).forEach((u) => fontUrls.add(u));
   }
   const assetMap = new Map<string, string>(); // original URL -> /assets/img|fonts/<hash>.ext
@@ -587,7 +609,7 @@ export async function convertToNextJs(
         const bin = await fetchBinary(url);
         if (bin.status >= 400 || bin.buffer.length === 0) return;
         const result =
-          isOptimizableImage(url) && !/image\/svg/i.test(bin.contentType)
+          isOptimizableImage(url) && !/image\/svg/i.test(bin.contentType) && !iconUrls.has(url)
             ? await optimizeToWebp(url, bin.buffer)
             : copyAsset(url, bin.buffer);
         if (!result) return;
@@ -694,5 +716,6 @@ export async function convertToNextJs(
     ],
     files,
     previewFiles,
+    ogImage: siteMeta.ogImage || undefined,
   };
 }

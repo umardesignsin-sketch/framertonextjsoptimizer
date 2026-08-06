@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { UrlFunnelForm } from "@/components/UrlFunnelForm";
+import { ComparisonPage } from "@/components/ComparisonPage";
 import { jsonLdScript, SITE } from "@/lib/site-meta";
 
 const TITLE = "Framer vs Webflow (2026): Which Should You Actually Build On?";
@@ -86,108 +86,56 @@ function vsJsonLd() {
 
 export default function VsWebflowPage() {
   return (
-    <div className="min-h-screen w-full">
-      <main className="mx-auto max-w-3xl px-5 pb-24">
-        <section className="pt-14 pb-8">
-          <nav className="text-[12.5px] text-muted-foreground">
-            <Link href="/" className="hover:text-foreground">Home</Link> · Comparisons · Webflow
-          </nav>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Framer vs Webflow — which should you actually build on?
-          </h1>
-          <p className="mt-4 max-w-2xl text-[15.5px] leading-relaxed text-muted-foreground">
+    <>
+      <ComparisonPage
+        crumb="Webflow"
+        title="Framer vs Webflow — which should you actually build on?"
+        lede={
+          <>
             Both are modern, visual, no-code site builders — this isn&apos;t a &ldquo;real tool vs
-            toy&rdquo; comparison like Framer vs WordPress. The real differences are in CMS depth, team
-            pricing, and code export:{" "}
-            <strong className="text-foreground">Webflow</strong> offers more generous CMS limits and (on
-            paid plans) static code export; <strong className="text-foreground">Framer</strong> is usually
-            cheaper for a solo builder since it doesn&apos;t charge separate Workspace seats.
-          </p>
-        </section>
-
-        <section>
-          <h2 className="text-2xl font-semibold tracking-tight">Side by side</h2>
-          <div className="mt-4 overflow-x-auto rounded-xl border border-border">
-            <table className="w-full text-[13.5px]">
-              <thead className="border-b border-border bg-foreground/5 text-left text-[12.5px] text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-2.5 font-medium">Dimension</th>
-                  <th className="px-4 py-2.5 font-medium">Framer</th>
-                  <th className="px-4 py-2.5 font-medium">Webflow</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {ROWS.map(([dim, us, them]) => (
-                  <tr key={dim}>
-                    <td className="px-4 py-3 font-medium">{dim}</td>
-                    <td className="px-4 py-3">{us}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{them}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-3 text-[12.5px] text-muted-foreground">
-            Pricing and features reflect publicly available information at the time of writing and change
-            often on both sides — verify current numbers before deciding.
-          </p>
-        </section>
-
-        <section className="mt-14">
-          <h2 className="text-2xl font-semibold tracking-tight">When to choose which</h2>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-border p-5">
-              <h3 className="text-[15px] font-semibold">Choose Framer if you…</h3>
-              <ul className="mt-2 space-y-1.5 text-[14px] leading-relaxed text-muted-foreground">
-                <li>· Are building and maintaining the site <strong className="text-foreground">solo</strong></li>
-                <li>· Want the <strong className="text-foreground">simpler</strong> editing model of the two</li>
-                <li>· Don&apos;t need a huge CMS content library</li>
-              </ul>
-            </div>
-            <div className="rounded-xl border border-border p-5">
-              <h3 className="text-[15px] font-semibold">Choose Webflow if you…</h3>
-              <ul className="mt-2 space-y-1.5 text-[14px] leading-relaxed text-muted-foreground">
-                <li>· Need a <strong className="text-foreground">large, content-heavy CMS</strong></li>
-                <li>· Want the option to <strong className="text-foreground">export static code</strong> (paid plans)</li>
-                <li>· Prefer Webflow&apos;s deeper Interactions/layout control</li>
-              </ul>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-14 rounded-xl border border-border bg-muted/40 p-6">
-          <h2 className="text-xl font-semibold tracking-tight">Built in Framer, want a self-hosted site?</h2>
-          <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-muted-foreground">
-            Framer doesn&apos;t offer Webflow&apos;s paid code-export option — so this tool covers that gap,
-            for free. Paste your published Framer URL and get a real, self-hosted{" "}
-            <Link href="/nextjs" className="text-foreground underline underline-offset-2">Next.js project</Link>{" "}
-            or{" "}
-            <Link href="/framer-to-html" className="text-foreground underline underline-offset-2">static HTML bundle</Link>.
-          </p>
-          <div className="mx-auto mt-4 max-w-lg">
-            <UrlFunnelForm cta="Convert free →" />
-          </div>
-        </section>
-
-        <section className="mt-14">
-          <h2 className="text-2xl font-semibold tracking-tight">FAQ</h2>
-          <div className="mt-5 divide-y divide-border rounded-xl border border-border">
-            {FAQ.map((f, i) => (
-              <details key={f.q} className="group px-4" open={i === 0}>
-                <summary className="flex cursor-pointer list-none items-center justify-between py-4 text-[15px] font-medium marker:content-none">
-                  <span>{f.q}</span>
-                  <span className="ml-3 shrink-0 text-muted-foreground transition-transform group-open:rotate-45">+</span>
-                </summary>
-                <p className="pb-4 pr-6 text-[14px] leading-relaxed text-muted-foreground">{f.a}</p>
-              </details>
-            ))}
-          </div>
-        </section>
-      </main>
+            toy&rdquo; comparison like Framer vs WordPress. The real differences are in CMS depth,
+            team pricing, and code export: <strong>Webflow</strong> offers more generous CMS limits
+            and (on paid plans) static code export; <strong>Framer</strong> is usually cheaper for a
+            solo builder since it doesn&apos;t charge separate Workspace seats.
+          </>
+        }
+        columns={["Dimension", "Framer", "Webflow"]}
+        rows={ROWS}
+        note="Pricing and features reflect publicly available information at the time of writing and change often on both sides — verify current numbers before deciding."
+        chooseUs={{
+          heading: "Choose Framer if you…",
+          items: [
+            <>Are building and maintaining the site <strong>solo</strong></>,
+            <>Want the <strong>simpler</strong> editing model of the two</>,
+            <>Don&apos;t need a huge CMS content library</>,
+          ],
+        }}
+        chooseThem={{
+          heading: "Choose Webflow if you…",
+          items: [
+            <>Need a <strong>large, content-heavy CMS</strong></>,
+            <>Want the option to <strong>export static code</strong> (paid plans)</>,
+            <>Prefer Webflow&apos;s deeper Interactions/layout control</>,
+          ],
+        }}
+        faq={FAQ}
+        ctaPlacement="beforeFaq"
+        cta={{
+          heading: "Built in Framer, want a self-hosted site?",
+          body: (
+            <>
+              Framer doesn&apos;t offer Webflow&apos;s paid code-export option — so this tool covers
+              that gap, for free. Paste your published Framer URL and get a real, self-hosted{" "}
+              <Link href="/">Next.js project</Link> or{" "}
+              <Link href="/">static HTML bundle</Link>.
+            </>
+          ),
+        }}
+      />
 
       {vsJsonLd().map((obj, i) => (
         <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(obj) }} />
       ))}
-    </div>
+    </>
   );
 }

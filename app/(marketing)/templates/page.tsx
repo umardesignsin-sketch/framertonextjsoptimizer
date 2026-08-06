@@ -86,64 +86,76 @@ function templatesJsonLd() {
 
 export default function TemplatesPage() {
   return (
-    <div className="min-h-screen w-full">
+    <main>
+      <section className="page-head">
+        <div className="page-head-box">
+          <div className="page-head-row">
+            <div className="page-head-stack">
+              <p className="page-breadcrumb">
+                <Link href="/">Home</Link> / Templates
+              </p>
+              <h1 className="page-title">Free Framer Templates</h1>
+            </div>
+          </div>
+          <div className="page-head-row">
+            <div className="page-head-stack">
+              <p className="page-intro is-wide">
+                Real, published{" "}
+                <a href="https://www.framer.com" target="_blank" rel="noopener noreferrer">
+                  Framer
+                </a>{" "}
+                templates by{" "}
+                <a
+                  href="https://www.framer.com/@umar-mirza/?tab=marketplace"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Umar Mirza
+                </a>{" "}
+                — portfolio, agency, SaaS, and photography website templates you can
+                preview live and remix for free, no signup required just to look.
+                Already have a site built from one of these?{" "}
+                <Link href="/">Convert it to Next.js</Link> or{" "}
+                <Link href="/">clean static HTML</Link> once it&apos;s live.
+              </p>
+              <p className="page-intro is-wide">
+                Specifically after a{" "}
+                <Link href="/free-portfolio-website">free portfolio website</Link> for
+                yourself? See the portfolio-only shortlist.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <main className="mx-auto max-w-5xl px-5 pb-24">
-        <section className="pt-14 pb-8">
-          <nav className="text-[12.5px] text-muted-foreground">
-            <Link href="/" className="hover:text-foreground">Home</Link> · Templates
-          </nav>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Free Framer Templates
-          </h1>
-          <p className="mt-4 max-w-2xl text-[15.5px] leading-relaxed text-muted-foreground">
-            Real, published{" "}
-            <a href="https://www.framer.com" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Framer</a>{" "}
-            templates by{" "}
-            <a href="https://www.framer.com/@umar-mirza/?tab=marketplace" target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-2">Umar Mirza</a>{" "}
-            — portfolio, agency, SaaS, and photography website templates you can preview live and remix
-            for free, no signup required just to look. Already have a site built from one of these?{" "}
-            <Link href="/nextjs" className="text-foreground underline underline-offset-2">Convert it to Next.js</Link>{" "}
-            or{" "}
-            <Link href="/framer-to-html" className="text-foreground underline underline-offset-2">clean static HTML</Link>{" "}
-            once it&apos;s live.
-          </p>
-          <p className="mt-3 max-w-2xl text-[14px] text-muted-foreground">
-            Specifically after a{" "}
-            <Link href="/free-portfolio-website" className="text-foreground underline underline-offset-2">
-              free portfolio website
-            </Link>{" "}
-            for yourself? See the portfolio-only shortlist.
-          </p>
-        </section>
-
-        <section className="grid gap-6 sm:grid-cols-2">
+      <div className="page-body is-compact">
+        <div className="page-cards">
           {TEMPLATES.map((t) => (
-            <article key={t.slug} id={t.slug} className="overflow-hidden rounded-xl border border-border bg-background scroll-mt-20">
+            <article key={t.slug} id={t.slug} className="page-tpl">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={t.image}
                 alt={`${t.name} — ${t.tagline}`}
-                className="aspect-[16/10] w-full object-cover"
+                className="page-tpl-img"
                 loading="lazy"
               />
-              <div className="p-5">
-                <h2 className="text-[17px] font-semibold tracking-tight">{t.name}</h2>
-                <p className="mt-0.5 text-[13.5px] font-medium text-muted-foreground">{t.tagline}</p>
-                <p className="mt-2.5 text-[14px] leading-relaxed text-muted-foreground">{t.description}</p>
-                <div className="mt-3 flex flex-wrap gap-1.5">
+              <div className="page-tpl-body">
+                <h2 className="page-tpl-name">{t.name}</h2>
+                <p className="page-tpl-tagline">{t.tagline}</p>
+                <p className="page-tpl-desc">{t.description}</p>
+                <div className="page-tags">
                   {t.categories.map((c) => (
-                    <span key={c} className="rounded-full border border-border px-2.5 py-0.5 text-[11.5px] text-muted-foreground">
+                    <span key={c} className="page-tag">
                       {c}
                     </span>
                   ))}
                 </div>
-                <div className="mt-4 flex flex-wrap gap-2.5">
+                <div className="page-tpl-actions">
                   <a
                     href={t.previewUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex h-9 items-center rounded-lg border border-border-strong px-3.5 text-[13.5px] font-medium hover:bg-muted"
+                    className="page-btn is-ghost is-sm"
                   >
                     Live preview ↗
                   </a>
@@ -151,7 +163,7 @@ export default function TemplatesPage() {
                     href={t.getUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex h-9 items-center rounded-lg bg-foreground px-3.5 text-[13.5px] font-medium text-background hover:opacity-90"
+                    className="page-btn is-sm"
                   >
                     Get this template free →
                   </a>
@@ -159,42 +171,39 @@ export default function TemplatesPage() {
               </div>
             </article>
           ))}
-        </section>
+        </div>
 
-        <section className="mt-16 rounded-xl border border-border bg-muted/40 p-6 text-center">
-          <h2 className="text-xl font-semibold tracking-tight">Want more free Framer templates?</h2>
-          <p className="mx-auto mt-2 max-w-md text-[14px] text-muted-foreground">
-            See the full, up-to-date collection on the Framer Marketplace.
-          </p>
-          <a
-            href="https://www.framer.com/@umar-mirza/?tab=marketplace"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-4 inline-flex h-10 items-center rounded-lg bg-foreground px-5 text-[14px] font-medium text-background hover:opacity-90"
-          >
-            View marketplace profile ↗
-          </a>
-        </section>
+        <div className="page-cta">
+          <h2>Want more free Framer templates?</h2>
+          <p>See the full, up-to-date collection on the Framer Marketplace.</p>
+          <div className="page-btn-row">
+            <a
+              href="https://www.framer.com/@umar-mirza/?tab=marketplace"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="page-btn"
+            >
+              View marketplace profile ↗
+            </a>
+          </div>
+        </div>
 
-        <section className="mt-16 border-t border-border pt-12">
-          <h2 className="text-2xl font-semibold tracking-tight">Free Framer templates — FAQ</h2>
-          <div className="mt-5 divide-y divide-border rounded-xl border border-border">
+        <section className="page-section is-compact">
+          <h2>Free Framer templates — FAQ</h2>
+          <div className="page-faq">
             {FAQ.map((f, i) => (
-              <details key={f.q} className="group px-4" open={i === 0}>
-                <summary className="flex cursor-pointer list-none items-center justify-between py-4 text-[15px] font-medium marker:content-none">
-                  <span>{f.q}</span>
-                  <span className="ml-3 shrink-0 text-muted-foreground transition-transform group-open:rotate-45">+</span>
-                </summary>
-                <p className="pb-4 pr-6 text-[14px] leading-relaxed text-muted-foreground">{f.a}</p>
+              <details key={f.q} open={i === 0}>
+                <summary>{f.q}</summary>
+                <p>{f.a}</p>
               </details>
             ))}
           </div>
         </section>
-      </main>
+      </div>
 
       {templatesJsonLd().map((obj, i) => (
         <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(obj) }} />
       ))}
-    </div>
+    </main>
   );
 }

@@ -70,144 +70,126 @@ const STEPS = [
 
 export default function ExportFramerSitePage() {
   return (
-    <div className="min-h-screen w-full">
+    <main>
+      <section className="page-head">
+        <div className="page-head-box">
+          <div className="page-head-row">
+            <div className="page-head-stack">
+              <p className="page-breadcrumb">
+                <Link href="/">Home</Link> / Export Framer site
+              </p>
+              <h1 className="page-title">How to export a Framer site</h1>
+            </div>
+          </div>
+          <div className="page-head-row">
+            <p className="page-intro is-wide">
+              Framer is excellent for design — but{" "}
+              <strong>you cannot officially export a Framer site</strong> as HTML or a full project.
+              If you need to leave Framer hosting, cut costs, or own portable files, you use a
+              converter. The fastest free path is our{" "}
+              <Link href="/">Framer to HTML converter</Link>: paste a published URL and
+              download clean static HTML.
+            </p>
+          </div>
+        </div>
+      </section>
 
-      <main className="mx-auto max-w-3xl px-5 pb-24">
-        <section className="pt-14 pb-8">
-          <nav className="text-[12.5px] text-muted-foreground">
-            <Link href="/" className="hover:text-foreground">
-              Home
-            </Link>
-            {" · "}
-            Export Framer site
-          </nav>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-            How to export a Framer site
-          </h1>
-          <p className="mt-4 text-[15.5px] leading-relaxed text-muted-foreground">
-            Framer is excellent for design — but{" "}
-            <strong className="text-foreground">you cannot officially export a Framer site</strong> as HTML
-            or a full project. If you need to leave Framer hosting, cut costs, or own portable files, you use
-            a converter. The fastest free path is our{" "}
-            <Link href="/framer-to-html" className="text-foreground font-medium underline underline-offset-2">
-              Framer to HTML converter
-            </Link>
-            : paste a published URL and download clean static HTML.
-          </p>
-        </section>
-
-        <section className="rounded-xl border border-border bg-background p-5 shadow-sm">
-          <h2 className="text-[15px] font-semibold">Export Framer → HTML free</h2>
-          <p className="mb-3 mt-1 text-[13px] text-muted-foreground">
-            Opens the Framer to HTML converter with your URL ready.
-          </p>
+      <div className="page-body is-narrow is-compact">
+        <div className="page-form-panel">
+          <h2>Export Framer → HTML free</h2>
+          <p>Opens the Framer to HTML converter with your URL ready.</p>
           <UrlFunnelForm cta="Export Framer site to HTML →" />
+        </div>
+
+        <section className="page-section is-compact">
+          <h2>Why Framer has no native export</h2>
+          <div className="page-prose is-sm">
+            <p>
+              Published Framer sites depend on Framer’s hosting stack (optimization, dynamic
+              features, badge). Their help center states HTML export for self-hosting is not
+              supported. That is why “export Framer site” and “Framer to HTML converter” searches
+              exist — third-party tools capture the public rendered output visitors already get.
+            </p>
+          </div>
         </section>
 
-        <section className="mt-14">
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Why Framer has no native export
-          </h2>
-          <p className="mt-4 text-[15px] leading-relaxed text-muted-foreground">
-            Published Framer sites depend on Framer’s hosting stack (optimization, dynamic features, badge).
-            Their help center states HTML export for self-hosting is not supported. That is why “export
-            Framer site” and “Framer to HTML converter” searches exist — third-party tools capture the
-            public rendered output visitors already get.
-          </p>
-        </section>
-
-        <section className="mt-14">
-          <h2 className="text-2xl font-semibold tracking-tight">Export options compared</h2>
-          <div className="mt-4 overflow-x-auto rounded-xl border border-border">
-            <table className="w-full text-[13.5px]">
-              <thead className="border-b border-border bg-foreground/5 text-left text-[12.5px] text-muted-foreground">
+        <section className="page-section is-compact">
+          <h2>Export options compared</h2>
+          <div className="page-table-wrap">
+            <table className="page-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-2.5 font-medium">Option</th>
-                  <th className="px-4 py-2.5 font-medium">Best for</th>
-                  <th className="px-4 py-2.5 font-medium">Link</th>
+                  <th>Option</th>
+                  <th>Best for</th>
+                  <th>Link</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
-                <tr className="bg-emerald-50/40">
-                  <td className="px-4 py-3 font-medium">Framer to HTML converter</td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    Speed, static hosting, remove badge, leave Framer billing
-                  </td>
-                  <td className="px-4 py-3">
-                    <Link href="/framer-to-html" className="underline">
+              <tbody>
+                <tr className="is-highlight">
+                  <td>Framer to HTML converter</td>
+                  <td>Speed, static hosting, remove badge, leave Framer billing</td>
+                  <td>
+                    <Link href="/" className="page-link">
                       Open tool
                     </Link>
                   </td>
                 </tr>
                 <tr>
-                  <td className="px-4 py-3 font-medium">Framer to Next.js</td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    Developers who want a real App Router project
-                  </td>
-                  <td className="px-4 py-3">
-                    <Link href="/nextjs" className="underline">
+                  <td>Framer to Next.js</td>
+                  <td>Developers who want a real App Router project</td>
+                  <td>
+                    <Link href="/" className="page-link">
                       Open tool
                     </Link>
                   </td>
                 </tr>
                 <tr>
-                  <td className="px-4 py-3 font-medium">Manual rebuild</td>
-                  <td className="px-4 py-3 text-muted-foreground">Full redesign control, slowest</td>
-                  <td className="px-4 py-3 text-muted-foreground">—</td>
+                  <td>Manual rebuild</td>
+                  <td>Full redesign control, slowest</td>
+                  <td>—</td>
                 </tr>
               </tbody>
             </table>
           </div>
         </section>
 
-        <section className="mt-14">
-          <h2 className="text-2xl font-semibold tracking-tight">Steps to export your Framer website</h2>
-          <ol className="mt-4 space-y-4">
+        <section className="page-section is-compact">
+          <h2>Steps to export your Framer website</h2>
+          <ol className="page-steps">
             {STEPS.map((s, i) => (
-              <li key={s.name} className="rounded-xl border border-border bg-background p-4">
-                <div className="flex items-center gap-2 text-[14px] font-semibold">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-[11px] text-background">
-                    {i + 1}
-                  </span>
+              <li key={s.name} className="page-step">
+                <div className="page-step-name">
+                  <span className="page-step-num">{i + 1}</span>
                   {s.name}
                 </div>
-                <p className="mt-1.5 text-[14px] leading-relaxed text-muted-foreground">{s.text}</p>
+                <p>{s.text}</p>
               </li>
             ))}
           </ol>
         </section>
 
-        <section className="mt-14">
-          <h2 className="text-2xl font-semibold tracking-tight">Export Framer site — FAQ</h2>
-          <div className="mt-5 divide-y divide-border rounded-xl border border-border">
+        <section className="page-section is-compact">
+          <h2>Export Framer site — FAQ</h2>
+          <div className="page-faq">
             {FAQ.map((f, i) => (
-              <details key={f.q} className="group px-4" open={i === 0}>
-                <summary className="flex cursor-pointer list-none items-center justify-between py-4 text-[15px] font-medium marker:content-none">
-                  <span>{f.q}</span>
-                  <span className="ml-3 shrink-0 text-muted-foreground transition-transform group-open:rotate-45">
-                    +
-                  </span>
-                </summary>
-                <p className="pb-4 pr-6 text-[14px] leading-relaxed text-muted-foreground">{f.a}</p>
+              <details key={f.q} open={i === 0}>
+                <summary>{f.q}</summary>
+                <p>{f.a}</p>
               </details>
             ))}
           </div>
         </section>
 
-        <section className="mt-14 rounded-xl border border-border bg-muted/40 p-6 text-center">
-          <h2 className="text-xl font-semibold">Ready to export?</h2>
-          <p className="mt-2 text-[14px] text-muted-foreground">
-            Use the free{" "}
-            <Link href="/framer-to-html" className="underline">
-              Framer to HTML converter
-            </Link>
-            .
+        <div className="page-cta">
+          <h2>Ready to export?</h2>
+          <p>
+            Use the free <Link href="/">Framer to HTML converter</Link>.
           </p>
-          <div className="mx-auto mt-4 max-w-lg">
+          <div className="page-cta-form">
             <UrlFunnelForm cta="Export to HTML →" />
           </div>
-        </section>
-      </main>
+        </div>
+      </div>
 
       <script
         type="application/ld+json"
@@ -258,6 +240,6 @@ export default function ExportFramerSitePage() {
           }),
         }}
       />
-    </div>
+    </main>
   );
 }

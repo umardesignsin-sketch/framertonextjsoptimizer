@@ -1,0 +1,18 @@
+/* Compatibility shim.
+
+   The page-level stylesheets from FNJ-Frontend (dashboard.css, conversion.css,
+   deploy.css, auth.css, project.css, settings.css, styles.css — 45 references
+   in total) were written against an earlier token vocabulary that used
+   --green / --blue / --red. tokens.css has since renamed those to
+   --success / --accent / --danger.
+
+   Without this alias every status colour resolves to an invalid value and
+   silently paints transparent — verified in the browser: .project-progress i
+   computed to rgba(0,0,0,0) for the "ready" and "converting" states.
+
+   Aliasing here keeps the design files untouched and fixes all of them at once. */
+:root {
+  --green: var(--success);
+  --blue: var(--accent);
+  --red: var(--danger);
+}

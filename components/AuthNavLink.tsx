@@ -17,10 +17,7 @@ export function AuthNavLink() {
 
   if (state === "loading") return null;
   return (
-    <a
-      href={state === "in" ? "/dashboard" : "/login"}
-      className="text-muted-foreground hover:text-foreground"
-    >
+    <a href={state === "in" ? "/dashboard" : "/login"} className="mktg-auth-link">
       {state === "in" ? "Dashboard" : "Log in"}
     </a>
   );

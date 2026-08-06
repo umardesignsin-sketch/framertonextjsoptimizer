@@ -120,7 +120,6 @@ paid tier currently exists in the product.
 - Pure Next.js converter: ${SITE.url}/nextjs
 - Free Framer templates: ${SITE.url}/templates
 - PageSpeed checker: ${SITE.url}/speed
-- Pricing: ${SITE.url}/pricing
 - vs NoCodeXport: ${SITE.url}/vs/nocodexport
 - vs ConvertFramer: ${SITE.url}/vs/convertframer
 - Self-host a Framer site: ${SITE.url}/guides/self-host-framer

@@ -23,29 +23,46 @@ export const metadata = {
 
 export default function MetaTagsCheckerPage() {
   return (
-    <main className="mx-auto max-w-3xl px-5 py-12">
-      <p className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
-        <Link href="/tools" className="hover:text-foreground">Tools</Link> / Meta Tags Checker
-      </p>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-        Meta Tags &amp; Social Preview Checker
-      </h1>
-      <p className="mt-2 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-        Paste any published URL to see exactly what search engines and social
-        platforms read from it — title, description, canonical, Open Graph,
-        and Twitter Card tags — plus a preview of how the link renders when
-        shared on Slack, iMessage, or LinkedIn.
-      </p>
-      <div className="mt-6">
-        <MetaTagsChecker />
+    <main>
+      <section className="page-head">
+        <div className="page-head-box">
+          <div className="page-head-row">
+            <div className="page-head-stack">
+              <p className="page-breadcrumb">
+                <Link href="/tools">Tools</Link> / Meta Tags Checker
+              </p>
+              <h1 className="page-title">Meta Tags &amp; Social Preview Checker</h1>
+            </div>
+          </div>
+          <div className="page-head-row">
+            <p className="page-intro is-wide">
+              Paste any published URL to see exactly what search engines and social
+              platforms read from it — title, description, canonical, Open Graph,
+              and Twitter Card tags — plus a preview of how the link renders when
+              shared on Slack, iMessage, or LinkedIn.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div className="page-body is-narrow is-compact">
+        <div className="page-widget">
+          <MetaTagsChecker />
+        </div>
+
+        <p className="page-note">
+          Converting a Framer site? Every conversion through the{" "}
+          <Link href="/" className="page-link">
+            Hybrid converter
+          </Link>{" "}
+          or{" "}
+          <Link href="/" className="page-link">
+            Pure Next.js export
+          </Link>{" "}
+          already runs a full SEO pass automatically — this tool is for checking
+          any site, including ones already live.
+        </p>
       </div>
-      <p className="mt-6 text-[13px] text-muted-foreground">
-        Converting a Framer site? Every conversion through the{" "}
-        <Link href="/" className="text-foreground underline underline-offset-2">Hybrid converter</Link>{" "}
-        or{" "}
-        <Link href="/nextjs" className="text-foreground underline underline-offset-2">Pure Next.js export</Link>{" "}
-        already runs a full SEO pass automatically — this tool is for checking any site, including ones already live.
-      </p>
     </main>
   );
 }

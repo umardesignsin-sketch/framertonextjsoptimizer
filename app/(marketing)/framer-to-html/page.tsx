@@ -754,10 +754,6 @@ export default function FramerToHtmlPage() {
             <Link href="/nextjs" className="underline underline-offset-2">
               Framer to Next.js converter
             </Link>
-            {" · "}
-            <Link href="/pricing" className="underline underline-offset-2">
-              Pricing (free)
-            </Link>
           </p>
         </section>
       </main>
