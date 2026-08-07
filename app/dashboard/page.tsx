@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/supabase/user";
-import { gravatarUrl } from "@/lib/gravatar";
 import { DashboardView } from "./DashboardView";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +19,6 @@ export default async function DashboardPage() {
   return (
     <DashboardView
       email={user.email || ""}
-      avatarUrl={gravatarUrl(user.email || "")}
       sites={sites.map((s) => ({
         id: s.id,
         name: s.name,
@@ -28,7 +26,6 @@ export default async function DashboardPage() {
         outputKind: s.outputKind,
         status: s.status,
         themeRef: s.themeRef,
-        previewImage: s.previewImage,
         createdAt: s.createdAt.toISOString(),
         // Note: only a boolean about the saved token reaches the client —
         // never the (encrypted) token itself.
