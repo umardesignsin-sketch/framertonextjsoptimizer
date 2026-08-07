@@ -64,17 +64,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ siteId
         createdAt: d.createdAt.toISOString(),
       }))}
       report={report}
-      lighthouse={
-        site.lighthouseCheckedAt
-          ? {
-              performance: site.lighthousePerformance ?? 0,
-              accessibility: site.lighthouseAccessibility ?? 0,
-              bestPractices: site.lighthouseBestPractices ?? 0,
-              seo: site.lighthouseSeo ?? 0,
-              checkedAt: site.lighthouseCheckedAt.toISOString(),
-            }
-          : null
-      }
     />
   );
 }

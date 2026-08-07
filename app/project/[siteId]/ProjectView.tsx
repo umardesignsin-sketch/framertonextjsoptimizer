@@ -26,13 +26,6 @@ interface Report {
   stats: { label: string; before: number; after: number; unit: string }[];
   notes: string[];
 }
-interface Lighthouse {
-  performance: number;
-  accessibility: number;
-  bestPractices: number;
-  seo: number;
-  checkedAt: string;
-}
 
 const READY = ["ready", "live", "done", "complete"];
 const ACTIVE = ["converting", "pending", "queued", "running"];
@@ -60,57 +53,28 @@ function fmtDate(iso: string): string {
     return "—";
   }
 }
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+function domainOf(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
 }
 
 export function ProjectView({
   site,
   deployments: initialDeployments,
   report,
-  lighthouse: initialLighthouse,
 }: {
   site: Site;
   deployments: DeploymentRow[];
   report: Report | null;
-  lighthouse: Lighthouse | null;
 }) {
   const [deployments, setDeployments] = useState(initialDeployments);
   const [previewMobile, setPreviewMobile] = useState(false);
   const hasBundle = !!site.themeRef;
-
-  // ---- Lighthouse ----
-  const [lighthouse, setLighthouse] = useState(initialLighthouse);
-  const [auditState, setAuditState] = useState<"idle" | "running" | "error">("idle");
-  const [auditError, setAuditError] = useState("");
-
-  async function runAudit() {
-    if (auditState === "running") return;
-    setAuditState("running");
-    setAuditError("");
-    try {
-      const res = await fetch("/api/lighthouse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteId: site.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Audit failed");
-      setLighthouse({
-        performance: data.performance,
-        accessibility: data.accessibility,
-        bestPractices: data.bestPractices,
-        seo: data.seo,
-        checkedAt: data.checkedAt,
-      });
-      setAuditState("idle");
-    } catch (e) {
-      setAuditError(e instanceof Error ? e.message : "Audit failed");
-      setAuditState("error");
-    }
-  }
+  const liveDeployment = deployments[0] ?? null;
 
   // ---- Deploy form ----
   const [provider, setProvider] = useState<"netlify" | "vercel">("netlify");
@@ -149,8 +113,6 @@ export function ProjectView({
       setDeployState("error");
     }
   }
-
-  const imageStat = report?.stats.find((s) => /image/i.test(s.label));
 
   return (
     <div className="project-shell">
@@ -226,9 +188,9 @@ export function ProjectView({
             <small>{site.outputKind === "nextjs" ? "App Router" : "Static bundle"}</small>
           </article>
           <article className="metric-card">
-            <span>Lighthouse</span>
-            <strong>{lighthouse ? lighthouse.performance : "Pending"}</strong>
-            <small>{lighthouse ? "Performance (mobile)" : "Run an audit below"}</small>
+            <span>Live at</span>
+            <strong>{domainOf(liveDeployment?.url ?? null) ?? "Not deployed"}</strong>
+            <small>{liveDeployment ? `via ${liveDeployment.provider}` : "Deploy below to connect a host"}</small>
           </article>
           <article className="metric-card">
             <span>Updated</span>
@@ -240,7 +202,6 @@ export function ProjectView({
         <nav className="tabs project-tabs" aria-label="Project sections">
           <a href="#overview" aria-current="true">Overview</a>
           <a href="#preview">Preview</a>
-          <a href="#report">Lighthouse</a>
           <a href="#deployment">Deployment</a>
           <a href="#downloads">Downloads</a>
           <a href="#metadata">Metadata</a>
@@ -248,57 +209,6 @@ export function ProjectView({
 
         <section className="content-grid">
           <div className="main-column">
-            <article className="panel overview-panel">
-              <div className="panel-heading">
-                <div>
-                  <p className="eyebrow">Overview</p>
-                  <h2>Conversion summary</h2>
-                </div>
-              </div>
-              <div className="summary-list">
-                {report ? (
-                  <>
-                    <div>
-                      <span className="status-glyph is-success"><Icon name="check" className="icon icon-sm" /></span>
-                      <p>
-                        <strong>{report.pages.length} route{report.pages.length === 1 ? "" : "s"} generated</strong>
-                        <small>{report.pages.map((p) => p.route).join(", ") || "/"}</small>
-                      </p>
-                    </div>
-                    {imageStat && (
-                      <div>
-                        <span className="status-glyph is-success"><Icon name="check" className="icon icon-sm" /></span>
-                        <p>
-                          <strong>Images optimized</strong>
-                          <small>
-                            {imageStat.unit === "bytes"
-                              ? `${fmtBytes(imageStat.before)} → ${fmtBytes(imageStat.after)}`
-                              : `${imageStat.before} → ${imageStat.after}`}
-                          </small>
-                        </p>
-                      </div>
-                    )}
-                    {report.notes.map((note, i) => (
-                      <div key={i}>
-                        <span className="status-glyph is-neutral"><Icon name="info" className="icon icon-sm" /></span>
-                        <p>
-                          <strong>{note}</strong>
-                        </p>
-                      </div>
-                    ))}
-                  </>
-                ) : (
-                  <div>
-                    <span className="status-glyph is-neutral"><Icon name="info" className="icon icon-sm" /></span>
-                    <p>
-                      <strong>No conversion report yet</strong>
-                      <small>Run a conversion to see routes, stats, and notes here.</small>
-                    </p>
-                  </div>
-                )}
-              </div>
-            </article>
-
             <article className="panel preview-panel" id="preview">
               <div className="panel-heading">
                 <div>
@@ -357,81 +267,6 @@ export function ProjectView({
               )}
             </article>
 
-            <article className="panel lighthouse-panel" id="report">
-              <div className="panel-heading">
-                <div>
-                  <p className="eyebrow">Lighthouse report</p>
-                  <h2>Quality signals</h2>
-                </div>
-                <button
-                  className="ghost-button"
-                  type="button"
-                  onClick={runAudit}
-                  disabled={auditState === "running" || !hasBundle}
-                  title={hasBundle ? undefined : "Convert this project first"}
-                >
-                  {auditState === "running" ? "Running…" : lighthouse ? "Re-run audit" : "Run audit"}
-                </button>
-              </div>
-
-              {auditState === "error" && (
-                <div className="summary-list">
-                  <div>
-                    <span className="status-glyph is-danger"><Icon name="info" className="icon icon-sm" /></span>
-                    <p>
-                      <strong>Audit failed</strong>
-                      <small>{auditError}</small>
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {lighthouse ? (
-                <>
-                  <div className="score-grid">
-                    <div className="score-card">
-                      <span>Performance</span>
-                      <strong>{lighthouse.performance}</strong>
-                      <i style={{ "--score": `${lighthouse.performance}%` } as React.CSSProperties} />
-                    </div>
-                    <div className="score-card">
-                      <span>Accessibility</span>
-                      <strong>{lighthouse.accessibility}</strong>
-                      <i style={{ "--score": `${lighthouse.accessibility}%` } as React.CSSProperties} />
-                    </div>
-                    <div className="score-card">
-                      <span>Best practices</span>
-                      <strong>{lighthouse.bestPractices}</strong>
-                      <i style={{ "--score": `${lighthouse.bestPractices}%` } as React.CSSProperties} />
-                    </div>
-                    <div className="score-card">
-                      <span>SEO</span>
-                      <strong>{lighthouse.seo}</strong>
-                      <i style={{ "--score": `${lighthouse.seo}%` } as React.CSSProperties} />
-                    </div>
-                  </div>
-                  <p className="muted-copy" style={{ padding: "0 24px 18px" }}>
-                    Mobile audit via Google PageSpeed Insights · last run {fmtDate(lighthouse.checkedAt)}
-                  </p>
-                </>
-              ) : (
-                auditState !== "error" && (
-                  <div className="summary-list">
-                    <div>
-                      <span className="status-glyph is-neutral"><Icon name="info" className="icon icon-sm" /></span>
-                      <p>
-                        <strong>No audit yet</strong>
-                        <small>
-                          {hasBundle
-                            ? "Run a real Lighthouse audit via Google PageSpeed Insights."
-                            : "Convert this project before running an audit."}
-                        </small>
-                      </p>
-                    </div>
-                  </div>
-                )
-              )}
-            </article>
           </div>
 
           <aside className="side-column">
@@ -507,8 +342,10 @@ export function ProjectView({
                       style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
                     >
                       <span>
-                        <strong style={{ textTransform: "capitalize" }}>{d.provider}</strong>
-                        <small>{fmtDate(d.createdAt)}</small>
+                        <strong>{domainOf(d.url) ?? "Pending URL"}</strong>
+                        <small style={{ textTransform: "capitalize" }}>
+                          {d.provider} · {fmtDate(d.createdAt)}
+                        </small>
                       </span>
                       <Icon name="arrow-up-right" className="icon icon-sm" />
                     </a>

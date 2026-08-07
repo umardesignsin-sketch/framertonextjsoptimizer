@@ -92,7 +92,14 @@ export function HelpBadge() {
               <button
                 type="submit"
                 disabled={status === "sending"}
-                className="h-9 w-full rounded-lg bg-foreground text-[13.5px] font-medium text-background hover:opacity-90 disabled:opacity-50"
+                // Inline color, not the text-background utility class: a
+                // global, unlayered `button { color: inherit }` rule
+                // (app/dashboard/theme/components.css, loaded app-wide) beats
+                // Tailwind's utility layer regardless of specificity, so on
+                // dashboard/project pages the class was silently overridden
+                // and this rendered as invisible dark-on-dark text.
+                style={{ color: "var(--background)" }}
+                className="h-9 w-full rounded-lg bg-foreground text-[13.5px] font-medium hover:opacity-90 disabled:opacity-50"
               >
                 {status === "sending" ? "Sending…" : "Send message"}
               </button>
@@ -103,7 +110,10 @@ export function HelpBadge() {
 
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex h-11 items-center gap-2 rounded-full bg-foreground px-4 text-[13px] font-medium text-background shadow-lg hover:opacity-90"
+        // See the submit button above for why this is an inline style, not
+        // the text-background utility class.
+        style={{ color: "var(--background)" }}
+        className="flex h-11 items-center gap-2 rounded-full bg-foreground px-4 text-[13px] font-medium shadow-lg hover:opacity-90"
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <circle cx="12" cy="12" r="9" />
