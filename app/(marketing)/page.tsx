@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, Suspense, Fragment } from "react";
+import { useState, useRef, useCallback, useEffect, Suspense, Fragment, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { SpeedCompare } from "@/components/SpeedCompare";
 import { AuthGateModal } from "@/components/AuthGateModal";
@@ -385,18 +385,38 @@ function HowItWorks() {
 function FaqSection() {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
 
-  const items = [
+  const items: { q: string; a: ReactNode }[] = [
     {
       q: "What websites can I convert?",
       a: "You can convert publicly accessible Framer websites that you own or are authorized to migrate.",
     },
     {
       q: "Will the converted site improve SEO and Lighthouse scores?",
-      a: "Optimized HTML exports can improve performance, SEO, and Core Web Vitals by reducing unnecessary runtime overhead and optimizing assets. Actual results depend on the original website.",
+      a: (
+        <>
+          Optimized HTML exports can improve performance, SEO, and Core Web Vitals by reducing
+          unnecessary runtime overhead and optimizing assets. Actual results depend on the
+          original website — see{" "}
+          <a href="https://web.dev/articles/vitals" target="_blank" rel="noopener noreferrer">
+            Google&apos;s own Core Web Vitals guidance
+          </a>{" "}
+          for what Lighthouse actually measures.
+        </>
+      ),
     },
     {
       q: "What's the difference between HTML and Next.js export?",
-      a: "HTML Export generates an optimized static website that's ready to host almost anywhere. Next.js Export generates a production-ready Next.js project that developers can continue building on.",
+      a: (
+        <>
+          HTML Export generates an optimized static website that&apos;s ready to host almost
+          anywhere. Next.js Export generates a production-ready{" "}
+          <a href="https://nextjs.org/docs/app" target="_blank" rel="noopener noreferrer">
+            Next.js App Router
+          </a>{" "}
+          project that developers can continue building on — see the{" "}
+          <Link href="/nextjs">dedicated Next.js export page</Link> for the full breakdown.
+        </>
+      ),
     },
     {
       q: "Does it work with every Framer website?",
@@ -408,11 +428,31 @@ function FaqSection() {
     },
     {
       q: "What do I get after conversion?",
-      a: "Depending on your selection, you'll receive either an optimized HTML export or a production-ready Next.js project ready for download or deployment.",
+      a: (
+        <>
+          Depending on your selection, you&apos;ll receive either an optimized HTML export or a
+          production-ready Next.js project ready for download or deployment. Want to go further
+          afterward?{" "}
+          <Link href="/blog/how-to-refine-a-framer-to-next-js-export-with-cursor-or-claude-code">
+            Here&apos;s how to refine either export with AI
+          </Link>
+          .
+        </>
+      ),
     },
     {
       q: "Is FramerToNextJS affiliated with Framer?",
-      a: "No. FramerToNextJS is an independent migration tool and is not affiliated with or endorsed by Framer.",
+      a: (
+        <>
+          No. FramerToNextJS is an independent migration tool and is not affiliated with or
+          endorsed by{" "}
+          <a href="https://www.framer.com" target="_blank" rel="noopener noreferrer">
+            Framer
+          </a>
+          . See how we compare to other paid migration tools on our{" "}
+          <Link href="/vs/convertframer">FramerToNextJS vs. ConvertFramer</Link> page.
+        </>
+      ),
     },
   ];
 

@@ -63,13 +63,13 @@ export function Card04Files() {
           <span className="c4-layer c4-layer--index">
             <span className="c4-float c4-float--index">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/illustrations/card04/doc-index.svg" alt="" loading="lazy" decoding="async" />
+              <img src="/illustrations/card04/doc-index.svg" alt="Generated index.html project file" loading="lazy" decoding="async" />
             </span>
           </span>
           <span className="c4-layer c4-layer--zip">
             <span className="c4-float c4-float--zip">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/illustrations/card04/doc-zip.svg" alt="" loading="lazy" decoding="async" />
+              <img src="/illustrations/card04/doc-zip.svg" alt="Downloadable .zip project bundle" loading="lazy" decoding="async" />
             </span>
           </span>
           <span className="c4-layer c4-layer--buttons">

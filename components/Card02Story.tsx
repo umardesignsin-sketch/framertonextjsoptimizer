@@ -191,7 +191,7 @@ export function Card02Story() {
             </div>
 
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="c2-brave" src="/illustrations/card02/brave.svg" alt="" />
+            <img className="c2-brave" src="/illustrations/card02/brave.svg" alt="Browser window icon" />
           </div>
 
           {/* ── Frame A: the published Framer site with the Copy link tip ── */}

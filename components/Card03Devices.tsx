@@ -258,7 +258,7 @@ export function Card03Devices() {
                 <img
                   className="c3-device c3-device--phone"
                   src="/illustrations/card03/phone.svg"
-                  alt=""
+                  alt="Mobile phone preview of the converted site"
                   loading="lazy"
                   decoding="async"
                 />
@@ -268,7 +268,7 @@ export function Card03Devices() {
                 <img
                   className="c3-device c3-device--laptop"
                   src="/illustrations/card03/laptop.svg"
-                  alt=""
+                  alt="Desktop laptop preview of the converted site"
                   loading="lazy"
                   decoding="async"
                 />

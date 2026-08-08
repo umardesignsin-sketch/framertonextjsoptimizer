@@ -178,11 +178,11 @@ export function Card01Story() {
           {/* Artwork: dotted backdrop + the document for the chosen output */}
           <span className={`c1-art${mode === "nextjs" ? " is-shown" : ""}`}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/illustrations/card01/base-b.svg" alt="" loading="lazy" decoding="async" />
+            <img src="/illustrations/card01/base-b.svg" alt="Next.js project output document icon" loading="lazy" decoding="async" />
           </span>
           <span className={`c1-art${mode === "hybrid" ? " is-shown" : ""}`}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/illustrations/card01/base-a.svg" alt="" loading="lazy" decoding="async" />
+            <img src="/illustrations/card01/base-a.svg" alt="Optimized HTML output document icon" loading="lazy" decoding="async" />
           </span>
 
           {/* Progress bar sits inside the document, at the artwork's own coords.
